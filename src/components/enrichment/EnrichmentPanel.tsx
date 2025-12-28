@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Sparkles,
   Play,
@@ -10,45 +10,191 @@ import {
   ChevronDown,
   AlertCircle,
   Check,
+  Wand2,
+  Loader2,
+  RotateCcw,
+  Plus,
+  Trash2,
+  Database,
+  Save,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { GlassButton, GlassInput, GlassCard } from '@/components/ui';
+import { GlassButton, GlassCard } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
 
 interface EnrichmentPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  targetColumnId?: string;
+  editColumnId?: string | null; // If set, we're editing an existing enrichment column
 }
 
 const MODELS = [
-  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast and efficient' },
-  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'More capable' },
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Latest version' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Latest and fastest' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Lightweight and efficient' },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Most capable' },
+  { id: 'gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', description: 'Fast and stable' },
+  { id: 'gemini-2.0-flash-lite-001', name: 'Gemini 2.0 Flash Lite', description: 'Lightweight option' },
 ];
 
-export function EnrichmentPanel({ isOpen, onClose, targetColumnId }: EnrichmentPanelProps) {
-  const { currentTable, columns, rows, selectedRows, updateCell } = useTableStore();
+export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPanelProps) {
+  const { currentTable, columns, rows, selectedRows, updateCell, addColumn, fetchTable } = useTableStore();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const [name, setName] = useState('');
-  const [model, setModel] = useState('gemini-1.5-flash');
+  const [model, setModel] = useState('gemini-2.5-flash');
   const [prompt, setPrompt] = useState('');
-  const [inputColumns, setInputColumns] = useState<string[]>([]);
+  const [outputColumnName, setOutputColumnName] = useState('AI Output');
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(1000);
-  const [outputFormat, setOutputFormat] = useState<'text' | 'json'>('text');
   const [runOnEmpty, setRunOnEmpty] = useState(false);
 
   const [isRunning, setIsRunning] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testingRows, setTestingRows] = useState(0); // 0 = not testing, 1 = single row, 10 = 10 rows
+  const [testResults, setTestResults] = useState<string[]>([]);
   const [progress, setProgress] = useState({ completed: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
+  const [existingConfigId, setExistingConfigId] = useState<string | null>(null);
 
-  // Get available columns for input (exclude enrichment columns)
-  const availableColumns = columns.filter(
-    (col) => col.type !== 'enrichment' && col.id !== targetColumnId
-  );
+  // Data Guide state - output columns that will be created from AI response
+  const [outputColumns, setOutputColumns] = useState<string[]>([]);
+  const [newOutputColumn, setNewOutputColumn] = useState('');
+
+  // Prompt optimizer state
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [optimizedPrompt, setOptimizedPrompt] = useState<string | null>(null);
+  const [showOptimizerModal, setShowOptimizerModal] = useState(false);
+  const [optimizerError, setOptimizerError] = useState<string | null>(null);
+  const [recommendedDataGuide, setRecommendedDataGuide] = useState<
+    Array<{ name: string; description: string }>
+  >([]);
+
+  // Determine if we're in edit mode (re-running existing enrichment)
+  const isEditMode = !!editColumnId;
+  const editColumn = isEditMode ? columns.find(c => c.id === editColumnId) : null;
+
+  // State for save operation
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Load existing enrichment config when editing
+  useEffect(() => {
+    if (isEditMode && editColumnId && isOpen) {
+      // First find the column to get its enrichmentConfigId
+      const column = columns.find(c => c.id === editColumnId);
+
+      if (column?.enrichmentConfigId) {
+        // Column has linked config - load it directly
+        fetch(`/api/enrichment/${column.enrichmentConfigId}`)
+          .then(res => res.json())
+          .then(config => {
+            console.log('Loaded enrichment config:', config);
+            setModel(config.model || 'gemini-2.5-flash');
+            setPrompt(config.prompt || '');
+            setTemperature(config.temperature ?? 0.7);
+            setMaxTokens(config.maxTokens ?? 1000);
+            setExistingConfigId(config.id);
+            setOutputColumns(config.outputColumns || []);
+          })
+          .catch(err => console.error('Failed to load enrichment config:', err));
+
+        // Set the column name for display
+        setOutputColumnName(column.name);
+      } else if (column && column.type === 'enrichment') {
+        // Column is enrichment type but missing config link - try to find by name
+        console.log('Column missing enrichmentConfigId, searching by name:', column.name);
+        fetch('/api/enrichment')
+          .then(res => res.json())
+          .then(async (configs) => {
+            // Find a config that matches this column's name
+            const matchingConfig = configs.find(
+              (c: { name: string }) => c.name.toLowerCase() === column.name.toLowerCase()
+            );
+
+            if (matchingConfig) {
+              console.log('Found matching config by name:', matchingConfig);
+              setModel(matchingConfig.model || 'gemini-2.5-flash');
+              setPrompt(matchingConfig.prompt || '');
+              setTemperature(matchingConfig.temperature ?? 0.7);
+              setMaxTokens(matchingConfig.maxTokens ?? 1000);
+              setExistingConfigId(matchingConfig.id);
+              setOutputColumns(matchingConfig.outputColumns || []);
+
+              // Link the column to this config for future use
+              try {
+                await fetch(`/api/columns/${column.id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ enrichmentConfigId: matchingConfig.id }),
+                });
+                console.log('Linked column to config');
+              } catch (err) {
+                console.error('Failed to link column to config:', err);
+              }
+            } else {
+              console.log('No matching config found for column:', column.name);
+            }
+          })
+          .catch(err => console.error('Failed to search for enrichment config:', err));
+
+        // Set the column name for display
+        setOutputColumnName(column.name);
+      }
+    }
+  }, [isEditMode, editColumnId, isOpen, columns]);
+
+  // Reset state when panel closes or opens fresh
+  useEffect(() => {
+    if (!isOpen) {
+      setTestResults([]);
+      setError(null);
+      setProgress({ completed: 0, total: 0 });
+    }
+    if (isOpen && !editColumnId) {
+      // Reset to defaults for new enrichment
+      setModel('gemini-2.5-flash');
+      setPrompt('');
+      setOutputColumnName('AI Output');
+      setTemperature(0.7);
+      setMaxTokens(1000);
+      setRunOnEmpty(false);
+      setExistingConfigId(null);
+      setOutputColumns([]);
+      setNewOutputColumn('');
+    }
+  }, [isOpen, editColumnId]);
+
+  // Extract variables from prompt
+  const extractVariables = (text: string): string[] => {
+    const regex = /\{\{(\w+)\}\}/g;
+    const matches: string[] = [];
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      if (!matches.includes(match[1])) {
+        matches.push(match[1]);
+      }
+    }
+    return matches;
+  };
+
+  // Get all columns for insertion (including target - user may want to reference it)
+  const availableColumns = columns;
+
+  // Insert variable at cursor position
+  const insertVariable = (columnName: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const variable = `{{${columnName}}}`;
+    const newPrompt = prompt.substring(0, start) + variable + prompt.substring(end);
+    setPrompt(newPrompt);
+
+    // Set cursor position after the inserted variable
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + variable.length, start + variable.length);
+    }, 0);
+  };
 
   // Build preview prompt with sample data
   const previewPrompt = () => {
@@ -68,41 +214,216 @@ export function EnrichmentPanel({ isOpen, onClose, targetColumnId }: EnrichmentP
     return preview;
   };
 
-  const handleTest = async () => {
-    if (!currentTable || rows.length === 0 || !targetColumnId) return;
+  const usedVariables = extractVariables(prompt);
 
-    setIsTesting(true);
-    setTestResult(null);
+  // Add new output column
+  const addOutputColumn = () => {
+    const trimmed = newOutputColumn.trim();
+    if (trimmed && !outputColumns.some(col => col.toLowerCase() === trimmed.toLowerCase())) {
+      setOutputColumns([...outputColumns, trimmed]);
+      setNewOutputColumn('');
+    }
+  };
+
+  // Remove output column
+  const removeOutputColumn = (index: number) => {
+    setOutputColumns(outputColumns.filter((_, i) => i !== index));
+  };
+
+  // Handle prompt optimization
+  const handleOptimizePrompt = async () => {
+    if (!prompt.trim()) return;
+
+    setIsOptimizing(true);
+    setOptimizerError(null);
+    setRecommendedDataGuide([]);
+
+    try {
+      // Send columns with the request so AI can understand available data
+      const columnContext = columns.map(col => ({
+        name: col.name,
+        type: col.type,
+      }));
+
+      const response = await fetch('/api/enrichment/optimize-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, columns: columnContext }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to optimize prompt');
+      }
+
+      const data = await response.json();
+      setOptimizedPrompt(data.optimizedPrompt);
+      setRecommendedDataGuide(data.recommendedDataGuide || []);
+      setShowOptimizerModal(true);
+    } catch (err) {
+      setOptimizerError((err as Error).message);
+      setShowOptimizerModal(true);
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
+  const handleAcceptOptimizedPrompt = () => {
+    // Accept both prompt and Data Guide together
+    if (optimizedPrompt) {
+      setPrompt(optimizedPrompt);
+    }
+    if (recommendedDataGuide.length > 0) {
+      // Merge with existing output columns, avoiding duplicates
+      const existingLower = outputColumns.map(c => c.toLowerCase());
+      const newColumns = recommendedDataGuide
+        .map(f => f.name)
+        .filter(name => !existingLower.includes(name.toLowerCase()));
+      setOutputColumns([...outputColumns, ...newColumns]);
+    }
+    setShowOptimizerModal(false);
+    setOptimizedPrompt(null);
+    setRecommendedDataGuide([]);
+    setOptimizerError(null);
+  };
+
+  const handleDeclineOptimizedPrompt = () => {
+    setShowOptimizerModal(false);
+    setOptimizedPrompt(null);
+    setRecommendedDataGuide([]);
+    setOptimizerError(null);
+  };
+
+  const handleRetryOptimize = () => {
+    setOptimizedPrompt(null);
+    setRecommendedDataGuide([]);
+    setOptimizerError(null);
+    handleOptimizePrompt();
+  };
+
+  // Helper to create or get enrichment config
+  const getOrCreateConfig = async () => {
+    // In edit mode, use existing config or update it
+    if (isEditMode && existingConfigId) {
+      // Update the existing config with new settings
+      await fetch(`/api/enrichment/${existingConfigId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          prompt,
+          temperature,
+          maxTokens,
+          outputColumns,
+        }),
+      });
+      return existingConfigId;
+    }
+
+    // Create new config
+    const configResponse = await fetch('/api/enrichment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: outputColumnName.trim(),
+        model,
+        prompt,
+        inputColumns: usedVariables.map(v => {
+          const col = columns.find(c => c.name.toLowerCase() === v.toLowerCase());
+          return col?.id || v;
+        }),
+        outputColumns,
+        outputFormat: 'text',
+        temperature,
+        maxTokens,
+      }),
+    });
+
+    if (!configResponse.ok) throw new Error('Failed to create config');
+    const config = await configResponse.json();
+    return config.id;
+  };
+
+  // Save configuration without running
+  const handleSave = async () => {
+    if (!existingConfigId) return;
+
+    setIsSaving(true);
     setError(null);
 
     try {
-      // Create a temporary enrichment config
-      const configResponse = await fetch('/api/enrichment', {
-        method: 'POST',
+      const response = await fetch(`/api/enrichment/${existingConfigId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name || 'Test Enrichment',
           model,
           prompt,
-          inputColumns,
-          outputFormat,
           temperature,
           maxTokens,
+          outputColumns,
         }),
       });
 
-      if (!configResponse.ok) throw new Error('Failed to create config');
-      const config = await configResponse.json();
+      if (!response.ok) throw new Error('Failed to save configuration');
 
-      // Run on first row
+      // Show success briefly then close or stay open
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleTest = async (numRows: number = 1) => {
+    if (!currentTable || rows.length === 0 || !outputColumnName.trim()) return;
+
+    setIsTesting(true);
+    setTestingRows(numRows);
+    setTestResults([]);
+    setError(null);
+
+    try {
+      let targetColumnId: string;
+      let configId: string;
+
+      if (isEditMode && editColumnId) {
+        // Use existing column
+        targetColumnId = editColumnId;
+        configId = await getOrCreateConfig();
+      } else {
+        // Create a new output column for the test
+        const configId_ = await getOrCreateConfig();
+        configId = configId_;
+
+        const columnResponse = await fetch('/api/columns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tableId: currentTable.id,
+            name: outputColumnName.trim(),
+            type: 'enrichment',
+            enrichmentConfigId: configId,
+          }),
+        });
+
+        if (!columnResponse.ok) throw new Error('Failed to create output column');
+        const newColumn = await columnResponse.json();
+        targetColumnId = newColumn.id;
+      }
+
+      // Get row IDs to test
+      const testRowIds = rows.slice(0, Math.min(numRows, rows.length)).map(r => r.id);
+
+      // Run on selected rows
       const response = await fetch('/api/enrichment/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          configId: config.id,
+          configId,
           tableId: currentTable.id,
           targetColumnId,
-          rowIds: [rows[0].id],
+          rowIds: testRowIds,
         }),
       });
 
@@ -118,60 +439,79 @@ export function EnrichmentPanel({ isOpen, onClose, targetColumnId }: EnrichmentP
         if (status.status === 'complete') {
           clearInterval(pollInterval);
 
-          // Get updated row
+          // Reload table to get new column and updated rows
+          await fetchTable(currentTable.id);
+
+          // Get updated rows for display
           const rowRes = await fetch(`/api/rows?tableId=${currentTable.id}`);
           const updatedRows = await rowRes.json();
-          const updatedRow = updatedRows.find((r: { id: string }) => r.id === rows[0].id);
 
-          if (updatedRow) {
-            const cellValue = updatedRow.data[targetColumnId];
-            setTestResult(cellValue?.value || 'No result');
-            updateCell(rows[0].id, targetColumnId, cellValue);
-          }
+          const results: string[] = [];
+          testRowIds.forEach((rowId) => {
+            const updatedRow = updatedRows.find((r: { id: string }) => r.id === rowId);
+            if (updatedRow) {
+              const cellValue = updatedRow.data[targetColumnId];
+              results.push(cellValue?.value || 'No result');
+            }
+          });
 
+          setTestResults(results);
           setIsTesting(false);
+          setTestingRows(0);
         }
       }, 1000);
 
-      // Timeout after 30 seconds
+      // Timeout after 60 seconds for larger tests
       setTimeout(() => {
         clearInterval(pollInterval);
         if (isTesting) {
           setError('Test timed out');
           setIsTesting(false);
+          setTestingRows(0);
         }
-      }, 30000);
+      }, 60000);
     } catch (err) {
       setError((err as Error).message);
       setIsTesting(false);
+      setTestingRows(0);
     }
   };
 
   const handleRun = async () => {
-    if (!currentTable || !targetColumnId) return;
+    if (!currentTable || !outputColumnName.trim()) return;
 
     setIsRunning(true);
     setError(null);
     setProgress({ completed: 0, total: 0 });
 
     try {
-      // Create enrichment config
-      const configResponse = await fetch('/api/enrichment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name || 'Enrichment',
-          model,
-          prompt,
-          inputColumns,
-          outputFormat,
-          temperature,
-          maxTokens,
-        }),
-      });
+      let targetColumnId: string;
+      let configId: string;
 
-      if (!configResponse.ok) throw new Error('Failed to create config');
-      const config = await configResponse.json();
+      if (isEditMode && editColumnId) {
+        // Use existing column
+        targetColumnId = editColumnId;
+        configId = await getOrCreateConfig();
+      } else {
+        // Create new config first
+        configId = await getOrCreateConfig();
+
+        // Create a new output column
+        const columnResponse = await fetch('/api/columns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tableId: currentTable.id,
+            name: outputColumnName.trim(),
+            type: 'enrichment',
+            enrichmentConfigId: configId,
+          }),
+        });
+
+        if (!columnResponse.ok) throw new Error('Failed to create output column');
+        const newColumn = await columnResponse.json();
+        targetColumnId = newColumn.id;
+      }
 
       // Determine which rows to run on
       const rowIds = selectedRows.size > 0 ? Array.from(selectedRows) : undefined;
@@ -181,7 +521,7 @@ export function EnrichmentPanel({ isOpen, onClose, targetColumnId }: EnrichmentP
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          configId: config.id,
+          configId,
           tableId: currentTable.id,
           targetColumnId,
           rowIds,
@@ -203,10 +543,9 @@ export function EnrichmentPanel({ isOpen, onClose, targetColumnId }: EnrichmentP
 
         if (status.status === 'complete') {
           clearInterval(pollInterval);
+          // Reload table to get updated data
+          await fetchTable(currentTable.id);
           setIsRunning(false);
-
-          // Refresh table data
-          // This would typically be handled by the store
         }
       }, 1000);
     } catch (err) {
@@ -223,7 +562,9 @@ export function EnrichmentPanel({ isOpen, onClose, targetColumnId }: EnrichmentP
       <div className="flex items-center justify-between p-4 border-b border-white/10">
         <div className="flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-lavender" />
-          <h2 className="font-semibold text-white">AI Enrichment</h2>
+          <h2 className="font-semibold text-white">
+            {isEditMode ? `Re-run: ${editColumn?.name}` : 'AI Enrichment'}
+          </h2>
         </div>
         <button
           onClick={onClose}
@@ -235,16 +576,8 @@ export function EnrichmentPanel({ isOpen, onClose, targetColumnId }: EnrichmentP
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Name */}
-        <GlassInput
-          label="Enrichment Name"
-          placeholder="e.g., Company Research"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-
         {/* Model Selection */}
-        <div className="space-y-2">
+        <div className="space-y-2 pb-4 border-b border-white/10">
           <label className="text-sm font-medium text-white/70">Model</label>
           <div className="space-y-2">
             {MODELS.map((m) => (
@@ -269,54 +602,148 @@ export function EnrichmentPanel({ isOpen, onClose, targetColumnId }: EnrichmentP
           </div>
         </div>
 
-        {/* Input Columns */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-white/70">
-            Input Columns
-          </label>
-          <p className="text-xs text-white/40">
-            Select columns to use as context in your prompt
-          </p>
-          <div className="space-y-1 max-h-32 overflow-y-auto">
-            {availableColumns.map((col) => (
-              <label
-                key={col.id}
-                className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={inputColumns.includes(col.id)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setInputColumns([...inputColumns, col.id]);
-                    } else {
-                      setInputColumns(inputColumns.filter((id) => id !== col.id));
-                    }
-                  }}
-                  className="w-4 h-4 rounded border-white/20 bg-white/5"
-                />
-                <span className="text-sm text-white/70">{col.name}</span>
-              </label>
-            ))}
+        {/* Output Column Name - only shown when creating new enrichment */}
+        {!isEditMode && (
+          <div className="space-y-2 pb-4 border-b border-white/10">
+            <label className="text-sm font-medium text-white/70">Output Column Name</label>
+            <input
+              type="text"
+              value={outputColumnName}
+              onChange={(e) => setOutputColumnName(e.target.value)}
+              placeholder="e.g., AI Summary"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
+            />
+            <p className="text-xs text-white/40">
+              A new column will be created with this name
+            </p>
           </div>
-        </div>
+        )}
 
         {/* Prompt Editor */}
-        <div className="space-y-2">
+        <div className="space-y-2 pb-4 border-b border-white/10">
           <label className="text-sm font-medium text-white/70">Prompt</label>
           <p className="text-xs text-white/40">
             Use {'{{column_name}}'} to insert column values
           </p>
           <textarea
+            ref={textareaRef}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="e.g., Research the company {{Company}} and provide a brief summary..."
             className="w-full h-32 p-3 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 resize-none focus:outline-none focus:border-lavender"
           />
+          {/* Optimize Prompt Button */}
+          <button
+            onClick={handleOptimizePrompt}
+            disabled={!prompt.trim() || isOptimizing}
+            className={cn(
+              'flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-all',
+              'bg-gradient-to-r from-purple-500/20 to-pink-500/20',
+              'border border-purple-500/30 hover:border-purple-500/50',
+              'text-purple-300 hover:text-purple-200',
+              'disabled:opacity-50 disabled:cursor-not-allowed'
+            )}
+          >
+            {isOptimizing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Optimizing...
+              </>
+            ) : (
+              <>
+                <Wand2 className="w-4 h-4" />
+                Optimize Prompt
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Available Columns - Click to Insert */}
+        <div className="space-y-2 pb-4 border-b border-white/10">
+          <label className="text-sm text-white/70">
+            Available columns (click to insert)
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {availableColumns.map((col) => (
+              <button
+                key={col.id}
+                onClick={() => insertVariable(col.name)}
+                className={cn(
+                  'px-3 py-1.5 text-sm rounded-full transition-colors',
+                  usedVariables.some(v => v.toLowerCase() === col.name.toLowerCase())
+                    ? 'bg-lavender/30 text-lavender border border-lavender/30'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
+                )}
+              >
+                {col.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Data Guide - Output Column Definitions */}
+        <div className="space-y-3 pb-4 border-b border-white/10">
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-emerald-400" />
+            <label className="text-sm font-medium text-white/70">Data Guide</label>
+          </div>
+          <p className="text-xs text-white/40">
+            Define output columns to extract structured data. The AI will return JSON with these exact keys.
+          </p>
+
+          {/* Add new output column */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newOutputColumn}
+              onChange={(e) => setNewOutputColumn(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addOutputColumn();
+                }
+              }}
+              placeholder="e.g., city, country, email..."
+              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-500/50"
+            />
+            <button
+              onClick={addOutputColumn}
+              disabled={!newOutputColumn.trim()}
+              className={cn(
+                'px-3 py-2 rounded-lg transition-colors',
+                'bg-emerald-500/20 border border-emerald-500/30',
+                'hover:bg-emerald-500/30 hover:border-emerald-500/50',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
+                'text-emerald-400'
+              )}
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Output columns list */}
+          {outputColumns.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {outputColumns.map((col, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30"
+                >
+                  <span className="text-sm text-emerald-300">{col}</span>
+                  <button
+                    onClick={() => removeOutputColumn(index)}
+                    className="p-0.5 text-emerald-400/60 hover:text-red-400 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Preview */}
-        {prompt && (
+        {prompt && rows.length > 0 && (
           <GlassCard padding="sm" className="space-y-2">
             <p className="text-xs font-medium text-white/50">Preview (first row)</p>
             <p className="text-sm text-white/70 whitespace-pre-wrap">
@@ -352,32 +779,14 @@ export function EnrichmentPanel({ isOpen, onClose, targetColumnId }: EnrichmentP
             </div>
 
             {/* Max Tokens */}
-            <GlassInput
-              label="Max Tokens"
-              type="number"
-              value={maxTokens}
-              onChange={(e) => setMaxTokens(parseInt(e.target.value) || 1000)}
-            />
-
-            {/* Output Format */}
             <div className="space-y-2">
-              <label className="text-sm text-white/70">Output Format</label>
-              <div className="flex gap-2">
-                <GlassButton
-                  size="sm"
-                  variant={outputFormat === 'text' ? 'primary' : 'default'}
-                  onClick={() => setOutputFormat('text')}
-                >
-                  Text
-                </GlassButton>
-                <GlassButton
-                  size="sm"
-                  variant={outputFormat === 'json' ? 'primary' : 'default'}
-                  onClick={() => setOutputFormat('json')}
-                >
-                  JSON
-                </GlassButton>
-              </div>
+              <label className="text-sm text-white/70">Max Tokens</label>
+              <input
+                type="number"
+                value={maxTokens}
+                onChange={(e) => setMaxTokens(parseInt(e.target.value) || 1000)}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-lavender"
+              />
             </div>
 
             {/* Run on empty only */}
@@ -393,11 +802,20 @@ export function EnrichmentPanel({ isOpen, onClose, targetColumnId }: EnrichmentP
           </div>
         </details>
 
-        {/* Test Result */}
-        {testResult && (
+        {/* Test Results */}
+        {testResults.length > 0 && (
           <GlassCard padding="sm" className="border-green-500/20">
-            <p className="text-xs font-medium text-green-400 mb-1">Test Result</p>
-            <p className="text-sm text-white/70 whitespace-pre-wrap">{testResult}</p>
+            <p className="text-xs font-medium text-green-400 mb-2">
+              Test Results ({testResults.length} row{testResults.length > 1 ? 's' : ''})
+            </p>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {testResults.map((result, index) => (
+                <div key={index} className="p-2 bg-white/5 rounded-lg">
+                  <p className="text-xs text-white/40 mb-1">Row {index + 1}</p>
+                  <p className="text-sm text-white/70 whitespace-pre-wrap">{result}</p>
+                </div>
+              ))}
+            </div>
           </GlassCard>
         )}
 
@@ -431,30 +849,189 @@ export function EnrichmentPanel({ isOpen, onClose, targetColumnId }: EnrichmentP
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-white/10 space-y-2">
+      <div className="p-4 border-t border-white/10 space-y-3">
+        {/* Test/Retry buttons row */}
         <div className="flex gap-2">
           <GlassButton
             variant="ghost"
             className="flex-1"
-            onClick={handleTest}
-            disabled={!prompt || !targetColumnId || isTesting || isRunning}
-            loading={isTesting}
+            onClick={() => handleTest(1)}
+            disabled={!prompt || (!isEditMode && !outputColumnName.trim()) || isTesting || isRunning}
+            loading={isTesting && testingRows === 1}
           >
             <TestTube className="w-4 h-4 mr-1" />
-            Test
+            {isEditMode ? 'Retry 1 Row' : 'Test 1 Row'}
           </GlassButton>
           <GlassButton
-            variant="primary"
+            variant="ghost"
             className="flex-1"
-            onClick={handleRun}
-            disabled={!prompt || !targetColumnId || isTesting || isRunning}
-            loading={isRunning}
+            onClick={() => handleTest(10)}
+            disabled={!prompt || (!isEditMode && !outputColumnName.trim()) || isTesting || isRunning || rows.length === 0}
+            loading={isTesting && testingRows === 10}
           >
-            <Play className="w-4 h-4 mr-1" />
-            Run {selectedRows.size > 0 ? `(${selectedRows.size})` : 'All'}
+            <TestTube className="w-4 h-4 mr-1" />
+            {isEditMode ? 'Retry 10 Rows' : 'Test 10 Rows'}
           </GlassButton>
         </div>
+        {/* Save button - only in edit mode */}
+        {isEditMode && (
+          <GlassButton
+            variant="ghost"
+            className="w-full"
+            onClick={handleSave}
+            disabled={!prompt || isTesting || isRunning || isSaving}
+            loading={isSaving}
+          >
+            <Save className="w-4 h-4 mr-1" />
+            Save Configuration
+          </GlassButton>
+        )}
+        {/* Run button */}
+        <GlassButton
+          variant="primary"
+          className="w-full"
+          onClick={handleRun}
+          disabled={!prompt || (!isEditMode && !outputColumnName.trim()) || isTesting || isRunning}
+          loading={isRunning}
+        >
+          <Play className="w-4 h-4 mr-1" />
+          {isEditMode
+            ? selectedRows.size > 0
+              ? `Re-run on ${selectedRows.size} Selected`
+              : 'Re-run on All Rows'
+            : selectedRows.size > 0
+              ? `Run on ${selectedRows.size} Selected`
+              : 'Run on All Rows'
+          }
+        </GlassButton>
       </div>
+
+      {/* Prompt Optimizer Modal */}
+      {showOptimizerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Wand2 className="w-5 h-5 text-purple-400" />
+                <h3 className="font-semibold text-white">AI Recommendations</h3>
+              </div>
+              <button
+                onClick={handleDeclineOptimizedPrompt}
+                className="p-1 hover:bg-white/10 rounded transition-colors"
+              >
+                <X className="w-5 h-5 text-white/60" />
+              </button>
+            </div>
+
+            {/* Modal Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              {isOptimizing ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-4">
+                  <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+                  <p className="text-white/70">Analyzing prompt and columns with Gemini 2.5 Pro...</p>
+                </div>
+              ) : optimizerError ? (
+                <div className="flex flex-col items-center gap-4 py-8">
+                  <AlertCircle className="w-8 h-8 text-red-400" />
+                  <p className="text-red-400 text-center">{optimizerError}</p>
+                </div>
+              ) : (
+                <>
+                  {/* Optimized Prompt Section */}
+                  {optimizedPrompt && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-medium text-white/70 flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-purple-400" />
+                        Optimized Prompt
+                      </h4>
+                      <div className="p-4 bg-white/5 border border-white/10 rounded-lg max-h-64 overflow-y-auto">
+                        <pre className="text-sm text-white/80 whitespace-pre-wrap font-mono">
+                          {optimizedPrompt}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recommended Data Guide Section */}
+                  {recommendedDataGuide.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-medium text-white/70 flex items-center gap-2">
+                        <Database className="w-4 h-4 text-emerald-400" />
+                        Recommended Data Guide ({recommendedDataGuide.length} field{recommendedDataGuide.length !== 1 ? 's' : ''})
+                      </h4>
+                      <p className="text-xs text-white/40">
+                        These output fields will be created to store the AI&apos;s structured response.
+                      </p>
+                      <div className="border border-white/10 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-white/5">
+                            <tr>
+                              <th className="text-left p-3 text-white/50 font-medium w-1/3">Field</th>
+                              <th className="text-left p-3 text-white/50 font-medium">Description</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {recommendedDataGuide.map((field, idx) => (
+                              <tr key={idx} className="border-t border-white/5">
+                                <td className="p-3 text-emerald-300 font-mono text-xs">{field.name}</td>
+                                <td className="p-3 text-white/70">{field.description}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* No recommendations case */}
+                  {!optimizedPrompt && recommendedDataGuide.length === 0 && (
+                    <div className="flex flex-col items-center gap-4 py-8">
+                      <AlertCircle className="w-8 h-8 text-yellow-400" />
+                      <p className="text-yellow-400 text-center">No recommendations generated. Try a different prompt.</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 p-4 border-t border-white/10">
+              <button
+                onClick={handleRetryOptimize}
+                disabled={isOptimizing}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors',
+                  'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                <RotateCcw className="w-4 h-4" />
+                Retry
+              </button>
+              <button
+                onClick={handleDeclineOptimizedPrompt}
+                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+              >
+                Decline
+              </button>
+              <button
+                onClick={handleAcceptOptimizedPrompt}
+                disabled={(!optimizedPrompt && recommendedDataGuide.length === 0) || isOptimizing}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors',
+                  'bg-gradient-to-r from-purple-500 to-emerald-500 text-white',
+                  'hover:from-purple-600 hover:to-emerald-600',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                <Check className="w-4 h-4" />
+                Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

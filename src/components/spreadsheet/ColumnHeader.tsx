@@ -5,7 +5,6 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Filter,
   Trash2,
   Edit2,
   Type,
@@ -14,7 +13,9 @@ import {
   Link,
   Calendar,
   Sparkles,
+  Code,
   GripVertical,
+  RotateCcw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dropdown } from '@/components/ui';
@@ -23,6 +24,8 @@ import type { Column } from '@/lib/db/schema';
 
 interface ColumnHeaderProps {
   column: Column;
+  onEnrichmentClick?: (columnId: string) => void;
+  onFormulaClick?: (columnId: string) => void;
 }
 
 const TYPE_ICONS = {
@@ -32,9 +35,10 @@ const TYPE_ICONS = {
   url: Link,
   date: Calendar,
   enrichment: Sparkles,
+  formula: Code,
 };
 
-export function ColumnHeader({ column }: ColumnHeaderProps) {
+export function ColumnHeader({ column, onEnrichmentClick, onFormulaClick }: ColumnHeaderProps) {
   const {
     sortColumn,
     sortDirection,
@@ -42,7 +46,6 @@ export function ColumnHeader({ column }: ColumnHeaderProps) {
     updateColumn,
     deleteColumn,
     setSort,
-    addFilter,
   } = useTableStore();
 
   const [isRenaming, setIsRenaming] = useState(false);
@@ -55,6 +58,7 @@ export function ColumnHeader({ column }: ColumnHeaderProps) {
   const isSorted = sortColumn === column.id;
   const hasFilter = filters.some((f) => f.columnId === column.id);
   const TypeIcon = TYPE_ICONS[column.type as keyof typeof TYPE_ICONS] || Type;
+  const isFormulaColumn = column.type === 'formula' && column.formulaConfigId;
 
   useEffect(() => {
     if (isRenaming) {
@@ -144,7 +148,31 @@ export function ColumnHeader({ column }: ColumnHeaderProps) {
     };
   }, [isResizing, startX, startWidth, column.id, column.width, updateColumn]);
 
+  const isEnrichmentColumn = column.type === 'enrichment' && column.enrichmentConfigId;
+
   const menuItems = [
+    // Add Re-run Enrichment option at the top for enrichment columns
+    ...(isEnrichmentColumn
+      ? [
+          {
+            label: 'Re-run Enrichment',
+            icon: <RotateCcw className="w-4 h-4" />,
+            onClick: () => onEnrichmentClick?.(column.id),
+          },
+          { divider: true, label: '', onClick: () => {} },
+        ]
+      : []),
+    // Add Re-run Formula option at the top for formula columns
+    ...(isFormulaColumn
+      ? [
+          {
+            label: 'Edit Formula',
+            icon: <Code className="w-4 h-4" />,
+            onClick: () => onFormulaClick?.(column.id),
+          },
+          { divider: true, label: '', onClick: () => {} },
+        ]
+      : []),
     {
       label: 'Rename',
       icon: <Edit2 className="w-4 h-4" />,
@@ -159,12 +187,6 @@ export function ColumnHeader({ column }: ColumnHeaderProps) {
       label: 'Sort Descending',
       icon: <ArrowDown className="w-4 h-4" />,
       onClick: () => setSort(column.id, 'desc'),
-    },
-    {
-      label: 'Filter',
-      icon: <Filter className="w-4 h-4" />,
-      onClick: () =>
-        addFilter({ columnId: column.id, operator: 'is_not_empty', value: '' }),
     },
     { divider: true, label: '', onClick: () => {} },
     {
@@ -204,17 +226,23 @@ export function ColumnHeader({ column }: ColumnHeaderProps) {
   return (
     <div
       className={cn(
-        'relative flex items-center gap-2 px-3 border-r border-white/10',
+        'relative flex items-center gap-1.5 px-3 border-r border-white/10',
         'text-sm font-medium text-white/70',
-        'group select-none'
+        'group select-none flex-shrink-0'
       )}
-      style={{ width: column.width || 150 }}
+      style={{ width: column.width || 150, minWidth: column.width || 150 }}
     >
-      {/* Drag handle */}
-      <GripVertical className="w-3 h-3 text-white/20 opacity-0 group-hover:opacity-100 cursor-grab" />
-
-      {/* Type icon */}
-      <TypeIcon className="w-3.5 h-3.5 text-white/40" />
+      {/* Type icon - for enrichment/formula columns, clicking icon shows menu */}
+      {isEnrichmentColumn || isFormulaColumn ? (
+        <Dropdown
+          trigger={
+            <TypeIcon className="w-3.5 h-3.5 text-lavender/70 hover:text-lavender flex-shrink-0 cursor-pointer" />
+          }
+          items={menuItems}
+        />
+      ) : (
+        <TypeIcon className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
+      )}
 
       {/* Name */}
       {isRenaming ? (
@@ -227,15 +255,31 @@ export function ColumnHeader({ column }: ColumnHeaderProps) {
             if (e.key === 'Escape') setIsRenaming(false);
           }}
           onBlur={handleRename}
-          className="flex-1 bg-white/10 border border-lavender/50 rounded px-1 text-sm outline-none"
+          className="flex-1 min-w-0 bg-white/10 border border-lavender/50 rounded px-1 text-sm outline-none"
         />
+      ) : isEnrichmentColumn ? (
+        // For enrichment columns, click directly opens the sidebar
+        <span
+          className="flex-1 min-w-0 truncate cursor-pointer text-left hover:text-white transition-colors"
+          onClick={() => onEnrichmentClick?.(column.id)}
+        >
+          {column.name}
+        </span>
+      ) : isFormulaColumn ? (
+        // For formula columns, click directly opens the formula panel
+        <span
+          className="flex-1 min-w-0 truncate cursor-pointer text-left hover:text-white transition-colors"
+          onClick={() => onFormulaClick?.(column.id)}
+        >
+          {column.name}
+        </span>
       ) : (
-        <Dropdown trigger={<span className="flex-1 truncate cursor-pointer">{column.name}</span>} items={menuItems} />
+        <Dropdown trigger={<span className="flex-1 min-w-0 truncate cursor-pointer text-left">{column.name}</span>} items={menuItems} />
       )}
 
       {/* Sort indicator */}
       {isSorted && (
-        <span className="text-lavender">
+        <span className="text-lavender flex-shrink-0">
           {sortDirection === 'asc' ? (
             <ArrowUp className="w-3 h-3" />
           ) : (
@@ -245,7 +289,12 @@ export function ColumnHeader({ column }: ColumnHeaderProps) {
       )}
 
       {/* Filter indicator */}
-      {hasFilter && <Filter className="w-3 h-3 text-lavender" />}
+      {hasFilter && (
+        <span className="w-1.5 h-1.5 rounded-full bg-lavender flex-shrink-0" title="Column has active filter" />
+      )}
+
+      {/* Drag handle - shown on hover */}
+      <GripVertical className="w-3 h-3 text-white/20 opacity-0 group-hover:opacity-100 cursor-grab flex-shrink-0" />
 
       {/* Resize handle */}
       <div

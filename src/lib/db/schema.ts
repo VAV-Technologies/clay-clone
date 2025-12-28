@@ -5,7 +5,7 @@ export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   parentId: text('parent_id'),
-  type: text('type', { enum: ['folder', 'workbook'] }).notNull(),
+  type: text('type', { enum: ['folder', 'workbook', 'table'] }).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
@@ -41,10 +41,11 @@ export const columns = sqliteTable('columns', {
   id: text('id').primaryKey(),
   tableId: text('table_id').references(() => tables.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
-  type: text('type', { enum: ['text', 'number', 'email', 'url', 'date', 'enrichment'] }).notNull().default('text'),
+  type: text('type', { enum: ['text', 'number', 'email', 'url', 'date', 'enrichment', 'formula'] }).notNull().default('text'),
   width: integer('width').default(150),
   order: integer('order').notNull(),
   enrichmentConfigId: text('enrichment_config_id'),
+  formulaConfigId: text('formula_config_id'),
 });
 
 export const columnsRelations = relations(columns, ({ one }) => ({
@@ -55,6 +56,10 @@ export const columnsRelations = relations(columns, ({ one }) => ({
   enrichmentConfig: one(enrichmentConfigs, {
     fields: [columns.enrichmentConfigId],
     references: [enrichmentConfigs.id],
+  }),
+  formulaConfig: one(formulaConfigs, {
+    fields: [columns.formulaConfigId],
+    references: [formulaConfigs.id],
   }),
 }));
 
@@ -78,17 +83,34 @@ export const enrichmentConfigs = sqliteTable('enrichment_configs', {
   model: text('model', { enum: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'] }).notNull().default('gemini-1.5-flash'),
   prompt: text('prompt').notNull(),
   inputColumns: text('input_columns', { mode: 'json' }).notNull().$type<string[]>(),
+  // Output columns defined in Data Guide - each becomes a separate column
+  outputColumns: text('output_columns', { mode: 'json' }).$type<string[]>(),
   outputFormat: text('output_format', { enum: ['text', 'json'] }).notNull().default('text'),
   temperature: real('temperature').default(0.7),
   maxTokens: integer('max_tokens').default(1000),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
+export const formulaConfigs = sqliteTable('formula_configs', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  formula: text('formula').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
 // TypeScript types
+export interface EnrichmentDatapoint {
+  key: string;
+  value: string | number | null;
+}
+
 export interface CellValue {
   value: string | number | null;
   status?: 'pending' | 'processing' | 'complete' | 'error';
-  enrichmentResult?: unknown;
+  // Structured data from enrichment (e.g., {city: "Jakarta", country: "Indonesia"})
+  enrichmentData?: Record<string, string | number | null>;
+  // Raw AI response for debugging
+  rawResponse?: string;
   error?: string;
 }
 
@@ -102,3 +124,5 @@ export type Row = typeof rows.$inferSelect;
 export type NewRow = typeof rows.$inferInsert;
 export type EnrichmentConfig = typeof enrichmentConfigs.$inferSelect;
 export type NewEnrichmentConfig = typeof enrichmentConfigs.$inferInsert;
+export type FormulaConfig = typeof formulaConfigs.$inferSelect;
+export type NewFormulaConfig = typeof formulaConfigs.$inferInsert;

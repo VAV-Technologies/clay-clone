@@ -1,30 +1,51 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Plus, Download, Upload, Sparkles } from 'lucide-react';
+import { Plus, Sparkles, Code } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassButton } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
 import { ColumnHeader } from './ColumnHeader';
 import { Cell } from './Cell';
 import { FilterBar } from './FilterBar';
+import { EnrichmentDataViewer } from './EnrichmentDataViewer';
+import { RowDisplayControl } from './RowDisplayControl';
+import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
+import { AddFilterButton } from './AddFilterButton';
 
 interface SpreadsheetViewProps {
   tableId: string;
+  onEnrich?: (columnId?: string) => void;
+  onFormula?: (columnId?: string) => void;
 }
 
 const ROW_HEIGHT = 36;
 const HEADER_HEIGHT = 40;
 const CHECKBOX_WIDTH = 40;
+const ROW_NUMBER_WIDTH = 50;
 
-export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
+interface EnrichmentDataState {
+  isOpen: boolean;
+  rowId: string;
+  columnId: string;
+  data: Record<string, string | number | null>;
+}
+
+export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetViewProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+
+  // State for enrichment data viewer
+  const [enrichmentDataState, setEnrichmentDataState] = useState<EnrichmentDataState>({
+    isOpen: false,
+    rowId: '',
+    columnId: '',
+    data: {},
+  });
 
   const {
     currentTable,
     columns,
-    filters,
     isLoading,
     editingCell,
     selectedRows,
@@ -35,23 +56,31 @@ export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
     selectRow,
     clearSelection,
     setEditingCell,
-    getSortedRows,
+    getDisplayedRows,
+    getVisibleColumns,
   } = useTableStore();
 
   useEffect(() => {
     fetchTable(tableId);
   }, [tableId, fetchTable]);
 
-  const sortedRows = getSortedRows();
+  // Use displayed rows (filtered + sorted + range limited)
+  const displayedRows = getDisplayedRows();
+  // Use visible columns (hidden columns filtered out)
+  const visibleColumns = getVisibleColumns();
 
   const rowVirtualizer = useVirtualizer({
-    count: sortedRows.length,
+    count: displayedRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 10,
   });
 
-  const totalWidth = columns.reduce((sum, col) => sum + (col.width || 150), 0) + CHECKBOX_WIDTH;
+  // Calculate widths using visible columns
+  const ADD_COLUMN_WIDTH = 40;
+  const columnsWidth = visibleColumns.reduce((sum, col) => sum + (col.width || 150), 0);
+  const rowWidth = CHECKBOX_WIDTH + ROW_NUMBER_WIDTH + columnsWidth;
+  const totalWidth = rowWidth + ADD_COLUMN_WIDTH;
 
   const handleAddRow = async () => {
     try {
@@ -128,6 +157,54 @@ export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  // Handler for showing enrichment data viewer
+  const handleShowEnrichmentData = useCallback(
+    (rowId: string, columnId: string, data: Record<string, string | number | null>) => {
+      setEnrichmentDataState({
+        isOpen: true,
+        rowId,
+        columnId,
+        data,
+      });
+    },
+    []
+  );
+
+  // Handler for closing enrichment data viewer
+  const handleCloseEnrichmentData = useCallback(() => {
+    setEnrichmentDataState((prev) => ({ ...prev, isOpen: false }));
+  }, []);
+
+  // Handler for extracting datapoint to new column
+  const handleExtractToColumn = useCallback(
+    async (dataKey: string) => {
+      const response = await fetch('/api/enrichment/extract-datapoint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tableId,
+          sourceColumnId: enrichmentDataState.columnId,
+          dataKey,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to extract datapoint');
+      }
+
+      const result = await response.json();
+
+      // Add the new column to the store
+      if (result.column) {
+        addColumn(result.column);
+      }
+
+      // Refresh the table to get updated row data
+      await fetchTable(tableId);
+    },
+    [tableId, enrichmentDataState.columnId, addColumn, fetchTable]
+  );
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -145,14 +222,13 @@ export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between p-3 border-b border-white/10">
-        <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold text-white">{currentTable.name}</h2>
-          <span className="text-sm text-white/50">
-            {sortedRows.length} rows
-          </span>
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Toolbar - Row/column controls and actions */}
+      <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/[0.02]">
+        <div className="flex items-center gap-1">
+          <RowDisplayControl />
+          <ColumnVisibilityDropdown />
+          <AddFilterButton />
         </div>
 
         <div className="flex items-center gap-2">
@@ -166,17 +242,12 @@ export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
             </GlassButton>
           )}
 
-          <GlassButton variant="ghost" size="sm">
-            <Upload className="w-4 h-4 mr-1" />
-            Import
+          <GlassButton variant="secondary" size="sm" onClick={() => onFormula?.()}>
+            <Code className="w-4 h-4 mr-1" />
+            Formula
           </GlassButton>
 
-          <GlassButton variant="ghost" size="sm">
-            <Download className="w-4 h-4 mr-1" />
-            Export
-          </GlassButton>
-
-          <GlassButton variant="primary" size="sm">
+          <GlassButton variant="primary" size="sm" onClick={() => onEnrich?.()}>
             <Sparkles className="w-4 h-4 mr-1" />
             Enrich
           </GlassButton>
@@ -184,12 +255,12 @@ export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
       </div>
 
       {/* Filter Bar */}
-      {filters.length > 0 && <FilterBar />}
+      <FilterBar />
 
-      {/* Spreadsheet */}
+      {/* Spreadsheet - scrollable area */}
       <div
         ref={parentRef}
-        className="flex-1 overflow-auto"
+        className="flex-1 min-h-0 overflow-auto"
         onClick={() => {
           if (!editingCell) clearSelection();
         }}
@@ -202,15 +273,15 @@ export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
           >
             {/* Checkbox column header */}
             <div
-              className="flex items-center justify-center border-r border-white/10"
-              style={{ width: CHECKBOX_WIDTH }}
+              className="flex items-center justify-center border-r border-white/10 flex-shrink-0"
+              style={{ width: CHECKBOX_WIDTH, minWidth: CHECKBOX_WIDTH }}
             >
               <input
                 type="checkbox"
-                checked={selectedRows.size === sortedRows.length && sortedRows.length > 0}
+                checked={selectedRows.size === displayedRows.length && displayedRows.length > 0}
                 onChange={(e) => {
                   if (e.target.checked) {
-                    sortedRows.forEach((row) => selectRow(row.id, true));
+                    displayedRows.forEach((row) => selectRow(row.id, true));
                   } else {
                     clearSelection();
                   }
@@ -219,9 +290,22 @@ export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
               />
             </div>
 
-            {/* Column headers */}
-            {columns.map((column) => (
-              <ColumnHeader key={column.id} column={column} />
+            {/* Row number column header */}
+            <div
+              className="flex items-center justify-center border-r border-white/10 flex-shrink-0 text-xs text-white/40"
+              style={{ width: ROW_NUMBER_WIDTH, minWidth: ROW_NUMBER_WIDTH }}
+            >
+              #
+            </div>
+
+            {/* Column headers - only visible columns */}
+            {visibleColumns.map((column) => (
+              <ColumnHeader
+                key={column.id}
+                column={column}
+                onEnrichmentClick={onEnrich}
+                onFormulaClick={onFormula}
+              />
             ))}
 
             {/* Add column button */}
@@ -246,25 +330,26 @@ export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
             }}
           >
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const row = sortedRows[virtualRow.index];
+              const row = displayedRows[virtualRow.index];
               const isSelected = selectedRows.has(row.id);
 
               return (
                 <div
                   key={row.id}
                   className={cn(
-                    'absolute left-0 right-0 flex',
+                    'absolute left-0 flex',
                     isSelected ? 'bg-lavender/10' : 'hover:bg-white/[0.02]'
                   )}
                   style={{
                     top: virtualRow.start,
                     height: ROW_HEIGHT,
+                    width: rowWidth,
                   }}
                 >
                   {/* Checkbox */}
                   <div
-                    className="flex items-center justify-center border-r border-b border-white/[0.05]"
-                    style={{ width: CHECKBOX_WIDTH }}
+                    className="flex items-center justify-center border-r border-b border-white/[0.05] flex-shrink-0"
+                    style={{ width: CHECKBOX_WIDTH, minWidth: CHECKBOX_WIDTH }}
                   >
                     <input
                       type="checkbox"
@@ -275,16 +360,26 @@ export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
                     />
                   </div>
 
-                  {/* Cells */}
-                  {columns.map((column) => (
+                  {/* Row number */}
+                  <div
+                    className="flex items-center justify-center border-r border-b border-white/[0.05] flex-shrink-0 text-xs text-white/40"
+                    style={{ width: ROW_NUMBER_WIDTH, minWidth: ROW_NUMBER_WIDTH }}
+                  >
+                    {virtualRow.index + 1}
+                  </div>
+
+                  {/* Cells - only visible columns */}
+                  {visibleColumns.map((column) => (
                     <Cell
                       key={`${row.id}-${column.id}`}
                       row={row}
                       column={column}
+                      tableId={tableId}
                       isEditing={
                         editingCell?.rowId === row.id &&
                         editingCell?.columnId === column.id
                       }
+                      onShowEnrichmentData={handleShowEnrichmentData}
                     />
                   ))}
                 </div>
@@ -295,7 +390,7 @@ export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
           {/* Add row button */}
           <div
             className="flex items-center h-9 border-t border-white/10"
-            style={{ paddingLeft: CHECKBOX_WIDTH }}
+            style={{ paddingLeft: CHECKBOX_WIDTH + ROW_NUMBER_WIDTH }}
           >
             <button
               onClick={handleAddRow}
@@ -307,6 +402,17 @@ export function SpreadsheetView({ tableId }: SpreadsheetViewProps) {
           </div>
         </div>
       </div>
+
+      {/* Enrichment Data Viewer Modal */}
+      <EnrichmentDataViewer
+        isOpen={enrichmentDataState.isOpen}
+        onClose={handleCloseEnrichmentData}
+        data={enrichmentDataState.data}
+        rowId={enrichmentDataState.rowId}
+        columnId={enrichmentDataState.columnId}
+        tableId={tableId}
+        onExtractToColumn={handleExtractToColumn}
+      />
     </div>
   );
 }

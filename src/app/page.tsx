@@ -2,234 +2,352 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import {
-  Plus,
-  Folder,
+  Search,
+  FolderPlus,
   FileSpreadsheet,
-  Clock,
-  ArrowRight,
+  Folder,
+  MoreVertical,
+  Settings,
   Sparkles,
   Table,
+  Trash2,
 } from 'lucide-react';
-import { AnimatedBackground, GlassButton, GlassCard, ToastProvider } from '@/components/ui';
-import { Sidebar } from '@/components/sidebar/Sidebar';
+import { ToastProvider, useToast } from '@/components/ui';
+import { NewItemModal } from '@/components/modals/NewItemModal';
+import { APISettingsModal } from '@/components/settings/APISettingsModal';
 import { useProjectStore } from '@/stores/projectStore';
+import { cn } from '@/lib/utils';
 
-export default function HomePage() {
+// Dynamically import AnimatedBackground to avoid hydration issues
+const AnimatedBackground = dynamic(
+  () => import('@/components/ui/AnimatedBackground').then((mod) => mod.AnimatedBackground),
+  { ssr: false }
+);
+
+interface Project {
+  id: string;
+  name: string;
+  type: 'folder' | 'table';
+  updatedAt: string;
+  parentId?: string | null;
+}
+
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
+  return date.toLocaleDateString();
+}
+
+function ProjectRow({
+  project,
+  onClick,
+  onDelete,
+}: {
+  project: Project;
+  onClick: () => void;
+  onDelete: () => void;
+}) {
+  const [showMenu, setShowMenu] = useState(false);
+  const isFolder = project.type === 'folder';
+
+  return (
+    <div
+      onClick={onClick}
+      className="flex items-center justify-between px-6 py-4
+                 hover:bg-white/5 cursor-pointer transition-colors group"
+    >
+      <div className="flex items-center gap-4">
+        <div
+          className={cn(
+            'p-2 rounded-lg',
+            isFolder ? 'bg-amber-500/20' : 'bg-lavender/20'
+          )}
+        >
+          {isFolder ? (
+            <Folder className="w-5 h-5 text-amber-400" />
+          ) : (
+            <Table className="w-5 h-5 text-lavender" />
+          )}
+        </div>
+        <div>
+          <p className="text-white font-medium">{project.name}</p>
+          <p className="text-sm text-white/40">
+            Updated {formatRelativeTime(project.updatedAt)}
+          </p>
+        </div>
+      </div>
+
+      <div className="relative">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowMenu(!showMenu);
+          }}
+          className="p-2 rounded-lg opacity-0 group-hover:opacity-100
+                     hover:bg-white/10 transition-all"
+        >
+          <MoreVertical className="w-4 h-4 text-white/50" />
+        </button>
+
+        {showMenu && (
+          <>
+            <div
+              className="fixed inset-0 z-10"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenu(false);
+              }}
+            />
+            <div className="absolute right-0 top-full mt-1 z-20 bg-midnight-100 border border-white/10 rounded-lg shadow-xl overflow-hidden min-w-[120px]">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMenu(false);
+                  onDelete();
+                }}
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-white/5 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DashboardContent() {
   const router = useRouter();
-  const { projects, fetchProjects, isLoading } = useProjectStore();
-  const [isCreating, setIsCreating] = useState(false);
+  const toast = useToast();
+  const { projects, fetchProjects, deleteProject, isLoading } = useProjectStore();
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showNewModal, setShowNewModal] = useState<'folder' | 'table' | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
 
-  const handleCreateWorkbook = async () => {
-    setIsCreating(true);
-    try {
-      const response = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'New Workbook',
-          type: 'workbook',
-        }),
-      });
+  const filteredProjects = projects.filter((p) =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-      if (response.ok) {
-        const project = await response.json();
-        router.push(`/projects/${project.id}`);
+  const handleCreate = async (type: 'folder' | 'table', name: string) => {
+    try {
+      if (type === 'folder') {
+        // Create a folder (project)
+        const response = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, type: 'folder' }),
+        });
+
+        if (response.ok) {
+          await fetchProjects();
+          toast.success('Folder created');
+        }
+      } else {
+        // Create a table directly
+        // First create a project to hold the table (or use a default one)
+        const projectResponse = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, type: 'table' }),
+        });
+
+        if (projectResponse.ok) {
+          const project = await projectResponse.json();
+
+          // Create the table inside this project
+          const tableResponse = await fetch('/api/tables', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: project.id, name }),
+          });
+
+          if (tableResponse.ok) {
+            const table = await tableResponse.json();
+            await fetchProjects();
+            toast.success('Table created');
+            router.push(`/table/${table.id}`);
+          }
+        }
       }
     } catch (error) {
-      console.error('Failed to create workbook:', error);
-    } finally {
-      setIsCreating(false);
+      toast.error('Failed to create item');
     }
   };
 
-  // Get recent workbooks
-  const recentWorkbooks = projects
-    .filter((p) => p.type === 'workbook')
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 6);
+  const handleDelete = async (project: Project) => {
+    try {
+      const response = await fetch(`/api/projects/${project.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        deleteProject(project.id);
+        toast.success(`${project.name} deleted`);
+      }
+    } catch (error) {
+      toast.error('Failed to delete item');
+    }
+  };
+
+  const handleOpenProject = async (project: Project) => {
+    if (project.type === 'folder') {
+      router.push(`/projects/${project.id}`);
+    } else {
+      // For table type, fetch the table and navigate to it
+      try {
+        const response = await fetch(`/api/projects/${project.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.tables && data.tables.length > 0) {
+            router.push(`/table/${data.tables[0].id}`);
+          } else {
+            // If no table yet, go to project page to create one
+            router.push(`/projects/${project.id}`);
+          }
+        }
+      } catch {
+        router.push(`/projects/${project.id}`);
+      }
+    }
+  };
 
   return (
-    <ToastProvider>
-      <div className="flex h-screen overflow-hidden">
-        <AnimatedBackground />
-        <Sidebar />
+    <div className="min-h-screen relative">
+      <AnimatedBackground />
 
-        <main className="flex-1 overflow-y-auto p-8">
-          {/* Welcome Section */}
-          <div className="max-w-4xl mx-auto">
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-white mb-2">
-                Welcome to DataFlow
-              </h1>
-              <p className="text-white/60">
-                AI-powered spreadsheet for data enrichment and automation
+      {/* Header */}
+      <header className="relative z-10 border-b border-white/10 bg-midnight/50 backdrop-blur-sm">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-lavender/20 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-lavender" />
+            </div>
+            <h1 className="text-xl font-bold text-white">DataFlow</h1>
+          </div>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            title="Settings"
+          >
+            <Settings className="w-5 h-5 text-white/70" />
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content - Centered */}
+      <main className="relative z-10 max-w-4xl mx-auto px-6 py-12">
+        {/* Search Bar */}
+        <div className="relative mb-8">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search projects..."
+            className="w-full pl-12 pr-4 py-4 rounded-xl
+                       bg-white/5 border border-white/10
+                       text-white placeholder:text-white/40
+                       focus:border-lavender focus:outline-none focus:ring-2 focus:ring-lavender/20
+                       backdrop-blur-md"
+          />
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-4 mb-8">
+          <button
+            onClick={() => setShowNewModal('folder')}
+            className="flex items-center gap-3 px-5 py-3 rounded-xl
+                       bg-white/5 border border-white/10
+                       text-white hover:bg-white/10 hover:border-white/20
+                       transition-all duration-200 backdrop-blur-md"
+          >
+            <FolderPlus className="w-5 h-5 text-amber-400" />
+            <span>New Folder</span>
+          </button>
+
+          <button
+            onClick={() => setShowNewModal('table')}
+            className="flex items-center gap-3 px-5 py-3 rounded-xl
+                       bg-lavender/20 border border-lavender/30
+                       text-white hover:bg-lavender/30
+                       transition-all duration-200 backdrop-blur-md"
+          >
+            <FileSpreadsheet className="w-5 h-5 text-lavender" />
+            <span>New Table</span>
+          </button>
+        </div>
+
+        {/* Projects List */}
+        <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          {isLoading ? (
+            <div className="p-12 text-center">
+              <div className="animate-spin w-8 h-8 border-2 border-lavender border-t-transparent rounded-full mx-auto" />
+            </div>
+          ) : filteredProjects.length === 0 ? (
+            <div className="p-12 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
+                <Folder className="w-8 h-8 text-white/30" />
+              </div>
+              <p className="text-white/50">
+                {searchQuery ? 'No matching projects' : 'No projects yet'}
+              </p>
+              <p className="text-sm text-white/30 mt-1">
+                {searchQuery
+                  ? 'Try a different search term'
+                  : 'Create a folder or workbook to get started'}
               </p>
             </div>
-
-            {/* Quick Actions */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-              <GlassCard
-                variant="interactive"
-                className="flex flex-col items-center justify-center p-6 text-center"
-                onClick={handleCreateWorkbook}
-              >
-                <div className="w-12 h-12 rounded-xl bg-lavender/20 flex items-center justify-center mb-3">
-                  <Plus className="w-6 h-6 text-lavender" />
-                </div>
-                <h3 className="font-medium text-white mb-1">New Workbook</h3>
-                <p className="text-sm text-white/50">Start from scratch</p>
-              </GlassCard>
-
-              <GlassCard
-                variant="interactive"
-                className="flex flex-col items-center justify-center p-6 text-center"
-              >
-                <div className="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center mb-3">
-                  <FileSpreadsheet className="w-6 h-6 text-green-400" />
-                </div>
-                <h3 className="font-medium text-white mb-1">Import CSV</h3>
-                <p className="text-sm text-white/50">Upload your data</p>
-              </GlassCard>
-
-              <GlassCard
-                variant="interactive"
-                className="flex flex-col items-center justify-center p-6 text-center"
-              >
-                <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center mb-3">
-                  <Sparkles className="w-6 h-6 text-purple-400" />
-                </div>
-                <h3 className="font-medium text-white mb-1">AI Templates</h3>
-                <p className="text-sm text-white/50">Pre-built enrichments</p>
-              </GlassCard>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {filteredProjects.map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  onClick={() => handleOpenProject(project)}
+                  onDelete={() => handleDelete(project)}
+                />
+              ))}
             </div>
+          )}
+        </div>
+      </main>
 
-            {/* Recent Workbooks */}
-            <div className="mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-white/50" />
-                  Recent Workbooks
-                </h2>
-                {recentWorkbooks.length > 0 && (
-                  <GlassButton variant="ghost" size="sm">
-                    View all
-                    <ArrowRight className="w-4 h-4 ml-1" />
-                  </GlassButton>
-                )}
-              </div>
+      {/* Modals */}
+      <NewItemModal
+        type={showNewModal}
+        isOpen={!!showNewModal}
+        onClose={() => setShowNewModal(null)}
+        onCreate={handleCreate}
+      />
 
-              {isLoading ? (
-                <div className="flex items-center justify-center h-32">
-                  <div className="animate-spin w-6 h-6 border-2 border-lavender border-t-transparent rounded-full" />
-                </div>
-              ) : recentWorkbooks.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {recentWorkbooks.map((workbook) => (
-                    <GlassCard
-                      key={workbook.id}
-                      variant="interactive"
-                      className="p-4"
-                      onClick={() => router.push(`/projects/${workbook.id}`)}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-lavender/20 flex items-center justify-center">
-                          <Table className="w-5 h-5 text-lavender" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-medium text-white truncate">
-                            {workbook.name}
-                          </h3>
-                          <p className="text-sm text-white/50">
-                            {new Date(workbook.updatedAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                    </GlassCard>
-                  ))}
-                </div>
-              ) : (
-                <GlassCard className="p-8 text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mx-auto mb-4">
-                    <Folder className="w-8 h-8 text-white/20" />
-                  </div>
-                  <h3 className="text-lg font-medium text-white mb-1">
-                    No workbooks yet
-                  </h3>
-                  <p className="text-white/50 mb-4">
-                    Create your first workbook to get started
-                  </p>
-                  <GlassButton
-                    variant="primary"
-                    onClick={handleCreateWorkbook}
-                    loading={isCreating}
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Create Workbook
-                  </GlassButton>
-                </GlassCard>
-              )}
-            </div>
+      <APISettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
+    </div>
+  );
+}
 
-            {/* Features Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <GlassCard className="p-6">
-                <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-lavender" />
-                  AI Enrichment
-                </h3>
-                <p className="text-sm text-white/60 mb-4">
-                  Automatically enrich your data with AI-powered insights.
-                  Research companies, validate emails, and more.
-                </p>
-                <ul className="space-y-2 text-sm text-white/50">
-                  <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-lavender" />
-                    Google Gemini integration
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-lavender" />
-                    Custom prompts with variables
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-lavender" />
-                    Batch processing
-                  </li>
-                </ul>
-              </GlassCard>
-
-              <GlassCard className="p-6">
-                <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
-                  <FileSpreadsheet className="w-5 h-5 text-green-400" />
-                  Powerful Spreadsheet
-                </h3>
-                <p className="text-sm text-white/60 mb-4">
-                  A familiar spreadsheet interface with advanced features
-                  for managing your data at scale.
-                </p>
-                <ul className="space-y-2 text-sm text-white/50">
-                  <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                    Virtual scrolling for large datasets
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                    Advanced filtering & sorting
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                    CSV import/export
-                  </li>
-                </ul>
-              </GlassCard>
-            </div>
-          </div>
-        </main>
-      </div>
+export default function HomePage() {
+  return (
+    <ToastProvider>
+      <DashboardContent />
     </ToastProvider>
   );
 }

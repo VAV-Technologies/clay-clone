@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, max } from 'drizzle-orm';
+import { nanoid } from 'nanoid';
+
+function generateId() {
+  return nanoid(12);
+}
 
 // In-memory progress tracking (in production, use Redis or similar)
 const progressMap = new Map<string, { completed: number; total: number; status: string }>();
@@ -35,10 +40,50 @@ export async function POST(request: NextRequest) {
     }
 
     // Get columns for variable substitution
-    const columns = await db
+    let columns = await db
       .select()
       .from(schema.columns)
       .where(eq(schema.columns.tableId, tableId));
+
+    // Create output columns if they don't exist (from Data Guide)
+    const outputColumnIds: Record<string, string> = {};
+    const definedOutputColumns = config.outputColumns as string[] | null;
+
+    if (definedOutputColumns && definedOutputColumns.length > 0) {
+      const [maxOrderResult] = await db
+        .select({ maxOrder: max(schema.columns.order) })
+        .from(schema.columns)
+        .where(eq(schema.columns.tableId, tableId));
+
+      let currentOrder = (maxOrderResult?.maxOrder ?? 0) + 1;
+
+      for (const outputColName of definedOutputColumns) {
+        // Check if column already exists (case-insensitive)
+        const existingCol = columns.find(
+          c => c.name.toLowerCase() === outputColName.toLowerCase()
+        );
+
+        if (existingCol) {
+          outputColumnIds[outputColName.toLowerCase()] = existingCol.id;
+        } else {
+          // Create new column for this output
+          const newColId = generateId();
+          const newColumn = {
+            id: newColId,
+            tableId,
+            name: outputColName,
+            type: 'text' as const,
+            width: 150,
+            order: currentOrder++,
+            enrichmentConfigId: null,
+            formulaConfigId: null,
+          };
+          await db.insert(schema.columns).values(newColumn);
+          outputColumnIds[outputColName.toLowerCase()] = newColId;
+          columns.push({ ...newColumn, enrichmentConfigId: null, formulaConfigId: null });
+        }
+      }
+    }
 
     const columnMap = new Map(columns.map((col) => [col.id, col]));
 
@@ -67,12 +112,13 @@ export async function POST(request: NextRequest) {
     progressMap.set(jobId, { completed: 0, total: rows.length, status: 'running' });
 
     // Process enrichment asynchronously
-    processEnrichmentBatch(jobId, rows, config, targetColumnId, columnMap);
+    processEnrichmentBatch(jobId, rows, config, targetColumnId, columnMap, outputColumnIds);
 
     return NextResponse.json({
       jobId,
       message: 'Enrichment started',
       totalRows: rows.length,
+      outputColumns: Object.keys(outputColumnIds),
     });
   } catch (error) {
     console.error('Error starting enrichment:', error);
@@ -85,10 +131,13 @@ async function processEnrichmentBatch(
   rows: typeof schema.rows.$inferSelect[],
   config: typeof schema.enrichmentConfigs.$inferSelect,
   targetColumnId: string,
-  columnMap: Map<string, typeof schema.columns.$inferSelect>
+  columnMap: Map<string, typeof schema.columns.$inferSelect>,
+  outputColumnIds: Record<string, string> = {}
 ) {
   const batchSize = 5;
   const delayMs = 1000;
+  const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
+  const definedOutputColumns = (config.outputColumns as string[] | null) || [];
 
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize);
@@ -96,27 +145,56 @@ async function processEnrichmentBatch(
     await Promise.all(
       batch.map(async (row) => {
         try {
-          // Build prompt with variable substitution
-          const prompt = buildPrompt(config.prompt, row, columnMap);
+          // Build prompt with variable substitution and JSON format instructions
+          const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns);
 
-          // Call AI (mock for now, replace with actual Vertex AI call)
+          // Call AI
           const result = await callAI(prompt, config);
+
+          // Parse the result - try to extract JSON for structured data
+          const parsedResult = parseAIResponse(result);
 
           // Update row with result
           const updatedData = {
             ...row.data,
             [targetColumnId]: {
-              value: result,
+              value: parsedResult.displayValue,
               status: 'complete' as const,
+              enrichmentData: parsedResult.structuredData,
+              rawResponse: result,
             },
           };
+
+          // If we have output columns defined, populate them with extracted values
+          if (hasOutputColumns && parsedResult.structuredData) {
+            for (const [outputName, columnId] of Object.entries(outputColumnIds)) {
+              // Look for matching key in structured data (case-insensitive)
+              const matchingKey = Object.keys(parsedResult.structuredData).find(
+                key => key.toLowerCase() === outputName
+              );
+
+              if (matchingKey) {
+                const value = parsedResult.structuredData[matchingKey];
+                updatedData[columnId] = {
+                  value: value !== null && value !== undefined ? String(value) : null,
+                  status: 'complete' as const,
+                };
+              } else {
+                // No matching value found for this output column
+                updatedData[columnId] = {
+                  value: null,
+                  status: 'complete' as const,
+                };
+              }
+            }
+          }
 
           await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
         } catch (error) {
           console.error(`Error enriching row ${row.id}:`, error);
 
           // Mark as error
-          const updatedData = {
+          const updatedData: Record<string, unknown> = {
             ...row.data,
             [targetColumnId]: {
               value: null,
@@ -124,6 +202,17 @@ async function processEnrichmentBatch(
               error: (error as Error).message,
             },
           };
+
+          // Also mark output columns as error
+          if (hasOutputColumns) {
+            for (const columnId of Object.values(outputColumnIds)) {
+              updatedData[columnId] = {
+                value: null,
+                status: 'error' as const,
+                error: (error as Error).message,
+              };
+            }
+          }
 
           await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
         }
@@ -152,7 +241,8 @@ async function processEnrichmentBatch(
 function buildPrompt(
   template: string,
   row: typeof schema.rows.$inferSelect,
-  columnMap: Map<string, typeof schema.columns.$inferSelect>
+  columnMap: Map<string, typeof schema.columns.$inferSelect>,
+  outputColumns: string[] = []
 ): string {
   let prompt = template;
 
@@ -172,23 +262,120 @@ function buildPrompt(
     return match; // Keep original if column not found
   });
 
+  // If output columns are defined, append JSON format instructions
+  if (outputColumns.length > 0) {
+    const jsonTemplate = outputColumns.reduce((acc, col) => {
+      acc[col] = `<${col} value>`;
+      return acc;
+    }, {} as Record<string, string>);
+
+    prompt += `
+
+---
+IMPORTANT: You must respond with ONLY a valid JSON object using exactly these keys:
+${JSON.stringify(jsonTemplate, null, 2)}
+
+Replace each placeholder with the actual value. Do not include any other text, markdown, or explanation. Only output the JSON object.`;
+  }
+
   return prompt;
+}
+
+interface ParsedAIResponse {
+  displayValue: string;
+  structuredData: Record<string, string | number | null> | undefined;
+}
+
+function parseAIResponse(response: string): ParsedAIResponse {
+  // Try to extract JSON from the response
+  const cleanedResponse = response.trim();
+
+  // Try direct JSON parse first
+  try {
+    const parsed = JSON.parse(cleanedResponse);
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      // It's a valid JSON object - use as structured data
+      const dataCount = Object.keys(parsed).length;
+      return {
+        displayValue: dataCount === 1
+          ? String(Object.values(parsed)[0] ?? '')
+          : `${dataCount} datapoints`,
+        structuredData: parsed as Record<string, string | number | null>,
+      };
+    }
+  } catch {
+    // Not valid JSON, try to extract from markdown code blocks
+  }
+
+  // Try to find JSON in markdown code blocks
+  const jsonBlockMatch = cleanedResponse.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonBlockMatch) {
+    try {
+      const parsed = JSON.parse(jsonBlockMatch[1].trim());
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        const dataCount = Object.keys(parsed).length;
+        return {
+          displayValue: dataCount === 1
+            ? String(Object.values(parsed)[0] ?? '')
+            : `${dataCount} datapoints`,
+          structuredData: parsed as Record<string, string | number | null>,
+        };
+      }
+    } catch {
+      // Not valid JSON in code block
+    }
+  }
+
+  // Try to find inline JSON object
+  const inlineJsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+  if (inlineJsonMatch) {
+    try {
+      const parsed = JSON.parse(inlineJsonMatch[0]);
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        const dataCount = Object.keys(parsed).length;
+        return {
+          displayValue: dataCount === 1
+            ? String(Object.values(parsed)[0] ?? '')
+            : `${dataCount} datapoints`,
+          structuredData: parsed as Record<string, string | number | null>,
+        };
+      }
+    } catch {
+      // Not valid inline JSON
+    }
+  }
+
+  // No structured data found - wrap plain text as structured data with "result" key
+  // This ensures we always have structured data for extraction
+  return {
+    displayValue: cleanedResponse,
+    structuredData: { result: cleanedResponse },
+  };
 }
 
 async function callAI(
   prompt: string,
   config: typeof schema.enrichmentConfigs.$inferSelect
 ): Promise<string> {
-  // Check if Vertex AI is configured
   const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+  const apiKey = process.env.GEMINI_API_KEY;
 
-  if (!projectId) {
-    // Return mock response for development
-    return `[AI Response for: "${prompt.substring(0, 50)}..."]`;
+  // Prefer Vertex AI for better rate limits, fall back to Gemini API
+  if (projectId) {
+    return callVertexAI(prompt, config, projectId);
+  } else if (apiKey) {
+    return callGeminiAPI(prompt, config, apiKey);
+  } else {
+    throw new Error('No AI provider configured. Set GOOGLE_CLOUD_PROJECT for Vertex AI or GEMINI_API_KEY for Gemini API.');
   }
+}
 
+async function callVertexAI(
+  prompt: string,
+  config: typeof schema.enrichmentConfigs.$inferSelect,
+  projectId: string
+): Promise<string> {
   try {
-    // Dynamic import to avoid build errors when not configured
     const { VertexAI } = await import('@google-cloud/vertexai');
 
     const vertexAI = new VertexAI({
@@ -197,7 +384,7 @@ async function callAI(
     });
 
     const model = vertexAI.getGenerativeModel({
-      model: config.model,
+      model: config.model || 'gemini-1.5-flash',
       generationConfig: {
         temperature: config.temperature ?? 0.7,
         maxOutputTokens: config.maxTokens ?? 1000,
@@ -214,6 +401,52 @@ async function callAI(
     return '';
   } catch (error) {
     console.error('Vertex AI error:', error);
+    throw error;
+  }
+}
+
+async function callGeminiAPI(
+  prompt: string,
+  config: typeof schema.enrichmentConfigs.$inferSelect,
+  apiKey: string
+): Promise<string> {
+  try {
+    const modelId = config.model || 'gemini-1.5-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: config.temperature ?? 0.7,
+          maxOutputTokens: config.maxTokens ?? 1000,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Gemini API error:', errorData);
+      throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+      return data.candidates[0].content.parts[0].text;
+    }
+
+    return '';
+  } catch (error) {
+    console.error('Gemini API error:', error);
     throw error;
   }
 }

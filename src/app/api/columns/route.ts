@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { tableId, name, type = 'text', width = 150 } = body;
+    const { tableId, name, type = 'text', width = 150, enrichmentConfigId } = body;
 
     if (!tableId || !name) {
       return NextResponse.json({ error: 'tableId and name are required' }, { status: 400 });
@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
       type,
       width,
       order: maxOrder + 1,
+      enrichmentConfigId: enrichmentConfigId || null,
     };
 
     await db.insert(schema.columns).values(column);

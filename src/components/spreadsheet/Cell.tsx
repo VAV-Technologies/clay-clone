@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, RotateCcw, CheckCircle2, ChevronRight, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTableStore } from '@/stores/tableStore';
 import type { Row, Column, CellValue } from '@/lib/db/schema';
@@ -10,16 +10,88 @@ interface CellProps {
   row: Row;
   column: Column;
   isEditing: boolean;
+  tableId: string;
+  onShowEnrichmentData?: (rowId: string, columnId: string, data: Record<string, string | number | null>) => void;
 }
 
-export function Cell({ row, column, isEditing }: CellProps) {
+export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: CellProps) {
   const { updateCell, setEditingCell } = useTableStore();
   const [editValue, setEditValue] = useState('');
+  const [isRetrying, setIsRetrying] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const cellData = row.data[column.id] as CellValue | undefined;
   const displayValue = cellData?.value ?? '';
   const status = cellData?.status;
+  const enrichmentData = cellData?.enrichmentData;
+
+  // Check if this is an enrichment column with a config
+  const isEnrichmentColumn = column.type === 'enrichment' && column.enrichmentConfigId;
+  const hasStructuredData = isEnrichmentColumn && enrichmentData && Object.keys(enrichmentData).length > 0;
+  const dataPointCount = hasStructuredData ? Object.keys(enrichmentData!).length : 0;
+
+  const handleRetryCell = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isEnrichmentColumn || isRetrying) return;
+
+    setIsRetrying(true);
+
+    try {
+      // Mark as processing locally
+      updateCell(row.id, column.id, { value: null, status: 'processing' });
+
+      const response = await fetch('/api/enrichment/retry-cell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rowId: row.id,
+          columnId: column.id,
+          tableId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to retry enrichment');
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        updateCell(row.id, column.id, {
+          value: result.result,
+          status: 'complete',
+          enrichmentData: result.enrichmentData,
+        });
+      } else {
+        updateCell(row.id, column.id, { value: null, status: 'error', error: result.error });
+      }
+    } catch (error) {
+      updateCell(row.id, column.id, { value: null, status: 'error', error: (error as Error).message });
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  const handleCellClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    // If it's a completed enrichment column, show the data viewer
+    if (isEnrichmentColumn && status === 'complete') {
+      // Use enrichmentData if available, otherwise create a simple object with the display value
+      const dataToShow = hasStructuredData
+        ? enrichmentData!
+        : displayValue !== null && displayValue !== undefined
+          ? { result: displayValue }
+          : {};
+      onShowEnrichmentData?.(row.id, column.id, dataToShow);
+      return;
+    }
+
+    // Otherwise, enter edit mode for non-enrichment columns
+    if (!isEditing && !isEnrichmentColumn) {
+      setEditingCell({ rowId: row.id, columnId: column.id });
+    }
+  };
 
   useEffect(() => {
     if (isEditing) {
@@ -70,34 +142,76 @@ export function Cell({ row, column, isEditing }: CellProps) {
     } else if (e.key === 'Tab') {
       e.preventDefault();
       handleSave();
-      // TODO: Move to next cell
     }
   };
 
-  const renderContent = () => {
+  const renderEnrichmentContent = () => {
     if (status === 'processing') {
       return (
-        <div className="flex items-center gap-2 text-lavender">
-          <Loader2 className="w-3 h-3 animate-spin" />
-          <span className="text-xs">Processing...</span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-lavender/20 text-lavender">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span className="text-xs font-medium">Processing</span>
+          </div>
         </div>
       );
     }
 
     if (status === 'error') {
       return (
-        <div className="flex items-center gap-1 text-red-400">
-          <AlertCircle className="w-3 h-3" />
-          <span className="text-xs truncate">{cellData?.error || 'Error'}</span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">
+            <AlertCircle className="w-3 h-3" />
+            <span className="text-xs font-medium">Error</span>
+          </div>
         </div>
       );
     }
 
+    if (status === 'complete') {
+      if (hasStructuredData) {
+        return (
+          <div className="flex items-center gap-2 cursor-pointer group/badge">
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400
+                          group-hover/badge:bg-emerald-500/30 transition-colors">
+              <Database className="w-3 h-3" />
+              <span className="text-xs font-medium">
+                {dataPointCount} {dataPointCount === 1 ? 'datapoint' : 'datapoints'}
+              </span>
+              <ChevronRight className="w-3 h-3 opacity-60" />
+            </div>
+          </div>
+        );
+      }
+
+      // Single value result - just show Completed badge, no value in cell
+      return (
+        <div className="flex items-center gap-2 cursor-pointer group/badge">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400
+                        group-hover/badge:bg-emerald-500/30 transition-colors">
+            <CheckCircle2 className="w-3 h-3" />
+            <span className="text-xs font-medium">Completed</span>
+            <ChevronRight className="w-3 h-3 opacity-60" />
+          </div>
+        </div>
+      );
+    }
+
+    // Pending or no status
+    return <span className="text-white/20">-</span>;
+  };
+
+  const renderContent = () => {
+    // For enrichment columns, show status badges
+    if (isEnrichmentColumn) {
+      return renderEnrichmentContent();
+    }
+
+    // Regular content rendering for non-enrichment columns
     if (!displayValue && displayValue !== 0) {
       return <span className="text-white/20">-</span>;
     }
 
-    // Format based on type
     switch (column.type) {
       case 'email':
         return (
@@ -149,20 +263,18 @@ export function Cell({ row, column, isEditing }: CellProps) {
   return (
     <div
       className={cn(
-        'flex items-center px-3 border-r border-b border-white/[0.05]',
-        'transition-colors duration-100',
-        isEditing && 'bg-lavender/10 ring-1 ring-lavender/50'
+        'relative flex items-center px-3 border-r border-b border-white/[0.05]',
+        'transition-colors duration-100 group flex-shrink-0',
+        isEditing && 'bg-lavender/10 ring-1 ring-lavender/50',
+        isEnrichmentColumn && status === 'complete' && 'cursor-pointer hover:bg-white/[0.03]'
       )}
-      style={{ width: column.width || 150 }}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (!isEditing) {
-          setEditingCell({ rowId: row.id, columnId: column.id });
-        }
-      }}
+      style={{ width: column.width || 150, minWidth: column.width || 150 }}
+      onClick={handleCellClick}
       onDoubleClick={(e) => {
         e.stopPropagation();
-        setEditingCell({ rowId: row.id, columnId: column.id });
+        if (!isEnrichmentColumn) {
+          setEditingCell({ rowId: row.id, columnId: column.id });
+        }
       }}
     >
       {isEditing ? (
@@ -176,9 +288,31 @@ export function Cell({ row, column, isEditing }: CellProps) {
           className="w-full bg-transparent border-none outline-none text-sm text-white"
         />
       ) : (
-        <div className="w-full text-sm text-white/80 truncate">
-          {renderContent()}
-        </div>
+        <>
+          <div className={cn(
+            "flex-1 text-sm text-white/80 truncate",
+            isEnrichmentColumn && "pr-6"
+          )}>
+            {renderContent()}
+          </div>
+          {/* Retry button for enrichment columns */}
+          {isEnrichmentColumn && status !== 'processing' && !isRetrying && (
+            <button
+              onClick={handleRetryCell}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded bg-white/10 hover:bg-lavender/20
+                         opacity-0 group-hover:opacity-100 transition-opacity z-10"
+              title="Retry enrichment"
+            >
+              <RotateCcw className="w-3 h-3 text-white/60 hover:text-lavender" />
+            </button>
+          )}
+          {/* Show spinning icon while retrying */}
+          {isRetrying && (
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 p-1">
+              <Loader2 className="w-3 h-3 text-lavender animate-spin" />
+            </div>
+          )}
+        </>
       )}
     </div>
   );

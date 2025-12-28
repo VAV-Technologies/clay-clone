@@ -8,7 +8,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const tableId = searchParams.get('tableId');
-    const limit = parseInt(searchParams.get('limit') || '1000');
+    // Support up to 100k rows - no artificial limit
+    const limit = parseInt(searchParams.get('limit') || '100000');
     const offset = parseInt(searchParams.get('offset') || '0');
 
     if (!tableId) {

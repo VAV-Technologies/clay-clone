@@ -35,7 +35,7 @@ export function Dropdown({ trigger, items, align = 'left', className }: Dropdown
   }, []);
 
   return (
-    <div ref={dropdownRef} className={cn('relative inline-block', className)}>
+    <div ref={dropdownRef} className={cn('relative inline-block', className)} onClick={(e) => e.stopPropagation()}>
       <div onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
 
       {isOpen && (

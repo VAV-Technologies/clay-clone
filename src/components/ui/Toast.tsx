@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -34,6 +34,11 @@ export function useToast() {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -56,7 +61,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {typeof window !== 'undefined' &&
+      {mounted &&
         createPortal(
           <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
             {toasts.map((toast) => (

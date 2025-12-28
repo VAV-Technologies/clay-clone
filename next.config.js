@@ -6,6 +6,12 @@ const nextConfig = {
     });
     return config;
   },
+  // Allow large request bodies for server actions (50MB limit)
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '50mb',
+    },
+  },
 };
 
 module.exports = nextConfig;

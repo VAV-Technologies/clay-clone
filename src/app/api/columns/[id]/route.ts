@@ -10,7 +10,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, type, width, order } = body;
+    const { name, type, width, order, enrichmentConfigId } = body;
 
     const [existing] = await db
       .select()
@@ -26,6 +26,7 @@ export async function PATCH(
     if (type !== undefined) updates.type = type;
     if (width !== undefined) updates.width = width;
     if (order !== undefined) updates.order = order;
+    if (enrichmentConfigId !== undefined) updates.enrichmentConfigId = enrichmentConfigId;
 
     await db.update(schema.columns).set(updates).where(eq(schema.columns.id, id));
 

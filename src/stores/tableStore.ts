@@ -20,6 +20,8 @@ type FilterOperator =
   | 'less_than'
   | 'between';
 
+type FilterLogic = 'AND' | 'OR';
+
 interface TableState {
   currentTable: Table | null;
   columns: Column[];
@@ -27,11 +29,20 @@ interface TableState {
   selectedCells: Set<string>; // Format: "rowId:columnId"
   selectedRows: Set<string>;
   filters: Filter[];
+  filterLogic: FilterLogic;
+  showFilters: boolean;
   sortColumn: string | null;
   sortDirection: 'asc' | 'desc';
   isLoading: boolean;
   error: string | null;
   editingCell: { rowId: string; columnId: string } | null;
+
+  // Row display range (for limiting visible rows)
+  rowDisplayStart: number;
+  rowDisplayLimit: number | null; // null = show all
+
+  // Column visibility
+  hiddenColumns: Set<string>;
 
   // Actions
   setCurrentTable: (table: Table | null) => void;
@@ -52,14 +63,28 @@ interface TableState {
   addFilter: (filter: Filter) => void;
   removeFilter: (columnId: string) => void;
   clearFilters: () => void;
+  toggleFilterLogic: () => void;
+  setShowFilters: (show: boolean) => void;
   setSort: (columnId: string | null, direction?: 'asc' | 'desc') => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   fetchTable: (tableId: string) => Promise<void>;
 
+  // Row display range actions
+  setRowDisplayRange: (start: number, limit: number | null) => void;
+  resetRowDisplayRange: () => void;
+
+  // Column visibility actions
+  hideColumn: (columnId: string) => void;
+  showColumn: (columnId: string) => void;
+  toggleColumnVisibility: (columnId: string) => void;
+  showAllColumns: () => void;
+
   // Computed
   getFilteredRows: () => Row[];
   getSortedRows: () => Row[];
+  getDisplayedRows: () => Row[];
+  getVisibleColumns: () => Column[];
 }
 
 export const useTableStore = create<TableState>((set, get) => ({
@@ -69,11 +94,16 @@ export const useTableStore = create<TableState>((set, get) => ({
   selectedCells: new Set(),
   selectedRows: new Set(),
   filters: [],
+  filterLogic: 'AND' as FilterLogic,
+  showFilters: false,
   sortColumn: null,
   sortDirection: 'asc',
   isLoading: false,
   error: null,
   editingCell: null,
+  rowDisplayStart: 0,
+  rowDisplayLimit: null,
+  hiddenColumns: new Set(),
 
   setCurrentTable: (table) => set({ currentTable: table }),
 
@@ -176,7 +206,14 @@ export const useTableStore = create<TableState>((set, get) => ({
       filters: state.filters.filter((f) => f.columnId !== columnId),
     })),
 
-  clearFilters: () => set({ filters: [] }),
+  clearFilters: () => set({ filters: [], filterLogic: 'AND' as FilterLogic }),
+
+  toggleFilterLogic: () =>
+    set((state) => ({
+      filterLogic: state.filterLogic === 'AND' ? 'OR' : 'AND',
+    })),
+
+  setShowFilters: (show) => set({ showFilters: show }),
 
   setSort: (columnId, direction = 'asc') =>
     set((state) => ({
@@ -219,12 +256,16 @@ export const useTableStore = create<TableState>((set, get) => ({
   },
 
   getFilteredRows: () => {
-    const { rows, filters, columns } = get();
+    const { rows, filters, filterLogic, columns } = get();
     if (filters.length === 0) return rows;
 
-    return rows.filter((row) =>
-      filters.every((filter) => applyFilter(row, filter, columns))
-    );
+    return rows.filter((row) => {
+      if (filterLogic === 'AND') {
+        return filters.every((filter) => applyFilter(row, filter, columns));
+      } else {
+        return filters.some((filter) => applyFilter(row, filter, columns));
+      }
+    });
   },
 
   getSortedRows: () => {
@@ -252,6 +293,59 @@ export const useTableStore = create<TableState>((set, get) => ({
 
       return sortDirection === 'desc' ? -comparison : comparison;
     });
+  },
+
+  // Row display range actions
+  setRowDisplayRange: (start, limit) =>
+    set({ rowDisplayStart: start, rowDisplayLimit: limit }),
+
+  resetRowDisplayRange: () =>
+    set({ rowDisplayStart: 0, rowDisplayLimit: null }),
+
+  // Column visibility actions
+  hideColumn: (columnId) =>
+    set((state) => {
+      const newHidden = new Set(state.hiddenColumns);
+      newHidden.add(columnId);
+      return { hiddenColumns: newHidden };
+    }),
+
+  showColumn: (columnId) =>
+    set((state) => {
+      const newHidden = new Set(state.hiddenColumns);
+      newHidden.delete(columnId);
+      return { hiddenColumns: newHidden };
+    }),
+
+  toggleColumnVisibility: (columnId) =>
+    set((state) => {
+      const newHidden = new Set(state.hiddenColumns);
+      if (newHidden.has(columnId)) {
+        newHidden.delete(columnId);
+      } else {
+        newHidden.add(columnId);
+      }
+      return { hiddenColumns: newHidden };
+    }),
+
+  showAllColumns: () => set({ hiddenColumns: new Set() }),
+
+  // Computed: Get displayed rows (sorted + sliced by range)
+  getDisplayedRows: () => {
+    const { rowDisplayStart, rowDisplayLimit } = get();
+    const sortedRows = get().getSortedRows();
+
+    if (rowDisplayLimit === null) {
+      return sortedRows.slice(rowDisplayStart);
+    }
+
+    return sortedRows.slice(rowDisplayStart, rowDisplayStart + rowDisplayLimit);
+  },
+
+  // Computed: Get visible columns
+  getVisibleColumns: () => {
+    const { columns, hiddenColumns } = get();
+    return columns.filter((col) => !hiddenColumns.has(col.id));
   },
 }));
 

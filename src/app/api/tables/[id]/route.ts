@@ -32,7 +32,7 @@ export async function GET(
   }
 }
 
-// PATCH /api/tables/[id] - Update table
+// PATCH /api/tables/[id] - Update table (name, projectId)
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -40,7 +40,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name } = body;
+    const { name, projectId } = body;
 
     const [existing] = await db
       .select()
@@ -51,10 +51,17 @@ export async function PATCH(
       return NextResponse.json({ error: 'Table not found' }, { status: 404 });
     }
 
-    const updates = {
-      name: name ?? existing.name,
+    const updates: Record<string, unknown> = {
       updatedAt: new Date(),
     };
+
+    if (name !== undefined) {
+      updates.name = name;
+    }
+
+    if (projectId !== undefined) {
+      updates.projectId = projectId;
+    }
 
     await db.update(schema.tables).set(updates).where(eq(schema.tables.id, id));
 

@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       id: generateId(),
       name,
       parentId: parentId || null,
-      type: type as 'folder' | 'workbook',
+      type: type as 'folder' | 'workbook' | 'table',
       createdAt: now,
       updatedAt: now,
     };

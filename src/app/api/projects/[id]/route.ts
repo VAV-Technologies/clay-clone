@@ -18,14 +18,11 @@ export async function GET(
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    // Get tables if it's a workbook
-    let tables: typeof schema.tables.$inferSelect[] = [];
-    if (project.type === 'workbook') {
-      tables = await db
-        .select()
-        .from(schema.tables)
-        .where(eq(schema.tables.projectId, id));
-    }
+    // Get tables for this project
+    const tables = await db
+      .select()
+      .from(schema.tables)
+      .where(eq(schema.tables.projectId, id));
 
     return NextResponse.json({ ...project, tables });
   } catch (error) {
