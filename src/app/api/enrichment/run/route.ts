@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
-import { eq, inArray, max } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 
 function generateId() {
@@ -50,12 +50,8 @@ export async function POST(request: NextRequest) {
     const definedOutputColumns = config.outputColumns as string[] | null;
 
     if (definedOutputColumns && definedOutputColumns.length > 0) {
-      const [maxOrderResult] = await db
-        .select({ maxOrder: max(schema.columns.order) })
-        .from(schema.columns)
-        .where(eq(schema.columns.tableId, tableId));
-
-      let currentOrder = (maxOrderResult?.maxOrder ?? 0) + 1;
+      const maxOrder = columns.reduce((max, col) => Math.max(max, col.order), 0);
+      let currentOrder = maxOrder + 1;
 
       for (const outputColName of definedOutputColumns) {
         // Check if column already exists (case-insensitive)

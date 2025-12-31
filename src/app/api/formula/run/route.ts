@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
-import { eq, inArray, max } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { evaluateFormula } from '@/lib/formula/evaluator';
 import type { CellValue } from '@/lib/db/schema';
@@ -38,12 +38,8 @@ export async function POST(request: NextRequest) {
       .where(eq(schema.columns.tableId, tableId));
 
     // Get max order for new column placement
-    const [maxOrderResult] = await db
-      .select({ maxOrder: max(schema.columns.order) })
-      .from(schema.columns)
-      .where(eq(schema.columns.tableId, tableId));
-
-    const nextOrder = (maxOrderResult?.maxOrder ?? 0) + 1;
+    const maxOrder = columns.reduce((max, col) => Math.max(max, col.order), 0);
+    const nextOrder = maxOrder + 1;
 
     // Create or update formula config
     let formulaConfigId = configId;

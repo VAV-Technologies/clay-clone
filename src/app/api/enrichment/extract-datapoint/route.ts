@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
-import { eq, max } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 
 function generateId() {
@@ -38,12 +38,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the max order for new column placement
-    const [maxOrderResult] = await db
-      .select({ maxOrder: max(schema.columns.order) })
+    const existingColumns = await db
+      .select({ order: schema.columns.order })
       .from(schema.columns)
       .where(eq(schema.columns.tableId, tableId));
 
-    const newOrder = (maxOrderResult?.maxOrder ?? 0) + 1;
+    const maxOrder = existingColumns.reduce((max, col) => Math.max(max, col.order), 0);
+    const newOrder = maxOrder + 1;
 
     // Create the new column
     const newColumnId = generateId();
