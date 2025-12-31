@@ -68,18 +68,8 @@ export async function POST(request: NextRequest) {
 
     // Extract the datapoint value from each row's enrichment data and populate the new column
     for (const row of rows) {
-      // Handle case where data might be a string (JSON from SQLite) or empty/null
-      let rowData: Record<string, unknown> = {};
-      try {
-        if (typeof row.data === 'string' && row.data.trim()) {
-          rowData = JSON.parse(row.data);
-        } else if (typeof row.data === 'object' && row.data !== null) {
-          rowData = row.data as Record<string, unknown>;
-        }
-      } catch (e) {
-        console.error(`Failed to parse row data for row ${row.id}:`, e);
-        rowData = {};
-      }
+      // row.data is already parsed as an object by Drizzle
+      const rowData = (row.data || {}) as Record<string, unknown>;
       const enrichmentCellData = rowData[sourceColumnId] as Record<string, unknown> | undefined;
       let extractedValue: string | number | null = null;
 
