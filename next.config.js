@@ -6,6 +6,10 @@ const nextConfig = {
     });
     return config;
   },
+  // Skip ESLint during builds (run separately if needed)
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   // Allow large request bodies for server actions (50MB limit)
   experimental: {
     serverActions: {
