@@ -39,11 +39,11 @@ export async function POST(request: NextRequest) {
 
     // Get the max order for new column placement
     const existingColumns = await db
-      .select({ order: schema.columns.order })
+      .select()
       .from(schema.columns)
       .where(eq(schema.columns.tableId, tableId));
 
-    const maxOrder = existingColumns.reduce((max, col) => Math.max(max, col.order), 0);
+    const maxOrder = existingColumns.reduce((m, col) => Math.max(m, col.order), 0);
     const newOrder = maxOrder + 1;
 
     // Create the new column
