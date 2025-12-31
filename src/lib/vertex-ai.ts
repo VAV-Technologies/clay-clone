@@ -14,11 +14,25 @@ export function getVertexAI(): VertexAI {
     throw new Error('GOOGLE_CLOUD_PROJECT environment variable is required');
   }
 
-  // Check if we have service account JSON as env var (for Vercel)
+  // Check if we have service account as base64 (for Vercel - avoids special char issues)
+  const serviceAccountBase64 = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
+  // Or as raw JSON
   const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
-  if (serviceAccountJson) {
-    // Parse the JSON and use it for auth
+  if (serviceAccountBase64) {
+    // Decode base64 and parse JSON
+    const decoded = Buffer.from(serviceAccountBase64, 'base64').toString('utf-8');
+    const credentials = JSON.parse(decoded);
+
+    vertexAIClient = new VertexAI({
+      project: projectId,
+      location,
+      googleAuthOptions: {
+        credentials,
+      },
+    });
+  } else if (serviceAccountJson) {
+    // Parse the JSON directly
     const credentials = JSON.parse(serviceAccountJson);
 
     vertexAIClient = new VertexAI({
