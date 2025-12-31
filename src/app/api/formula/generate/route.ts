@@ -137,19 +137,11 @@ async function generateWithVertexAI(
   userPrompt: string,
   projectId: string
 ): Promise<string> {
-  const { VertexAI } = await import('@google-cloud/vertexai');
+  const { getGenerativeModel } = await import('@/lib/vertex-ai');
 
-  const vertexAI = new VertexAI({
-    project: projectId,
-    location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1',
-  });
-
-  const model = vertexAI.getGenerativeModel({
-    model: 'gemini-2.5-pro',
-    generationConfig: {
-      temperature: 0.2, // Low for deterministic output
-      maxOutputTokens: 512,
-    },
+  const model = getGenerativeModel('gemini-2.0-flash', {
+    temperature: 0.2,
+    maxOutputTokens: 512,
   });
 
   const fullPrompt = `${SYSTEM_PROMPT}\n\n---\n\n${userPrompt}`;

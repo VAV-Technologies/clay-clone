@@ -243,19 +243,11 @@ async function callVertexAI(
   config: typeof schema.enrichmentConfigs.$inferSelect,
   projectId: string
 ): Promise<string> {
-  const { VertexAI } = await import('@google-cloud/vertexai');
+  const { getGenerativeModel } = await import('@/lib/vertex-ai');
 
-  const vertexAI = new VertexAI({
-    project: projectId,
-    location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1',
-  });
-
-  const model = vertexAI.getGenerativeModel({
-    model: config.model || 'gemini-1.5-flash',
-    generationConfig: {
-      temperature: config.temperature ?? 0.7,
-      maxOutputTokens: config.maxTokens ?? 1000,
-    },
+  const model = getGenerativeModel(config.model || 'gemini-2.0-flash', {
+    temperature: config.temperature ?? 0.7,
+    maxOutputTokens: config.maxTokens ?? 1000,
   });
 
   const result = await model.generateContent(prompt);

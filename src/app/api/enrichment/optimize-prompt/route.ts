@@ -298,19 +298,11 @@ async function optimizeWithVertexAI(
   projectId: string,
   systemPrompt: string
 ): Promise<string> {
-  const { VertexAI } = await import('@google-cloud/vertexai');
+  const { getGenerativeModel } = await import('@/lib/vertex-ai');
 
-  const vertexAI = new VertexAI({
-    project: projectId,
-    location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1',
-  });
-
-  const model = vertexAI.getGenerativeModel({
-    model: 'gemini-2.5-pro',
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 4096,
-    },
+  const model = getGenerativeModel('gemini-2.0-flash', {
+    temperature: 0.7,
+    maxOutputTokens: 4096,
   });
 
   const fullPrompt = `${systemPrompt}\n\n---\n\nUser's prompt to optimize:\n${userPrompt}`;
