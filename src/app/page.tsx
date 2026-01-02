@@ -13,6 +13,8 @@ import {
   Sparkles,
   Table,
   Trash2,
+  Database,
+  HardDrive,
 } from 'lucide-react';
 import { ToastProvider, useToast } from '@/components/ui';
 import { NewItemModal } from '@/components/modals/NewItemModal';
@@ -127,6 +129,21 @@ function ProjectRow({
   );
 }
 
+interface StorageStats {
+  counts: {
+    projects: number;
+    tables: number;
+    columns: number;
+    rows: number;
+  };
+  storage: {
+    estimatedBytes: number;
+    estimatedMB: number;
+    maxGB: number;
+    usagePercent: number;
+  };
+}
+
 function DashboardContent() {
   const router = useRouter();
   const toast = useToast();
@@ -135,10 +152,32 @@ function DashboardContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewModal, setShowNewModal] = useState<'folder' | 'table' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
 
+  // Fetch projects on mount
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
+
+  // Fetch storage stats with polling
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await fetch('/api/stats');
+        if (response.ok) {
+          const data = await response.json();
+          setStorageStats(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch storage stats:', error);
+      }
+    };
+
+    fetchStats();
+    // Poll every 30 seconds for real-time updates
+    const interval = setInterval(fetchStats, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const filteredProjects = projects.filter((p) =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -253,7 +292,7 @@ function DashboardContent() {
       {/* Main Content - Centered */}
       <main className="relative z-10 max-w-4xl mx-auto px-6 py-12">
         {/* Search Bar */}
-        <div className="relative mb-8">
+        <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
           <input
             type="text"
@@ -267,6 +306,41 @@ function DashboardContent() {
                        backdrop-blur-md"
           />
         </div>
+
+        {/* Storage Counter */}
+        {storageStats && (
+          <div className="mb-8 flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+              <HardDrive className="w-4 h-4 text-lavender" />
+              <span className="text-white/70">
+                {storageStats.storage.estimatedMB < 1
+                  ? `${Math.round(storageStats.storage.estimatedBytes / 1024)} KB`
+                  : `${storageStats.storage.estimatedMB} MB`}
+              </span>
+              <span className="text-white/40">/ {storageStats.storage.maxGB} GB</span>
+              <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    storageStats.storage.usagePercent > 80 ? "bg-red-500" :
+                    storageStats.storage.usagePercent > 50 ? "bg-amber-500" : "bg-lavender"
+                  )}
+                  style={{ width: `${Math.min(storageStats.storage.usagePercent, 100)}%` }}
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+              <Database className="w-4 h-4 text-lavender" />
+              <span className="text-white/70">{storageStats.counts.rows.toLocaleString()}</span>
+              <span className="text-white/40">rows</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+              <Table className="w-4 h-4 text-lavender" />
+              <span className="text-white/70">{storageStats.counts.tables}</span>
+              <span className="text-white/40">tables</span>
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex items-center gap-4 mb-8">
