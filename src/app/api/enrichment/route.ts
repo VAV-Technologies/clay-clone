@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(config, { status: 201 });
   } catch (error) {
     console.error('Error creating enrichment config:', error);
-    return NextResponse.json({ error: 'Failed to create config' }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: `Failed to create config: ${errorMessage}` }, { status: 500 });
   }
 }

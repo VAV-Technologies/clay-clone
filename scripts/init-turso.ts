@@ -58,6 +58,7 @@ async function initDatabase() {
       model TEXT NOT NULL DEFAULT 'gemini-1.5-flash',
       prompt TEXT NOT NULL,
       input_columns TEXT NOT NULL,
+      output_columns TEXT,
       output_format TEXT NOT NULL DEFAULT 'text',
       temperature REAL DEFAULT 0.7,
       max_tokens INTEGER DEFAULT 1000,
