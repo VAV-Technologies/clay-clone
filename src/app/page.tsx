@@ -29,13 +29,13 @@ const AnimatedBackground = dynamic(
 interface Project {
   id: string;
   name: string;
-  type: 'folder' | 'table';
-  updatedAt: string;
+  type: 'folder' | 'table' | 'workbook';
+  updatedAt: string | Date;
   parentId?: string | null;
 }
 
-function formatRelativeTime(dateString: string): string {
-  const date = new Date(dateString);
+function formatRelativeTime(dateInput: string | Date): string {
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));

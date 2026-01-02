@@ -9,8 +9,16 @@ export async function GET() {
     const allProjects = await db.select().from(schema.projects);
     const allTables = await db.select().from(schema.tables);
 
+    type ProjectWithTree = typeof allProjects[0] & {
+      children: ProjectWithTree[];
+      tables: typeof allTables;
+    };
+
     // Build tree structure
-    const projectMap = new Map(allProjects.map((p) => [p.id, { ...p, children: [], tables: [] as typeof allTables }]));
+    const projectMap = new Map<string, ProjectWithTree>();
+    allProjects.forEach((p) => {
+      projectMap.set(p.id, { ...p, children: [], tables: [] });
+    });
 
     // Add tables to their projects
     allTables.forEach((table) => {
@@ -23,7 +31,7 @@ export async function GET() {
     });
 
     // Build tree
-    const rootProjects: typeof allProjects[0] & { children: unknown[]; tables: typeof allTables }[] = [];
+    const rootProjects: ProjectWithTree[] = [];
     projectMap.forEach((project) => {
       if (project.parentId) {
         const parent = projectMap.get(project.parentId);

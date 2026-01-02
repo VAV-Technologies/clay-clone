@@ -20,7 +20,7 @@ interface ProjectWithChildren {
   id: string;
   name: string;
   parentId: string | null;
-  type: 'folder' | 'workbook';
+  type: 'folder' | 'workbook' | 'table';
   createdAt: Date;
   updatedAt: Date;
   children?: ProjectWithChildren[];

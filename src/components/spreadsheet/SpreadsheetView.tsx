@@ -242,7 +242,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
             </GlassButton>
           )}
 
-          <GlassButton variant="secondary" size="sm" onClick={() => onFormula?.()}>
+          <GlassButton variant="default" size="sm" onClick={() => onFormula?.()}>
             <Code className="w-4 h-4 mr-1" />
             Formula
           </GlassButton>

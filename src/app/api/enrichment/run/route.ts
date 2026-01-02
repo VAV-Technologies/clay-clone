@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
+import type { CellValue } from '@/lib/db/schema';
 
 function generateId() {
   return nanoid(12);
@@ -151,8 +152,8 @@ async function processEnrichmentBatch(
           const parsedResult = parseAIResponse(result);
 
           // Update row with result
-          const updatedData = {
-            ...row.data,
+          const updatedData: Record<string, CellValue> = {
+            ...(row.data as Record<string, CellValue>),
             [targetColumnId]: {
               value: parsedResult.displayValue,
               status: 'complete' as const,
@@ -190,8 +191,8 @@ async function processEnrichmentBatch(
           console.error(`Error enriching row ${row.id}:`, error);
 
           // Mark as error
-          const updatedData: Record<string, unknown> = {
-            ...row.data,
+          const updatedData: Record<string, CellValue> = {
+            ...(row.data as Record<string, CellValue>),
             [targetColumnId]: {
               value: null,
               status: 'error' as const,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
+import type { CellValue } from '@/lib/db/schema';
 
 function generateId() {
   return nanoid(12);
@@ -69,8 +70,8 @@ export async function POST(request: NextRequest) {
     // Extract the datapoint value from each row's enrichment data and populate the new column
     for (const row of rows) {
       // row.data is already parsed as an object by Drizzle
-      const rowData = (row.data || {}) as Record<string, unknown>;
-      const enrichmentCellData = rowData[sourceColumnId] as Record<string, unknown> | undefined;
+      const rowData = (row.data || {}) as Record<string, CellValue>;
+      const enrichmentCellData = rowData[sourceColumnId] as unknown as Record<string, unknown> | undefined;
       let extractedValue: string | number | null = null;
 
       console.log(`Processing row ${row.id}:`, {
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
           value: extractedValue,
           status: extractedValue !== null ? 'complete' : undefined,
         },
-      };
+      } as Record<string, CellValue>;
 
       await db
         .update(schema.rows)

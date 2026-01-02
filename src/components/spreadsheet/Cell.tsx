@@ -249,8 +249,8 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
       case 'date':
         return (
           <span>
-            {displayValue instanceof Date
-              ? displayValue.toLocaleDateString()
+            {typeof displayValue === 'string' && !isNaN(Date.parse(displayValue))
+              ? new Date(displayValue).toLocaleDateString()
               : displayValue}
           </span>
         );

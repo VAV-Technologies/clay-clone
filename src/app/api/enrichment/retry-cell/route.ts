@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
+import type { CellValue } from '@/lib/db/schema';
 
 // POST /api/enrichment/retry-cell - Retry enrichment on a single cell
 export async function POST(request: NextRequest) {
@@ -77,8 +78,8 @@ export async function POST(request: NextRequest) {
     const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
 
     // Mark cell as processing
-    const updatedData: Record<string, unknown> = {
-      ...row.data,
+    const updatedData: Record<string, CellValue> = {
+      ...(row.data as Record<string, CellValue>),
       [columnId]: {
         value: null,
         status: 'processing' as const,
@@ -108,8 +109,8 @@ export async function POST(request: NextRequest) {
       const parsedResult = parseAIResponse(result);
 
       // Update with result
-      const finalData: Record<string, unknown> = {
-        ...row.data,
+      const finalData: Record<string, CellValue> = {
+        ...(row.data as Record<string, CellValue>),
         [columnId]: {
           value: parsedResult.displayValue,
           status: 'complete' as const,
@@ -149,8 +150,8 @@ export async function POST(request: NextRequest) {
       });
     } catch (error) {
       // Mark as error
-      const errorData: Record<string, unknown> = {
-        ...row.data,
+      const errorData: Record<string, CellValue> = {
+        ...(row.data as Record<string, CellValue>),
         [columnId]: {
           value: null,
           status: 'error' as const,

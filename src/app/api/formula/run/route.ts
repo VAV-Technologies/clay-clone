@@ -156,14 +156,14 @@ async function processFormulaBatch(
             });
 
             // Update row with computed value
-            const updatedData: Record<string, CellValue> = {
+            const updatedData = {
               ...row.data,
               [outputColumnId]: {
                 value: result.value,
                 status: result.error ? 'error' : 'complete',
                 error: result.error,
               },
-            };
+            } as Record<string, CellValue>;
 
             await db
               .update(schema.rows)
@@ -173,14 +173,14 @@ async function processFormulaBatch(
             console.error(`Error processing row ${row.id}:`, error);
 
             // Mark cell as error
-            const updatedData: Record<string, CellValue> = {
+            const updatedData = {
               ...row.data,
               [outputColumnId]: {
                 value: null,
                 status: 'error',
                 error: (error as Error).message,
               },
-            };
+            } as Record<string, CellValue>;
 
             await db
               .update(schema.rows)
