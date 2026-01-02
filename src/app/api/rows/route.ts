@@ -4,16 +4,30 @@ import { eq, inArray } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
 
 // GET /api/rows?tableId= - Get rows for a table
+// Optional: rowIds= to filter specific rows (comma-separated)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const tableId = searchParams.get('tableId');
+    const rowIdsParam = searchParams.get('rowIds');
     // Support up to 100k rows - no artificial limit
     const limit = parseInt(searchParams.get('limit') || '100000');
     const offset = parseInt(searchParams.get('offset') || '0');
 
     if (!tableId) {
       return NextResponse.json({ error: 'tableId is required' }, { status: 400 });
+    }
+
+    // If rowIds provided, filter to only those rows
+    if (rowIdsParam) {
+      const rowIds = rowIdsParam.split(',').filter(id => id.trim());
+      if (rowIds.length > 0) {
+        const rows = await db
+          .select()
+          .from(schema.rows)
+          .where(inArray(schema.rows.id, rowIds));
+        return NextResponse.json(rows);
+      }
     }
 
     const rows = await db

@@ -21,6 +21,7 @@ import {
 import { cn } from '@/lib/utils';
 import { GlassButton, GlassCard } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
+import type { Row } from '@/lib/db/schema';
 
 interface EnrichmentPanelProps {
   isOpen: boolean;
@@ -511,10 +512,18 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         if (!columnResponse.ok) throw new Error('Failed to create output column');
         const newColumn = await columnResponse.json();
         targetColumnId = newColumn.id;
+
+        // Add the new column to the store
+        addColumn(newColumn);
       }
 
       // Determine which rows to run on
-      const rowIds = selectedRows.size > 0 ? Array.from(selectedRows) : undefined;
+      const rowIdsToEnrich = selectedRows.size > 0 ? Array.from(selectedRows) : rows.map(r => r.id);
+
+      // Mark all target cells as 'processing' immediately in the UI
+      rowIdsToEnrich.forEach(rowId => {
+        updateCell(rowId, targetColumnId, { value: null, status: 'processing' });
+      });
 
       // Start enrichment
       const response = await fetch('/api/enrichment/run', {
@@ -524,7 +533,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           configId,
           tableId: currentTable.id,
           targetColumnId,
-          rowIds,
+          rowIds: selectedRows.size > 0 ? rowIdsToEnrich : undefined,
           onlyEmpty: runOnEmpty,
         }),
       });
@@ -532,22 +541,43 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       if (!response.ok) throw new Error('Failed to start enrichment');
 
       const result = await response.json();
-      setProgress({ completed: 0, total: result.totalRows });
 
-      // Poll for progress
+      // Close panel immediately - enrichment runs in background
+      setIsRunning(false);
+      onClose();
+
+      // Start background polling for updates
       const pollInterval = setInterval(async () => {
-        const statusRes = await fetch(`/api/enrichment/run?jobId=${result.jobId}`);
-        const status = await statusRes.json();
+        try {
+          const statusRes = await fetch(`/api/enrichment/run?jobId=${result.jobId}`);
+          const status = await statusRes.json();
 
-        setProgress({ completed: status.completed, total: status.total });
+          // Fetch only the rows being enriched to update their status
+          if (status.completed > 0) {
+            const rowsRes = await fetch(`/api/rows?tableId=${currentTable.id}&rowIds=${rowIdsToEnrich.join(',')}`);
+            if (rowsRes.ok) {
+              const updatedRows = await rowsRes.json();
+              // Update each row in the store
+              updatedRows.forEach((row: Row) => {
+                const cellData = row.data[targetColumnId];
+                if (cellData) {
+                  updateCell(row.id, targetColumnId, cellData);
+                }
+              });
+            }
+          }
 
-        if (status.status === 'complete') {
-          clearInterval(pollInterval);
-          // Reload table to get updated data
-          await fetchTable(currentTable.id);
-          setIsRunning(false);
+          if (status.status === 'complete') {
+            clearInterval(pollInterval);
+          }
+        } catch (pollError) {
+          console.error('Polling error:', pollError);
         }
-      }, 1000);
+      }, 2000); // Poll every 2 seconds
+
+      // Timeout after 10 minutes
+      setTimeout(() => clearInterval(pollInterval), 600000);
+
     } catch (err) {
       setError((err as Error).message);
       setIsRunning(false);
