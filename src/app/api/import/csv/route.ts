@@ -19,8 +19,18 @@ interface ColumnMappingEntry {
 
 // POST /api/import/csv - Import CSV data to an existing table
 export async function POST(request: NextRequest) {
+  let body;
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch (parseError) {
+    console.error('JSON parse error:', parseError);
+    return NextResponse.json(
+      { error: 'Request body too large or invalid JSON. Try importing fewer rows at a time.' },
+      { status: 413 }
+    );
+  }
+
+  try {
     const { tableId, data, columnMapping } = body;
 
     if (!tableId) {
@@ -144,8 +154,8 @@ export async function POST(request: NextRequest) {
         args: [row.id, row.tableId, JSON.stringify(row.data), row.createdAt.getTime()],
       }));
 
-      // Split into batches of 1000 statements to avoid hitting limits
-      const BATCH_SIZE = 1000;
+      // Split into batches of 500 statements to stay within Turso limits
+      const BATCH_SIZE = 500;
       for (let i = 0; i < statements.length; i += BATCH_SIZE) {
         const batch = statements.slice(i, i + BATCH_SIZE);
         await libsqlClient.batch(batch, 'write');
