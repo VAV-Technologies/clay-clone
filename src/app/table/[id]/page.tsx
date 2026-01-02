@@ -85,9 +85,9 @@ function TableContent() {
 
       {/* Content wrapper with padding - fixed height */}
       <div className="relative z-10 p-4 lg:p-6 h-full">
-        {/* Main card container - fixed height, not min-height */}
+        {/* Main card container - 90% screen width, responsive */}
         <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl
-                        max-w-[1800px] mx-auto
+                        w-[95%] lg:w-[90%] mx-auto
                         h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)]
                         flex flex-col">
 
