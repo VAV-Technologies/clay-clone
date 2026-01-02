@@ -17,6 +17,7 @@ interface ParsedData {
   headers: string[];
   rows: Record<string, string>[];
   preview: Record<string, string>[];
+  totalRows: number;
 }
 
 interface ExistingColumn {
@@ -76,41 +77,63 @@ export function CSVImportModal({
     setFile(selectedFile);
     setError(null);
 
+    // First, count total rows by parsing full file
+    let totalRowCount = 0;
+    let headers: string[] = [];
+
     Papa.parse<Record<string, string>>(selectedFile, {
       header: true,
-      preview: 100,
-      complete: (results) => {
-        if (results.errors.length > 0) {
-          setError(`Parse error: ${results.errors[0].message}`);
-          return;
+      step: (results, parser) => {
+        if (headers.length === 0 && results.meta.fields) {
+          headers = results.meta.fields;
         }
+        // Count non-empty rows
+        if (Object.values(results.data).some((v) => v && String(v).trim())) {
+          totalRowCount++;
+        }
+      },
+      complete: () => {
+        // Now parse again for preview (first 100 rows)
+        Papa.parse<Record<string, string>>(selectedFile, {
+          header: true,
+          preview: 100,
+          complete: (results) => {
+            if (results.errors.length > 0) {
+              setError(`Parse error: ${results.errors[0].message}`);
+              return;
+            }
 
-        const headers = results.meta.fields || [];
-        const rows = results.data.filter((row) =>
-          Object.values(row).some((v) => v && v.trim())
-        );
+            const previewRows = results.data.filter((row) =>
+              Object.values(row).some((v) => v && v.trim())
+            );
 
-        setParsedData({
-          headers,
-          rows,
-          preview: rows.slice(0, 10),
+            setParsedData({
+              headers,
+              rows: previewRows,
+              preview: previewRows.slice(0, 10),
+              totalRows: totalRowCount,
+            });
+
+            // Auto-match columns by name (case-insensitive)
+            const mapping: Record<string, MappingTarget> = {};
+            headers.forEach((header) => {
+              const matchingColumn = existingColumns.find(
+                (col) => col.name.toLowerCase() === header.toLowerCase()
+              );
+              if (matchingColumn) {
+                mapping[header] = { type: 'existing', columnId: matchingColumn.id };
+              } else {
+                mapping[header] = { type: 'new', name: header };
+              }
+            });
+            setColumnMapping(mapping);
+
+            setStep('mapping');
+          },
+          error: (err) => {
+            setError(`Failed to parse CSV: ${err.message}`);
+          },
         });
-
-        // Auto-match columns by name (case-insensitive)
-        const mapping: Record<string, MappingTarget> = {};
-        headers.forEach((header) => {
-          const matchingColumn = existingColumns.find(
-            (col) => col.name.toLowerCase() === header.toLowerCase()
-          );
-          if (matchingColumn) {
-            mapping[header] = { type: 'existing', columnId: matchingColumn.id };
-          } else {
-            mapping[header] = { type: 'new', name: header };
-          }
-        });
-        setColumnMapping(mapping);
-
-        setStep('mapping');
       },
       error: (err) => {
         setError(`Failed to parse CSV: ${err.message}`);
@@ -278,7 +301,7 @@ export function CSVImportModal({
             <div>
               <p className="text-sm font-medium text-white">{file?.name}</p>
               <p className="text-xs text-white/50">
-                {parsedData.rows.length} rows, {parsedData.headers.length} columns
+                {parsedData.totalRows.toLocaleString()} rows, {parsedData.headers.length} columns
               </p>
             </div>
           </div>
@@ -424,7 +447,7 @@ export function CSVImportModal({
               onClick={handleImport}
               disabled={getMappedCount() === 0}
             >
-              Import {parsedData.rows.length} rows
+              Import {parsedData.totalRows.toLocaleString()} rows
             </GlassButton>
           </div>
         </div>
