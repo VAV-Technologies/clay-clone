@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, schema } from '@/lib/db';
+import { db, schema, libsqlClient } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
+import type { InStatement } from '@libsql/client';
 
 // Allow large request bodies for CSV imports
 export const maxDuration = 60; // 60 seconds timeout
@@ -135,11 +136,27 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    // Insert rows in batches
-    const batchSize = 500;
-    for (let i = 0; i < rows.length; i += batchSize) {
-      const batch = rows.slice(i, i + batchSize);
-      await db.insert(schema.rows).values(batch);
+    // Insert rows using batch API for better performance
+    if (libsqlClient && rows.length > 0) {
+      // Use LibSQL batch API - sends all statements in a single HTTP request
+      const statements: InStatement[] = rows.map((row) => ({
+        sql: 'INSERT INTO rows (id, table_id, data, created_at) VALUES (?, ?, ?, ?)',
+        args: [row.id, row.tableId, JSON.stringify(row.data), row.createdAt.getTime()],
+      }));
+
+      // Split into batches of 1000 statements to avoid hitting limits
+      const BATCH_SIZE = 1000;
+      for (let i = 0; i < statements.length; i += BATCH_SIZE) {
+        const batch = statements.slice(i, i + BATCH_SIZE);
+        await libsqlClient.batch(batch, 'write');
+      }
+    } else {
+      // Fallback for local SQLite (non-Turso)
+      const batchSize = 500;
+      for (let i = 0; i < rows.length; i += batchSize) {
+        const batch = rows.slice(i, i + batchSize);
+        await db.insert(schema.rows).values(batch);
+      }
     }
 
     // Update table's updatedAt

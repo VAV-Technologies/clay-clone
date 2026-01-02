@@ -1,6 +1,6 @@
 import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
 import { drizzle as drizzleLibsql } from 'drizzle-orm/libsql';
-import { createClient } from '@libsql/client';
+import { createClient, Client } from '@libsql/client';
 import Database from 'better-sqlite3';
 import * as schema from './schema';
 
@@ -9,14 +9,15 @@ const TURSO_DATABASE_URL = process.env.TURSO_DATABASE_URL;
 const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
 
 let db: ReturnType<typeof drizzleSqlite> | ReturnType<typeof drizzleLibsql>;
+let libsqlClient: Client | null = null;
 
 if (TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
   // Production: Use Turso
-  const client = createClient({
+  libsqlClient = createClient({
     url: TURSO_DATABASE_URL,
     authToken: TURSO_AUTH_TOKEN,
   });
-  db = drizzleLibsql(client, { schema });
+  db = drizzleLibsql(libsqlClient, { schema });
   console.log('Connected to Turso database');
 } else {
   // Development: Use local SQLite
@@ -129,4 +130,4 @@ function runLocalMigrations(sqlite: Database.Database) {
   `);
 }
 
-export { db, schema };
+export { db, schema, libsqlClient };

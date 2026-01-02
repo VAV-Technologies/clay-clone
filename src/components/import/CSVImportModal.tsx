@@ -179,8 +179,8 @@ export function CSVImportModal({
             return filtered;
           });
 
-          // Chunk size for large imports
-          const CHUNK_SIZE = 5000;
+          // Chunk size for large imports - larger chunks = fewer API calls
+          const CHUNK_SIZE = 15000;
           const totalRows = filteredRows.length;
           setTotalRowsToImport(totalRows);
 
