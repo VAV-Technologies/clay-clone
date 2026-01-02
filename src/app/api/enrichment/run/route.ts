@@ -9,7 +9,16 @@ function generateId() {
 }
 
 // In-memory progress tracking (in production, use Redis or similar)
-const progressMap = new Map<string, { completed: number; total: number; status: string }>();
+interface JobProgress {
+  completed: number;
+  total: number;
+  status: string;
+  tableId: string;
+  targetColumnId: string;
+  completedRowIds: string[]; // Track which rows have completed
+  lastFetchedIndex: number; // Track what the client has already fetched
+}
+const progressMap = new Map<string, JobProgress>();
 
 // POST /api/enrichment/run - Run enrichment on rows
 export async function POST(request: NextRequest) {
@@ -106,7 +115,15 @@ export async function POST(request: NextRequest) {
 
     // Create a job ID for progress tracking
     const jobId = crypto.randomUUID();
-    progressMap.set(jobId, { completed: 0, total: rows.length, status: 'running' });
+    progressMap.set(jobId, {
+      completed: 0,
+      total: rows.length,
+      status: 'running',
+      tableId,
+      targetColumnId,
+      completedRowIds: [],
+      lastFetchedIndex: 0,
+    });
 
     // Process enrichment asynchronously
     processEnrichmentBatch(jobId, rows, config, targetColumnId, columnMap, outputColumnIds);
@@ -216,10 +233,16 @@ async function processEnrichmentBatch(
       })
     );
 
-    // Update progress
+    // Update progress and track completed row IDs
     const progress = progressMap.get(jobId);
     if (progress) {
       progress.completed = Math.min(i + batchSize, rows.length);
+      // Add batch row IDs to completed list
+      batch.forEach(row => {
+        if (!progress.completedRowIds.includes(row.id)) {
+          progress.completedRowIds.push(row.id);
+        }
+      });
     }
 
     // Delay between batches
@@ -233,6 +256,11 @@ async function processEnrichmentBatch(
   if (progress) {
     progress.status = 'complete';
   }
+
+  // Clean up old jobs after 10 minutes
+  setTimeout(() => {
+    progressMap.delete(jobId);
+  }, 600000);
 }
 
 function buildPrompt(
@@ -455,5 +483,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
   }
 
-  return NextResponse.json(progress);
+  // Return newly completed row IDs since last fetch (up to 100 at a time to avoid huge responses)
+  const newlyCompletedRowIds = progress.completedRowIds.slice(
+    progress.lastFetchedIndex,
+    progress.lastFetchedIndex + 100
+  );
+
+  // Update the last fetched index
+  progress.lastFetchedIndex += newlyCompletedRowIds.length;
+
+  return NextResponse.json({
+    completed: progress.completed,
+    total: progress.total,
+    status: progress.status,
+    tableId: progress.tableId,
+    targetColumnId: progress.targetColumnId,
+    newlyCompletedRowIds,
+  });
 }

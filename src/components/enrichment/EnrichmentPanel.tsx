@@ -550,11 +550,15 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       const pollInterval = setInterval(async () => {
         try {
           const statusRes = await fetch(`/api/enrichment/run?jobId=${result.jobId}`);
+          if (!statusRes.ok) {
+            clearInterval(pollInterval);
+            return;
+          }
           const status = await statusRes.json();
 
-          // Fetch only the rows being enriched to update their status
-          if (status.completed > 0) {
-            const rowsRes = await fetch(`/api/rows?tableId=${currentTable.id}&rowIds=${rowIdsToEnrich.join(',')}`);
+          // Fetch only newly completed rows (server tracks what we've already fetched)
+          if (status.newlyCompletedRowIds && status.newlyCompletedRowIds.length > 0) {
+            const rowsRes = await fetch(`/api/rows?tableId=${currentTable.id}&rowIds=${status.newlyCompletedRowIds.join(',')}`);
             if (rowsRes.ok) {
               const updatedRows = await rowsRes.json();
               // Update each row in the store
