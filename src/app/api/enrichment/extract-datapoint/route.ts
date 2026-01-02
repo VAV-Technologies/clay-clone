@@ -82,7 +82,8 @@ export async function POST(request: NextRequest) {
 
       // Try to get the value from enrichmentData
       if (enrichmentCellData?.enrichmentData && typeof enrichmentCellData.enrichmentData === 'object') {
-        const dataValue = enrichmentCellData.enrichmentData[dataKey];
+        const enrichmentData = enrichmentCellData.enrichmentData as Record<string, string | number | null>;
+        const dataValue = enrichmentData[dataKey];
         if (dataValue !== undefined) {
           extractedValue = dataValue;
         }
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest) {
 
       // Fallback for legacy data: if looking for "result" key and no enrichmentData, use the value directly
       if (extractedValue === null && dataKey === 'result' && enrichmentCellData?.value !== undefined) {
-        extractedValue = enrichmentCellData.value;
+        extractedValue = enrichmentCellData.value as string | number | null;
       }
 
       console.log(`Extracted value for row ${row.id}:`, extractedValue);
