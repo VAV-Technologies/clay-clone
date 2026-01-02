@@ -1,0 +1,8 @@
+node_modules
+.git
+*.db
+*.sqlite
+*.sqlite3
+dataflow.db
+.next
+.env.local
