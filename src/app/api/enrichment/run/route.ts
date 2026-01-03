@@ -353,23 +353,36 @@ function parseAIResponse(response: string): ParsedAIResponse {
     // Not valid JSON, try to extract from markdown code blocks
   }
 
-  // Try to find JSON in markdown code blocks (non-greedy)
-  const jsonBlockMatch = cleanedResponse.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonBlockMatch) {
-    try {
-      const parsed = JSON.parse(jsonBlockMatch[1].trim());
-      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        const structuredData = toStructuredData(parsed);
-        const dataCount = Object.keys(structuredData).length;
-        return {
-          displayValue: dataCount === 1
-            ? String(Object.values(structuredData)[0] ?? '')
-            : `${dataCount} datapoints`,
-          structuredData,
-        };
+  // Try to find JSON in markdown code blocks (case-insensitive, handles various formats)
+  const jsonBlockPatterns = [
+    /```json\s*([\s\S]*?)```/i,      // ```json ... ```
+    /```JSON\s*([\s\S]*?)```/,        // ```JSON ... ```
+    /```\s*([\s\S]*?)```/,            // ``` ... ``` (no language)
+    /~~~json\s*([\s\S]*?)~~~/i,       // ~~~json ... ~~~
+  ];
+
+  for (const pattern of jsonBlockPatterns) {
+    const jsonBlockMatch = cleanedResponse.match(pattern);
+    if (jsonBlockMatch) {
+      const content = jsonBlockMatch[1].trim();
+      // Only try to parse if it looks like JSON (starts with {)
+      if (content.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(content);
+          if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+            const structuredData = toStructuredData(parsed);
+            const dataCount = Object.keys(structuredData).length;
+            return {
+              displayValue: dataCount === 1
+                ? String(Object.values(structuredData)[0] ?? '')
+                : `${dataCount} datapoints`,
+              structuredData,
+            };
+          }
+        } catch {
+          // Not valid JSON in this code block, try next pattern
+        }
       }
-    } catch {
-      // Not valid JSON in code block
     }
   }
 
@@ -424,6 +437,50 @@ function parseAIResponse(response: string): ParsedAIResponse {
           break;
         }
       }
+    }
+  }
+
+  // Last resort: Try to repair truncated JSON (AI hit token limit)
+  const lastBraceIndex = cleanedResponse.lastIndexOf('}');
+  const firstBraceIndex = cleanedResponse.indexOf('{');
+  if (firstBraceIndex !== -1 && lastBraceIndex > firstBraceIndex) {
+    // There's at least one { and one } - try to extract partial JSON
+    let jsonCandidate = cleanedResponse.slice(firstBraceIndex, lastBraceIndex + 1);
+
+    // Count braces to see if we need to add closing ones
+    let openBraces = 0;
+    let inString = false;
+    let escapeNext = false;
+
+    for (const char of jsonCandidate) {
+      if (escapeNext) { escapeNext = false; continue; }
+      if (char === '\\' && inString) { escapeNext = true; continue; }
+      if (char === '"' && !escapeNext) { inString = !inString; continue; }
+      if (!inString) {
+        if (char === '{') openBraces++;
+        if (char === '}') openBraces--;
+      }
+    }
+
+    // Add missing closing braces if needed
+    if (openBraces > 0) {
+      jsonCandidate += '}'.repeat(openBraces);
+    }
+
+    try {
+      const parsed = JSON.parse(jsonCandidate);
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        const structuredData = toStructuredData(parsed);
+        const dataCount = Object.keys(structuredData).length;
+        return {
+          displayValue: dataCount === 1
+            ? String(Object.values(structuredData)[0] ?? '')
+            : `${dataCount} datapoints`,
+          structuredData,
+        };
+      }
+    } catch {
+      // Still can't parse - fall through to default
     }
   }
 
