@@ -315,35 +315,57 @@ function parseAIResponse(response: string): ParsedAIResponse {
   // Try to extract JSON from the response
   const cleanedResponse = response.trim();
 
+  // Helper to convert parsed JSON to structured data (handles arrays by stringifying)
+  const toStructuredData = (parsed: Record<string, unknown>): Record<string, string | number | null> => {
+    const result: Record<string, string | number | null> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value === null || value === undefined) {
+        result[key] = null;
+      } else if (typeof value === 'string' || typeof value === 'number') {
+        result[key] = value;
+      } else if (Array.isArray(value)) {
+        // Convert arrays to comma-separated string
+        result[key] = value.map(v => String(v ?? '')).join(', ');
+      } else if (typeof value === 'object') {
+        // Convert nested objects to JSON string
+        result[key] = JSON.stringify(value);
+      } else {
+        result[key] = String(value);
+      }
+    }
+    return result;
+  };
+
   // Try direct JSON parse first
   try {
     const parsed = JSON.parse(cleanedResponse);
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-      // It's a valid JSON object - use as structured data
-      const dataCount = Object.keys(parsed).length;
+      const structuredData = toStructuredData(parsed);
+      const dataCount = Object.keys(structuredData).length;
       return {
         displayValue: dataCount === 1
-          ? String(Object.values(parsed)[0] ?? '')
+          ? String(Object.values(structuredData)[0] ?? '')
           : `${dataCount} datapoints`,
-        structuredData: parsed as Record<string, string | number | null>,
+        structuredData,
       };
     }
   } catch {
     // Not valid JSON, try to extract from markdown code blocks
   }
 
-  // Try to find JSON in markdown code blocks
+  // Try to find JSON in markdown code blocks (non-greedy)
   const jsonBlockMatch = cleanedResponse.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (jsonBlockMatch) {
     try {
       const parsed = JSON.parse(jsonBlockMatch[1].trim());
       if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        const dataCount = Object.keys(parsed).length;
+        const structuredData = toStructuredData(parsed);
+        const dataCount = Object.keys(structuredData).length;
         return {
           displayValue: dataCount === 1
-            ? String(Object.values(parsed)[0] ?? '')
+            ? String(Object.values(structuredData)[0] ?? '')
             : `${dataCount} datapoints`,
-          structuredData: parsed as Record<string, string | number | null>,
+          structuredData,
         };
       }
     } catch {
@@ -351,27 +373,61 @@ function parseAIResponse(response: string): ParsedAIResponse {
     }
   }
 
-  // Try to find inline JSON object
-  const inlineJsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
-  if (inlineJsonMatch) {
-    try {
-      const parsed = JSON.parse(inlineJsonMatch[0]);
-      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        const dataCount = Object.keys(parsed).length;
-        return {
-          displayValue: dataCount === 1
-            ? String(Object.values(parsed)[0] ?? '')
-            : `${dataCount} datapoints`,
-          structuredData: parsed as Record<string, string | number | null>,
-        };
+  // Try to find inline JSON object - use balanced brace matching instead of greedy regex
+  const jsonStartIndex = cleanedResponse.indexOf('{');
+  if (jsonStartIndex !== -1) {
+    // Try to find balanced JSON by progressively extending
+    let braceCount = 0;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = jsonStartIndex; i < cleanedResponse.length; i++) {
+      const char = cleanedResponse[i];
+
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
       }
-    } catch {
-      // Not valid inline JSON
+
+      if (char === '\\' && inString) {
+        escapeNext = true;
+        continue;
+      }
+
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') braceCount++;
+        if (char === '}') braceCount--;
+
+        if (braceCount === 0) {
+          // Found complete JSON object
+          const jsonStr = cleanedResponse.slice(jsonStartIndex, i + 1);
+          try {
+            const parsed = JSON.parse(jsonStr);
+            if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+              const structuredData = toStructuredData(parsed);
+              const dataCount = Object.keys(structuredData).length;
+              return {
+                displayValue: dataCount === 1
+                  ? String(Object.values(structuredData)[0] ?? '')
+                  : `${dataCount} datapoints`,
+                structuredData,
+              };
+            }
+          } catch {
+            // Not valid JSON, continue searching
+          }
+          break;
+        }
+      }
     }
   }
 
   // No structured data found - wrap plain text as structured data with "result" key
-  // This ensures we always have structured data for extraction
   return {
     displayValue: cleanedResponse,
     structuredData: { result: cleanedResponse },

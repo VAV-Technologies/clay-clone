@@ -124,10 +124,10 @@ When recommending outputs, follow these rules ruthlessly:
 ### RULE 1: MINIMUM VIABLE OUTPUTS
 Only include fields the user explicitly needs or that are essential for the task. Ask: "Would removing this field break the use case?" If no, remove it.
 
-### RULE 2: ATOMIC FIELD NAMES
-Use short, lowercase, underscore-separated names:
-- ✅ \`city_1\`, \`city_2\`, \`reason\`
-- ❌ \`first_recommended_city\`, \`second_recommended_city\`, \`detailed_reasoning_and_evidence\`
+### RULE 2: READABLE FIELD NAMES
+Use clear, human-readable names that describe the content:
+- ✅ \`Qualification\`, \`Reason\`, \`Company Name\`, \`Decision\`
+- ❌ \`field_1\`, \`output_a\`, \`result_value_for_qualification_status\`
 
 ### RULE 3: DECISION TASKS REQUIRE REASONING (COMBINED)
 When the AI makes a judgment/decision/selection, add ONE reasoning field that covers all choices together—not separate reasoning per item.
@@ -209,10 +209,10 @@ Generate prompts using this EXACT structure:
 (18 fields = BLOAT)
 
 **CORRECT Data Guide (Minimal)**:
-- resto_1: Name of top restaurant
-- resto_2: Name of second restaurant
-- resto_3: Name of third restaurant
-- reason: Why these 3, with evidence. 2-3 sentences max.
+- Restaurant 1: Name of top restaurant
+- Restaurant 2: Name of second restaurant
+- Restaurant 3: Name of third restaurant
+- Reason: Why these 3, with evidence. 2-3 sentences max.
 (4 fields = EFFICIENT)
 
 ## YOUR RESPONSE FORMAT
@@ -226,8 +226,8 @@ You MUST respond with EXACTLY this format, using the markers shown:
 ---DATA_GUIDE_START---
 | Field | Description |
 |-------|-------------|
-| field_name | Brief description of what this field contains |
-| another_field | Another description |
+| Field Name | Brief description of what this field contains |
+| Another Field | Another description |
 ---DATA_GUIDE_END---
 
 ## FINAL CHECK BEFORE RESPONDING
