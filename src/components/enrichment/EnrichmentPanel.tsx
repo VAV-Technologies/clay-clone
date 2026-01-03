@@ -77,9 +77,17 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
   // State for save operation
   const [isSaving, setIsSaving] = useState(false);
 
+  // Loading state for config - prevents running before config is loaded
+  const [isConfigLoading, setIsConfigLoading] = useState(false);
+  const [isConfigLoaded, setIsConfigLoaded] = useState(false);
+
   // Load existing enrichment config when editing
   useEffect(() => {
     if (isEditMode && editColumnId && isOpen) {
+      // Set loading state to prevent running before config loads
+      setIsConfigLoading(true);
+      setIsConfigLoaded(false);
+
       // First find the column to get its enrichmentConfigId
       const column = columns.find(c => c.id === editColumnId);
 
@@ -96,8 +104,15 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             setMaxCostPerRow(config.maxCostPerRow ?? 0.01);
             setExistingConfigId(config.id);
             setOutputColumns(config.outputColumns || []);
+            setIsConfigLoaded(true);
           })
-          .catch(err => console.error('Failed to load enrichment config:', err));
+          .catch(err => {
+            console.error('Failed to load enrichment config:', err);
+            setIsConfigLoaded(true); // Still mark as loaded to allow editing
+          })
+          .finally(() => {
+            setIsConfigLoading(false);
+          });
 
         // Set the column name for display
         setOutputColumnName(column.name);
@@ -136,11 +151,22 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             } else {
               console.log('No matching config found for column:', column.name);
             }
+            setIsConfigLoaded(true);
           })
-          .catch(err => console.error('Failed to search for enrichment config:', err));
+          .catch(err => {
+            console.error('Failed to search for enrichment config:', err);
+            setIsConfigLoaded(true);
+          })
+          .finally(() => {
+            setIsConfigLoading(false);
+          });
 
         // Set the column name for display
         setOutputColumnName(column.name);
+      } else {
+        // No config to load
+        setIsConfigLoading(false);
+        setIsConfigLoaded(true);
       }
     }
   }, [isEditMode, editColumnId, isOpen, columns]);
@@ -151,6 +177,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       setTestResults([]);
       setError(null);
       setProgress({ completed: 0, total: 0 });
+      setIsConfigLoading(false);
+      setIsConfigLoaded(false);
     }
     if (isOpen && !editColumnId) {
       // Reset to defaults for new enrichment
@@ -164,8 +192,13 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       setExistingConfigId(null);
       setOutputColumns([]);
       setNewOutputColumn('');
+      setIsConfigLoading(false);
+      setIsConfigLoaded(true); // New enrichments don't need config loading
     }
   }, [isOpen, editColumnId]);
+
+  // Computed: Can run enrichment (not loading config in edit mode)
+  const canRunEnrichment = !isConfigLoading && (!isEditMode || isConfigLoaded);
 
   // Extract variables from prompt
   const extractVariables = (text: string): string[] => {
@@ -917,13 +950,20 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
 
       {/* Footer */}
       <div className="p-4 border-t border-white/10 space-y-3">
+        {/* Loading indicator when config is loading */}
+        {isConfigLoading && (
+          <div className="flex items-center justify-center gap-2 py-2 text-white/60 text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading configuration...
+          </div>
+        )}
         {/* Test/Retry buttons row */}
         <div className="flex gap-2">
           <GlassButton
             variant="ghost"
             className="flex-1"
             onClick={() => handleTest(1)}
-            disabled={!prompt || (!isEditMode && !outputColumnName.trim()) || isTesting || isRunning}
+            disabled={!prompt || (!isEditMode && !outputColumnName.trim()) || isTesting || isRunning || !canRunEnrichment}
             loading={isTesting && testingRows === 1}
           >
             <TestTube className="w-4 h-4 mr-1" />
@@ -933,7 +973,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             variant="ghost"
             className="flex-1"
             onClick={() => handleTest(10)}
-            disabled={!prompt || (!isEditMode && !outputColumnName.trim()) || isTesting || isRunning || rows.length === 0}
+            disabled={!prompt || (!isEditMode && !outputColumnName.trim()) || isTesting || isRunning || rows.length === 0 || !canRunEnrichment}
             loading={isTesting && testingRows === 10}
           >
             <TestTube className="w-4 h-4 mr-1" />
@@ -946,7 +986,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             variant="ghost"
             className="w-full"
             onClick={handleSave}
-            disabled={!prompt || isTesting || isRunning || isSaving}
+            disabled={!prompt || isTesting || isRunning || isSaving || !canRunEnrichment}
             loading={isSaving}
           >
             <Save className="w-4 h-4 mr-1" />
@@ -958,7 +998,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           variant="primary"
           className="w-full"
           onClick={handleRun}
-          disabled={!prompt || (!isEditMode && !outputColumnName.trim()) || isTesting || isRunning}
+          disabled={!prompt || (!isEditMode && !outputColumnName.trim()) || isTesting || isRunning || !canRunEnrichment}
           loading={isRunning}
         >
           <Play className="w-4 h-4 mr-1" />

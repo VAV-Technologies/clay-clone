@@ -23,6 +23,19 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 // Default pricing for unknown models
 const DEFAULT_PRICING = { input: 0.15, output: 0.60 };
 
+// Model-specific rate limits (to respect Vertex AI quotas)
+const MODEL_RATE_LIMITS: Record<string, { batchSize: number; delayMs: number }> = {
+  'gemini-2.5-flash': { batchSize: 10, delayMs: 500 },
+  'gemini-2.5-flash-lite': { batchSize: 10, delayMs: 500 },
+  'gemini-2.5-pro': { batchSize: 2, delayMs: 2000 },
+  'gemini-2.0-flash': { batchSize: 10, delayMs: 500 },
+  'gemini-2.0-flash-001': { batchSize: 10, delayMs: 500 },
+  'gemini-2.0-flash-lite-001': { batchSize: 10, delayMs: 500 },
+  'gemini-1.5-flash': { batchSize: 10, delayMs: 500 },
+  'gemini-1.5-pro': { batchSize: 5, delayMs: 1000 },
+};
+const DEFAULT_RATE_LIMIT = { batchSize: 5, delayMs: 1000 };
+
 // In-memory progress tracking (in production, use Redis or similar)
 interface JobProgress {
   completed: number;
@@ -35,6 +48,7 @@ interface JobProgress {
   totalCost: number; // Accumulated cost in dollars
   costLimitExceeded: boolean; // Whether cost limit was hit
   skippedDueToCost: number; // Number of rows skipped due to cost limit
+  cancelled: boolean; // Whether job was cancelled by user
 }
 const progressMap = new Map<string, JobProgress>();
 
@@ -151,6 +165,7 @@ export async function POST(request: NextRequest) {
       totalCost: 0,
       costLimitExceeded: false,
       skippedDueToCost: 0,
+      cancelled: false,
     });
 
     // Process enrichment asynchronously
@@ -176,8 +191,10 @@ async function processEnrichmentBatch(
   columnMap: Map<string, typeof schema.columns.$inferSelect>,
   outputColumnIds: Record<string, string> = {}
 ) {
-  const batchSize = 5;
-  const delayMs = 1000;
+  // Get model-specific rate limits
+  const rateLimit = MODEL_RATE_LIMITS[config.model || 'gemini-2.0-flash'] || DEFAULT_RATE_LIMIT;
+  const batchSize = rateLimit.batchSize;
+  const delayMs = rateLimit.delayMs;
   const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
   const definedOutputColumns = (config.outputColumns as string[] | null) || [];
 
@@ -190,6 +207,31 @@ async function processEnrichmentBatch(
 
   for (let i = 0; i < rows.length; i += batchSize) {
     const progress = progressMap.get(jobId);
+
+    // Check if job was cancelled
+    if (progress?.cancelled) {
+      // Mark remaining rows as cancelled
+      const remainingRows = rows.slice(i);
+      for (const row of remainingRows) {
+        const updatedData: Record<string, CellValue> = {
+          ...(row.data as Record<string, CellValue>),
+          [targetColumnId]: {
+            value: null,
+            status: 'error' as const,
+            error: 'Cancelled by user',
+          },
+        };
+        if (hasOutputColumns) {
+          for (const columnId of Object.values(outputColumnIds)) {
+            updatedData[columnId] = { value: null, status: 'error' as const, error: 'Cancelled by user' };
+          }
+        }
+        await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+      }
+      progress.status = 'cancelled';
+      progress.completed = rows.length;
+      break;
+    }
 
     // Check if we've exceeded cost limit before starting new batch
     if (costLimitEnabled && maxCostPerRow !== null && progress) {
@@ -736,5 +778,31 @@ export async function GET(request: NextRequest) {
     totalCost: progress.totalCost,
     costLimitExceeded: progress.costLimitExceeded,
     skippedDueToCost: progress.skippedDueToCost,
+    cancelled: progress.cancelled,
+  });
+}
+
+// DELETE /api/enrichment/run?jobId=xxx - Cancel a running enrichment job
+export async function DELETE(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const jobId = searchParams.get('jobId');
+
+  if (!jobId) {
+    return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
+  }
+
+  const progress = progressMap.get(jobId);
+
+  if (!progress) {
+    return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+  }
+
+  // Mark job as cancelled - the processing loop will handle cleanup
+  progress.cancelled = true;
+
+  return NextResponse.json({
+    success: true,
+    message: 'Cancellation requested. Remaining rows will be marked as cancelled.',
+    jobId,
   });
 }
