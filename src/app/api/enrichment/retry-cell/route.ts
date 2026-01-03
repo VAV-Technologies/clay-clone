@@ -248,7 +248,7 @@ async function callVertexAI(
 
   const model = getGenerativeModel(config.model || 'gemini-2.0-flash', {
     temperature: config.temperature ?? 0.7,
-    maxOutputTokens: config.maxTokens ?? 1000,
+    maxOutputTokens: 8192, // No token limit for retries
   });
 
   const result = await model.generateContent(prompt);
@@ -282,7 +282,7 @@ async function callGeminiAPI(
       ],
       generationConfig: {
         temperature: config.temperature ?? 0.7,
-        maxOutputTokens: config.maxTokens ?? 1000,
+        maxOutputTokens: 8192, // No token limit for retries
       },
     }),
   });

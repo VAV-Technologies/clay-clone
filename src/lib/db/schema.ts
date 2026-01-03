@@ -87,7 +87,10 @@ export const enrichmentConfigs = sqliteTable('enrichment_configs', {
   outputColumns: text('output_columns', { mode: 'json' }).$type<string[]>(),
   outputFormat: text('output_format', { enum: ['text', 'json'] }).notNull().default('text'),
   temperature: real('temperature').default(0.7),
-  maxTokens: integer('max_tokens').default(1000),
+  maxTokens: integer('max_tokens').default(1000), // Deprecated, kept for compatibility
+  // Cost limit settings
+  costLimitEnabled: integer('cost_limit_enabled', { mode: 'boolean' }).default(false),
+  maxCostPerRow: real('max_cost_per_row'), // In dollars, null = unlimited
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 

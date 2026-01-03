@@ -8,6 +8,21 @@ function generateId() {
   return nanoid(12);
 }
 
+// Gemini model pricing (per 1M tokens)
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  'gemini-1.5-flash': { input: 0.075, output: 0.30 },
+  'gemini-1.5-pro': { input: 1.25, output: 5.00 },
+  'gemini-2.0-flash': { input: 0.10, output: 0.40 },
+  'gemini-2.0-flash-001': { input: 0.10, output: 0.40 },
+  'gemini-2.0-flash-lite-001': { input: 0.075, output: 0.30 },
+  'gemini-2.5-flash': { input: 0.15, output: 0.60 },
+  'gemini-2.5-flash-lite': { input: 0.075, output: 0.30 },
+  'gemini-2.5-pro': { input: 1.25, output: 10.00 },
+};
+
+// Default pricing for unknown models
+const DEFAULT_PRICING = { input: 0.15, output: 0.60 };
+
 // In-memory progress tracking (in production, use Redis or similar)
 interface JobProgress {
   completed: number;
@@ -17,8 +32,18 @@ interface JobProgress {
   targetColumnId: string;
   completedRowIds: string[]; // Track which rows have completed
   lastFetchedIndex: number; // Track what the client has already fetched
+  totalCost: number; // Accumulated cost in dollars
+  costLimitExceeded: boolean; // Whether cost limit was hit
+  skippedDueToCost: number; // Number of rows skipped due to cost limit
 }
 const progressMap = new Map<string, JobProgress>();
+
+// Result from AI call including token usage
+interface AIResult {
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+}
 
 // POST /api/enrichment/run - Run enrichment on rows
 export async function POST(request: NextRequest) {
@@ -123,6 +148,9 @@ export async function POST(request: NextRequest) {
       targetColumnId,
       completedRowIds: [],
       lastFetchedIndex: 0,
+      totalCost: 0,
+      costLimitExceeded: false,
+      skippedDueToCost: 0,
     });
 
     // Process enrichment asynchronously
@@ -153,20 +181,95 @@ async function processEnrichmentBatch(
   const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
   const definedOutputColumns = (config.outputColumns as string[] | null) || [];
 
+  // Cost tracking
+  const costLimitEnabled = config.costLimitEnabled ?? false;
+  const maxCostPerRow = config.maxCostPerRow ?? null;
+  const pricing = MODEL_PRICING[config.model || 'gemini-2.0-flash'] || DEFAULT_PRICING;
+  let totalCost = 0;
+  let rowsProcessed = 0;
+
   for (let i = 0; i < rows.length; i += batchSize) {
+    const progress = progressMap.get(jobId);
+
+    // Check if we've exceeded cost limit before starting new batch
+    if (costLimitEnabled && maxCostPerRow !== null && progress) {
+      const maxTotalCost = maxCostPerRow * rows.length;
+      if (totalCost >= maxTotalCost) {
+        // Mark remaining rows as skipped
+        const remainingRows = rows.slice(i);
+        for (const row of remainingRows) {
+          const updatedData: Record<string, CellValue> = {
+            ...(row.data as Record<string, CellValue>),
+            [targetColumnId]: {
+              value: null,
+              status: 'error' as const,
+              error: 'Cost limit exceeded',
+            },
+          };
+          if (hasOutputColumns) {
+            for (const columnId of Object.values(outputColumnIds)) {
+              updatedData[columnId] = { value: null, status: 'error' as const, error: 'Cost limit exceeded' };
+            }
+          }
+          await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+        }
+        progress.costLimitExceeded = true;
+        progress.skippedDueToCost = remainingRows.length;
+        progress.completed = rows.length;
+        progress.status = 'complete';
+        break;
+      }
+    }
+
     const batch = rows.slice(i, i + batchSize);
 
     await Promise.all(
       batch.map(async (row) => {
+        const progress = progressMap.get(jobId);
+
+        // Check cost limit before each row
+        if (costLimitEnabled && maxCostPerRow !== null && progress) {
+          const maxTotalCost = maxCostPerRow * rows.length;
+          if (totalCost >= maxTotalCost) {
+            // Skip this row
+            const updatedData: Record<string, CellValue> = {
+              ...(row.data as Record<string, CellValue>),
+              [targetColumnId]: {
+                value: null,
+                status: 'error' as const,
+                error: 'Cost limit exceeded',
+              },
+            };
+            if (hasOutputColumns) {
+              for (const columnId of Object.values(outputColumnIds)) {
+                updatedData[columnId] = { value: null, status: 'error' as const, error: 'Cost limit exceeded' };
+              }
+            }
+            await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+            progress.skippedDueToCost++;
+            return;
+          }
+        }
+
         try {
           // Build prompt with variable substitution and JSON format instructions
           const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns);
 
-          // Call AI
-          const result = await callAI(prompt, config);
+          // Call AI and get token usage
+          const aiResult = await callAI(prompt, config);
+
+          // Calculate cost for this row
+          const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
+          totalCost += rowCost;
+          rowsProcessed++;
+
+          // Update progress with cost
+          if (progress) {
+            progress.totalCost = totalCost;
+          }
 
           // Parse the result - try to extract JSON for structured data
-          const parsedResult = parseAIResponse(result);
+          const parsedResult = parseAIResponse(aiResult.text);
 
           // Update row with result
           const updatedData: Record<string, CellValue> = {
@@ -175,7 +278,7 @@ async function processEnrichmentBatch(
               value: parsedResult.displayValue,
               status: 'complete' as const,
               enrichmentData: parsedResult.structuredData,
-              rawResponse: result,
+              rawResponse: aiResult.text,
             },
           };
 
@@ -234,7 +337,6 @@ async function processEnrichmentBatch(
     );
 
     // Update progress and track completed row IDs
-    const progress = progressMap.get(jobId);
     if (progress) {
       progress.completed = Math.min(i + batchSize, rows.length);
       // Add batch row IDs to completed list
@@ -255,6 +357,7 @@ async function processEnrichmentBatch(
   const progress = progressMap.get(jobId);
   if (progress) {
     progress.status = 'complete';
+    progress.totalCost = totalCost;
   }
 
   // Clean up old jobs after 10 minutes
@@ -494,7 +597,7 @@ function parseAIResponse(response: string): ParsedAIResponse {
 async function callAI(
   prompt: string,
   config: typeof schema.enrichmentConfigs.$inferSelect
-): Promise<string> {
+): Promise<AIResult> {
   const projectId = process.env.GOOGLE_CLOUD_PROJECT;
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -512,23 +615,32 @@ async function callVertexAI(
   prompt: string,
   config: typeof schema.enrichmentConfigs.$inferSelect,
   projectId: string
-): Promise<string> {
+): Promise<AIResult> {
   try {
     const { getGenerativeModel } = await import('@/lib/vertex-ai');
 
     const model = getGenerativeModel(config.model || 'gemini-2.0-flash', {
       temperature: config.temperature ?? 0.7,
-      maxOutputTokens: config.maxTokens ?? 1000,
+      maxOutputTokens: 8192, // Use max tokens, cost limit handles budget
     });
 
     const result = await model.generateContent(prompt);
     const response = result.response;
 
+    // Extract token usage from response
+    const usageMetadata = response.usageMetadata;
+    const inputTokens = usageMetadata?.promptTokenCount ?? 0;
+    const outputTokens = usageMetadata?.candidatesTokenCount ?? 0;
+
     if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
-      return response.candidates[0].content.parts[0].text;
+      return {
+        text: response.candidates[0].content.parts[0].text,
+        inputTokens,
+        outputTokens,
+      };
     }
 
-    return '';
+    return { text: '', inputTokens, outputTokens };
   } catch (error) {
     console.error('Vertex AI error:', error);
     throw error;
@@ -539,7 +651,7 @@ async function callGeminiAPI(
   prompt: string,
   config: typeof schema.enrichmentConfigs.$inferSelect,
   apiKey: string
-): Promise<string> {
+): Promise<AIResult> {
   try {
     const modelId = config.model || 'gemini-1.5-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
@@ -557,7 +669,7 @@ async function callGeminiAPI(
         ],
         generationConfig: {
           temperature: config.temperature ?? 0.7,
-          maxOutputTokens: config.maxTokens ?? 1000,
+          maxOutputTokens: 8192, // Use max tokens, cost limit handles budget
         },
       }),
     });
@@ -570,11 +682,20 @@ async function callGeminiAPI(
 
     const data = await response.json();
 
+    // Extract token usage from response
+    const usageMetadata = data.usageMetadata;
+    const inputTokens = usageMetadata?.promptTokenCount ?? 0;
+    const outputTokens = usageMetadata?.candidatesTokenCount ?? 0;
+
     if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-      return data.candidates[0].content.parts[0].text;
+      return {
+        text: data.candidates[0].content.parts[0].text,
+        inputTokens,
+        outputTokens,
+      };
     }
 
-    return '';
+    return { text: '', inputTokens, outputTokens };
   } catch (error) {
     console.error('Gemini API error:', error);
     throw error;
@@ -612,5 +733,8 @@ export async function GET(request: NextRequest) {
     tableId: progress.tableId,
     targetColumnId: progress.targetColumnId,
     newlyCompletedRowIds,
+    totalCost: progress.totalCost,
+    costLimitExceeded: progress.costLimitExceeded,
+    skippedDueToCost: progress.skippedDueToCost,
   });
 }

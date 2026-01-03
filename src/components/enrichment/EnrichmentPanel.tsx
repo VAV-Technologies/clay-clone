@@ -45,7 +45,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
   const [prompt, setPrompt] = useState('');
   const [outputColumnName, setOutputColumnName] = useState('AI Output');
   const [temperature, setTemperature] = useState(0.7);
-  const [maxTokens, setMaxTokens] = useState(1000);
+  const [costLimitEnabled, setCostLimitEnabled] = useState(false);
+  const [maxCostPerRow, setMaxCostPerRow] = useState(0.01); // $0.01 default
   const [runOnEmpty, setRunOnEmpty] = useState(false);
 
   const [isRunning, setIsRunning] = useState(false);
@@ -91,7 +92,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             setModel(config.model || 'gemini-2.5-flash');
             setPrompt(config.prompt || '');
             setTemperature(config.temperature ?? 0.7);
-            setMaxTokens(config.maxTokens ?? 1000);
+            setCostLimitEnabled(config.costLimitEnabled ?? false);
+            setMaxCostPerRow(config.maxCostPerRow ?? 0.01);
             setExistingConfigId(config.id);
             setOutputColumns(config.outputColumns || []);
           })
@@ -115,7 +117,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
               setModel(matchingConfig.model || 'gemini-2.5-flash');
               setPrompt(matchingConfig.prompt || '');
               setTemperature(matchingConfig.temperature ?? 0.7);
-              setMaxTokens(matchingConfig.maxTokens ?? 1000);
+              setCostLimitEnabled(matchingConfig.costLimitEnabled ?? false);
+              setMaxCostPerRow(matchingConfig.maxCostPerRow ?? 0.01);
               setExistingConfigId(matchingConfig.id);
               setOutputColumns(matchingConfig.outputColumns || []);
 
@@ -155,7 +158,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       setPrompt('');
       setOutputColumnName('AI Output');
       setTemperature(0.7);
-      setMaxTokens(1000);
+      setCostLimitEnabled(false);
+      setMaxCostPerRow(0.01);
       setRunOnEmpty(false);
       setExistingConfigId(null);
       setOutputColumns([]);
@@ -314,7 +318,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           model,
           prompt,
           temperature,
-          maxTokens,
+          costLimitEnabled,
+          maxCostPerRow: costLimitEnabled ? maxCostPerRow : null,
           outputColumns,
         }),
       });
@@ -336,7 +341,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         outputColumns,
         outputFormat: 'text',
         temperature,
-        maxTokens,
+        costLimitEnabled,
+        maxCostPerRow: costLimitEnabled ? maxCostPerRow : null,
       }),
     });
 
@@ -360,7 +366,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           model,
           prompt,
           temperature,
-          maxTokens,
+          costLimitEnabled,
+          maxCostPerRow: costLimitEnabled ? maxCostPerRow : null,
           outputColumns,
         }),
       });
@@ -812,15 +819,41 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
               />
             </div>
 
-            {/* Max Tokens */}
-            <div className="space-y-2">
-              <label className="text-sm text-white/70">Max Tokens</label>
-              <input
-                type="number"
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(parseInt(e.target.value) || 1000)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-lavender"
-              />
+            {/* Cost Limit */}
+            <div className="space-y-3">
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-sm text-white/70">Cost Limit</span>
+                <button
+                  onClick={() => setCostLimitEnabled(!costLimitEnabled)}
+                  className={cn(
+                    'relative w-11 h-6 rounded-full transition-colors',
+                    costLimitEnabled ? 'bg-lavender' : 'bg-white/20'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+                      costLimitEnabled ? 'translate-x-6' : 'translate-x-1'
+                    )}
+                  />
+                </button>
+              </label>
+              {costLimitEnabled && (
+                <div className="space-y-2 pl-2 border-l-2 border-lavender/30">
+                  <label className="text-xs text-white/50">Max Cost Per Row ($)</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0.001"
+                    value={maxCostPerRow}
+                    onChange={(e) => setMaxCostPerRow(parseFloat(e.target.value) || 0.01)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-lavender"
+                  />
+                  <p className="text-xs text-white/40">
+                    Enrichment stops when cumulative cost exceeds limit
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Run on empty only */}

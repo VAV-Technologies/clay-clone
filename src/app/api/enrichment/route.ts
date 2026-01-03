@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
       outputColumns,
       outputFormat = 'text',
       temperature = 0.7,
-      maxTokens = 1000,
+      costLimitEnabled = false,
+      maxCostPerRow = null,
     } = body;
 
     if (!name || !prompt || !inputColumns) {
@@ -45,7 +46,8 @@ export async function POST(request: NextRequest) {
       outputColumns: outputColumns || [],
       outputFormat,
       temperature,
-      maxTokens,
+      costLimitEnabled,
+      maxCostPerRow,
       createdAt: new Date(),
     };
 

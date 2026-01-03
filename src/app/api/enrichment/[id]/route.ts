@@ -34,14 +34,15 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { model, prompt, temperature, maxTokens, inputColumns, outputColumns, outputFormat } = body;
+    const { model, prompt, temperature, costLimitEnabled, maxCostPerRow, inputColumns, outputColumns, outputFormat } = body;
 
     // Build update object with only provided fields
     const updateData: Record<string, unknown> = {};
     if (model !== undefined) updateData.model = model;
     if (prompt !== undefined) updateData.prompt = prompt;
     if (temperature !== undefined) updateData.temperature = temperature;
-    if (maxTokens !== undefined) updateData.maxTokens = maxTokens;
+    if (costLimitEnabled !== undefined) updateData.costLimitEnabled = costLimitEnabled;
+    if (maxCostPerRow !== undefined) updateData.maxCostPerRow = maxCostPerRow;
     if (inputColumns !== undefined) updateData.inputColumns = inputColumns;
     if (outputColumns !== undefined) updateData.outputColumns = outputColumns;
     if (outputFormat !== undefined) updateData.outputFormat = outputFormat;

@@ -38,7 +38,8 @@
       "Bash(Get-Content \"C:\\\\Users\\\\Vilca\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Vilca-Desktop-Clay-Clone\\\\tasks\\\\b5a31be.output\" -Tail 20)",
       "Bash(npx vercel:*)",
       "Bash(TURSO_DATABASE_URL=\"libsql://dataflow-vav-technologies.aws-ap-northeast-1.turso.io\" TURSO_AUTH_TOKEN=\"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjY4OTUzNjUsImlkIjoiNDg5ZjQ5YWQtMDJmMC00NjQ1LWFkMjktMGEyM2MxNTM3MTljIiwicmlkIjoiODVjYzNkMmEtNDM5Yi00YWVlLThiOTUtZWY0OWQ4MGYwNjFkIn0.4bD18MAWazjADXVqZzMVlgpTtsK-gauOJxm15bZhkhCV9c2kSrPVZ49RiSFhXT07Ehvej2LA7xyUyTV_QmWZDQ\" node -e \"\nconst { createClient } = require\\(''@libsql/client''\\);\nconst client = createClient\\({\n  url: process.env.TURSO_DATABASE_URL,\n  authToken: process.env.TURSO_AUTH_TOKEN,\n}\\);\nclient.execute\\(''ALTER TABLE enrichment_configs ADD COLUMN output_columns TEXT''\\)\n  .then\\(\\(\\) => console.log\\(''Column added successfully''\\)\\)\n  .catch\\(e => console.log\\(''Column may already exist:'', e.message\\)\\);\n\")",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(TURSO_DATABASE_URL=\"libsql://dataflow-vav-technologies.aws-ap-northeast-1.turso.io\" TURSO_AUTH_TOKEN=\"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjY4OTUzNjUsImlkIjoiNDg5ZjQ5YWQtMDJmMC00NjQ1LWFkMjktMGEyM2MxNTM3MTljIiwicmlkIjoiODVjYzNkMmEtNDM5Yi00YWVlLThiOTUtZWY0OWQ4MGYwNjFkIn0.4bD18MAWazjADXVqZzMVlgpTtsK-gauOJxm15bZhkhCV9c2kSrPVZ49RiSFhXT07Ehvej2LA7xyUyTV_QmWZDQ\" node:*)"
     ],
     "deny": [],
     "ask": []
