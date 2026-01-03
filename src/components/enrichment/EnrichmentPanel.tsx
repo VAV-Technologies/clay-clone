@@ -826,14 +826,14 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                 <button
                   onClick={() => setCostLimitEnabled(!costLimitEnabled)}
                   className={cn(
-                    'relative w-11 h-6 rounded-full transition-colors',
+                    'relative w-10 h-5 rounded-full transition-colors',
                     costLimitEnabled ? 'bg-lavender' : 'bg-white/20'
                   )}
                 >
                   <span
                     className={cn(
-                      'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                      costLimitEnabled ? 'translate-x-6' : 'translate-x-1'
+                      'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-200',
+                      costLimitEnabled ? 'left-5' : 'left-0.5'
                     )}
                   />
                 </button>
