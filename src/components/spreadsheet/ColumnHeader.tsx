@@ -151,12 +151,12 @@ export function ColumnHeader({ column, onEnrichmentClick, onFormulaClick }: Colu
   const isEnrichmentColumn = column.type === 'enrichment' && column.enrichmentConfigId;
 
   const menuItems = [
-    // Add Re-run Enrichment option at the top for enrichment columns
+    // Add Edit Enrichment option at the top for enrichment columns
     ...(isEnrichmentColumn
       ? [
           {
-            label: 'Re-run Enrichment',
-            icon: <RotateCcw className="w-4 h-4" />,
+            label: 'Edit Enrichment',
+            icon: <Sparkles className="w-4 h-4" />,
             onClick: () => onEnrichmentClick?.(column.id),
           },
           { divider: true, label: '', onClick: () => {} },
@@ -258,21 +258,37 @@ export function ColumnHeader({ column, onEnrichmentClick, onFormulaClick }: Colu
           className="flex-1 min-w-0 bg-white/10 border border-lavender/50 rounded px-1 text-sm outline-none"
         />
       ) : isEnrichmentColumn ? (
-        // For enrichment columns, click directly opens the sidebar
-        <span
-          className="flex-1 min-w-0 truncate cursor-pointer text-left hover:text-white transition-colors"
-          onClick={() => onEnrichmentClick?.(column.id)}
-        >
-          {column.name}
-        </span>
+        // For enrichment columns: left-click shows menu, right-click opens enrichment panel
+        <Dropdown
+          trigger={
+            <span
+              className="flex-1 min-w-0 truncate cursor-pointer text-left hover:text-white transition-colors"
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onEnrichmentClick?.(column.id);
+              }}
+            >
+              {column.name}
+            </span>
+          }
+          items={menuItems}
+        />
       ) : isFormulaColumn ? (
-        // For formula columns, click directly opens the formula panel
-        <span
-          className="flex-1 min-w-0 truncate cursor-pointer text-left hover:text-white transition-colors"
-          onClick={() => onFormulaClick?.(column.id)}
-        >
-          {column.name}
-        </span>
+        // For formula columns: left-click shows menu, right-click opens formula panel
+        <Dropdown
+          trigger={
+            <span
+              className="flex-1 min-w-0 truncate cursor-pointer text-left hover:text-white transition-colors"
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onFormulaClick?.(column.id);
+              }}
+            >
+              {column.name}
+            </span>
+          }
+          items={menuItems}
+        />
       ) : (
         <Dropdown trigger={<span className="flex-1 min-w-0 truncate cursor-pointer text-left">{column.name}</span>} items={menuItems} />
       )}
