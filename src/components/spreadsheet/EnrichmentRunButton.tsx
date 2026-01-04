@@ -13,7 +13,8 @@ interface EnrichmentRunButtonProps {
 
 type RunMode = 'all' | 'incomplete' | 'force' | 'custom';
 
-const BATCH_SIZE = 10; // Process 10 rows in parallel per batch
+const BATCH_SIZE = 25; // Process 25 rows in parallel per batch
+const BATCH_DELAY_MS = 200; // Delay between batches to avoid rate limits
 
 export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProps) {
   const { rows, updateCell, addColumn, fetchTable } = useTableStore();
@@ -75,29 +76,26 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     cancelledRef.current = false;
     setProgress({ completed: 0, total: rowsToProcess.length });
 
-    // Mark all target cells as 'processing'
-    for (const row of rowsToProcess) {
-      updateCell(row.id, column.id, { value: null, status: 'processing' });
-    }
-
     try {
       // Process in batches
       for (let i = 0; i < rowsToProcess.length; i += BATCH_SIZE) {
         // Check for cancellation
         if (cancelledRef.current) {
-          // Mark remaining as cancelled
-          for (let j = i; j < rowsToProcess.length; j++) {
-            updateCell(rowsToProcess[j].id, column.id, {
-              value: null,
-              status: 'error',
-              error: 'Cancelled by user',
-            });
-          }
-          break;
+          break; // Just stop - don't mark remaining as error (too slow for 10K rows)
         }
 
         const batch = rowsToProcess.slice(i, i + BATCH_SIZE);
         const batchRowIds = batch.map(r => r.id);
+
+        // Mark only this batch as processing (not all upfront)
+        for (const row of batch) {
+          updateCell(row.id, column.id, { value: null, status: 'processing' });
+        }
+
+        // Add delay between batches to avoid rate limits (skip for first batch)
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+        }
 
         try {
           const response = await fetch('/api/enrichment/run', {
