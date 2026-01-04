@@ -177,6 +177,14 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
     }
 
     if (status === 'complete') {
+      // Show the actual value
+      if (displayValue !== null && displayValue !== undefined && displayValue !== '') {
+        return (
+          <span className="truncate">{displayValue}</span>
+        );
+      }
+
+      // If no display value but has structured data, show datapoints badge
       if (hasStructuredData) {
         return (
           <div className="flex items-center gap-2 cursor-pointer group/badge">
@@ -192,15 +200,11 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
         );
       }
 
-      // Single value result - just show Completed badge, no value in cell
+      // Fallback - completed but no value
       return (
-        <div className="flex items-center gap-2 cursor-pointer group/badge">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400
-                        group-hover/badge:bg-emerald-500/30 transition-colors">
-            <CheckCircle2 className="w-3 h-3" />
-            <span className="text-xs font-medium">Completed</span>
-            <ChevronRight className="w-3 h-3 opacity-60" />
-          </div>
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+          <CheckCircle2 className="w-3 h-3" />
+          <span className="text-xs font-medium">Completed</span>
         </div>
       );
     }
