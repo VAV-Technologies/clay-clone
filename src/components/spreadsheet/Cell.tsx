@@ -15,7 +15,7 @@ interface CellProps {
 }
 
 export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: CellProps) {
-  const { updateCell, setEditingCell } = useTableStore();
+  const { updateCell, setEditingCell, fetchTable } = useTableStore();
   const [editValue, setEditValue] = useState('');
   const [isRetrying, setIsRetrying] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -57,11 +57,8 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
       const result = await response.json();
 
       if (result.success) {
-        updateCell(row.id, column.id, {
-          value: result.result,
-          status: 'complete',
-          enrichmentData: result.enrichmentData,
-        });
+        // Refresh the entire table to get updated output columns
+        await fetchTable(tableId);
       } else {
         updateCell(row.id, column.id, { value: null, status: 'error', error: result.error });
       }

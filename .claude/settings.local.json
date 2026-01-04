@@ -41,7 +41,8 @@
       "Bash(find:*)",
       "Bash(TURSO_DATABASE_URL=\"libsql://dataflow-vav-technologies.aws-ap-northeast-1.turso.io\" TURSO_AUTH_TOKEN=\"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjY4OTUzNjUsImlkIjoiNDg5ZjQ5YWQtMDJmMC00NjQ1LWFkMjktMGEyM2MxNTM3MTljIiwicmlkIjoiODVjYzNkMmEtNDM5Yi00YWVlLThiOTUtZWY0OWQ4MGYwNjFkIn0.4bD18MAWazjADXVqZzMVlgpTtsK-gauOJxm15bZhkhCV9c2kSrPVZ49RiSFhXT07Ehvej2LA7xyUyTV_QmWZDQ\" node:*)",
       "Bash(tasklist:*)",
-      "Bash(TURSO_DATABASE_URL=\"libsql://dataflow-vav-technologies.aws-ap-northeast-1.turso.io\" TURSO_AUTH_TOKEN=\"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjY4OTUzNjUsImlkIjoiNDg5ZjQ5YWQtMDJmMC00NjQ1LWFkMjktMGEyM2MxNTM3MTljIiwicmlkIjoiODVjYzNkMmEtNDM5Yi00YWVlLThiOTUtZWY0OWQ4MGYwNjFkIn0.4bD18MAWazjADXVqZzMVlgpTtsK-gauOJxm15bZhkhCV9c2kSrPVZ49RiSFhXT07Ehvej2LA7xyUyTV_QmWZDQ\" npx drizzle-kit:*)"
+      "Bash(TURSO_DATABASE_URL=\"libsql://dataflow-vav-technologies.aws-ap-northeast-1.turso.io\" TURSO_AUTH_TOKEN=\"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjY4OTUzNjUsImlkIjoiNDg5ZjQ5YWQtMDJmMC00NjQ1LWFkMjktMGEyM2MxNTM3MTljIiwicmlkIjoiODVjYzNkMmEtNDM5Yi00YWVlLThiOTUtZWY0OWQ4MGYwNjFkIn0.4bD18MAWazjADXVqZzMVlgpTtsK-gauOJxm15bZhkhCV9c2kSrPVZ49RiSFhXT07Ehvej2LA7xyUyTV_QmWZDQ\" npx drizzle-kit:*)",
+      "Bash(TURSO_DATABASE_URL=\"libsql://dataflow-vav-technologies.aws-ap-northeast-1.turso.io\" TURSO_AUTH_TOKEN=\"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjY4OTUzNjUsImlkIjoiNDg5ZjQ5YWQtMDJmMC00NjQ1LWFkMjktMGEyM2MxNTM3MTljIiwicmlkIjoiODVjYzNkMmEtNDM5Yi00YWVlLThiOTUtZWY0OWQ4MGYwNjFkIn0.4bD18MAWazjADXVqZzMVlgpTtsK-gauOJxm15bZhkhCV9c2kSrPVZ49RiSFhXT07Ehvej2LA7xyUyTV_QmWZDQ\" node -e:*)"
     ],
     "deny": [],
     "ask": []
