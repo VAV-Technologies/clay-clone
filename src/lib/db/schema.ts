@@ -101,6 +101,28 @@ export const formulaConfigs = sqliteTable('formula_configs', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
+// Background enrichment jobs - processes even if browser is closed
+export const enrichmentJobs = sqliteTable('enrichment_jobs', {
+  id: text('id').primaryKey(),
+  tableId: text('table_id').notNull(),
+  configId: text('config_id').notNull(),
+  targetColumnId: text('target_column_id').notNull(),
+  // Row IDs to process (JSON array)
+  rowIds: text('row_ids', { mode: 'json' }).notNull().$type<string[]>(),
+  // Current position in rowIds array
+  currentIndex: integer('current_index').notNull().default(0),
+  // Job status
+  status: text('status', { enum: ['pending', 'running', 'complete', 'cancelled', 'error'] }).notNull().default('pending'),
+  // Stats
+  processedCount: integer('processed_count').notNull().default(0),
+  errorCount: integer('error_count').notNull().default(0),
+  totalCost: real('total_cost').notNull().default(0),
+  // Timestamps
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+});
+
 // TypeScript types
 export interface EnrichmentDatapoint {
   key: string;
@@ -129,3 +151,5 @@ export type EnrichmentConfig = typeof enrichmentConfigs.$inferSelect;
 export type NewEnrichmentConfig = typeof enrichmentConfigs.$inferInsert;
 export type FormulaConfig = typeof formulaConfigs.$inferSelect;
 export type NewFormulaConfig = typeof formulaConfigs.$inferInsert;
+export type EnrichmentJob = typeof enrichmentJobs.$inferSelect;
+export type NewEnrichmentJob = typeof enrichmentJobs.$inferInsert;

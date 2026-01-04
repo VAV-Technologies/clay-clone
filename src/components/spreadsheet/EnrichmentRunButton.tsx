@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Play, Square, RotateCcw, Loader2, Hash } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTableStore } from '@/stores/tableStore';
-import type { Column, CellValue } from '@/lib/db/schema';
+import type { Column } from '@/lib/db/schema';
 
 interface EnrichmentRunButtonProps {
   column: Column;
@@ -13,19 +13,93 @@ interface EnrichmentRunButtonProps {
 
 type RunMode = 'all' | 'incomplete' | 'force' | 'custom';
 
-const BATCH_SIZE = 25; // Process 25 rows in parallel per batch
-const BATCH_DELAY_MS = 200; // Delay between batches to avoid rate limits
+interface JobStatus {
+  id: string;
+  status: 'pending' | 'running' | 'complete' | 'cancelled' | 'error';
+  currentIndex: number;
+  rowIds: string[];
+  processedCount: number;
+  errorCount: number;
+  totalCost: number;
+}
 
 export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProps) {
-  const { rows, updateCell, addColumn, fetchTable } = useTableStore();
+  const { rows, fetchTable } = useTableStore();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customRowCount, setCustomRowCount] = useState('10');
-  const [progress, setProgress] = useState({ completed: 0, total: 0 });
+  const [activeJob, setActiveJob] = useState<JobStatus | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const customInputRef = useRef<HTMLInputElement>(null);
-  const cancelledRef = useRef(false);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const isRunning = activeJob && (activeJob.status === 'pending' || activeJob.status === 'running');
+
+  // Check for existing job on mount
+  useEffect(() => {
+    checkExistingJob();
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, [column.id]);
+
+  // Poll for job status when running
+  useEffect(() => {
+    if (isRunning && activeJob) {
+      pollIntervalRef.current = setInterval(async () => {
+        await pollJobStatus(activeJob.id);
+      }, 3000); // Poll every 3 seconds
+
+      return () => {
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+        }
+      };
+    }
+  }, [isRunning, activeJob?.id]);
+
+  const checkExistingJob = async () => {
+    try {
+      const response = await fetch(`/api/enrichment/jobs?columnId=${column.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        const runningJob = data.jobs?.find(
+          (j: JobStatus) => j.status === 'pending' || j.status === 'running'
+        );
+        if (runningJob) {
+          setActiveJob(runningJob);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking existing job:', error);
+    }
+  };
+
+  const pollJobStatus = async (jobId: string) => {
+    try {
+      const response = await fetch(`/api/enrichment/jobs?jobId=${jobId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const job = data.jobs?.[0];
+        if (job) {
+          setActiveJob(job);
+
+          // If job completed, refresh table data
+          if (job.status === 'complete' || job.status === 'cancelled' || job.status === 'error') {
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+            fetchTable(tableId);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error polling job status:', error);
+    }
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -66,117 +140,68 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
         return false;
       });
     }
-    // 'all' and 'force' use all rows
 
     if (rowsToProcess.length === 0) {
       return;
     }
 
-    setIsRunning(true);
-    cancelledRef.current = false;
-    setProgress({ completed: 0, total: rowsToProcess.length });
-
     try {
-      // Process in batches
-      for (let i = 0; i < rowsToProcess.length; i += BATCH_SIZE) {
-        // Check for cancellation
-        if (cancelledRef.current) {
-          break; // Just stop - don't mark remaining as error (too slow for 10K rows)
-        }
+      // Create background job
+      const response = await fetch('/api/enrichment/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          configId: column.enrichmentConfigId,
+          tableId,
+          targetColumnId: column.id,
+          rowIds: rowsToProcess.map(r => r.id),
+        }),
+      });
 
-        const batch = rowsToProcess.slice(i, i + BATCH_SIZE);
-        const batchRowIds = batch.map(r => r.id);
-
-        // Mark only this batch as processing (not all upfront)
-        for (const row of batch) {
-          updateCell(row.id, column.id, { value: null, status: 'processing' });
-        }
-
-        // Add delay between batches to avoid rate limits (skip for first batch)
-        if (i > 0) {
-          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
-        }
-
-        try {
-          const response = await fetch('/api/enrichment/run', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              configId: column.enrichmentConfigId,
-              tableId,
-              targetColumnId: column.id,
-              rowIds: batchRowIds,
-              onlyEmpty: mode === 'incomplete',
-              includeErrors: mode === 'incomplete',
-              forceRerun: mode === 'force',
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error('API request failed');
-          }
-
-          const data = await response.json();
-
-          // Update cells from results
-          if (data.results) {
-            for (const result of data.results) {
-              if (result.data && result.data[column.id]) {
-                updateCell(result.rowId, column.id, result.data[column.id]);
-              }
-              // Also update any output columns
-              if (result.data) {
-                for (const [colId, cellData] of Object.entries(result.data)) {
-                  if (colId !== column.id) {
-                    updateCell(result.rowId, colId, cellData as CellValue);
-                  }
-                }
-              }
-            }
-          }
-
-          // Add any new columns to the store
-          if (data.newColumns && data.newColumns.length > 0) {
-            for (const newCol of data.newColumns) {
-              addColumn(newCol);
-            }
-          }
-
-          // Update progress
-          setProgress(prev => ({
-            ...prev,
-            completed: Math.min(i + BATCH_SIZE, rowsToProcess.length),
-          }));
-
-        } catch (batchError) {
-          console.error('Batch error:', batchError);
-          // Mark batch as error
-          for (const row of batch) {
-            updateCell(row.id, column.id, {
-              value: null,
-              status: 'error',
-              error: (batchError as Error).message,
-            });
-          }
-          setProgress(prev => ({
-            ...prev,
-            completed: Math.min(i + BATCH_SIZE, rowsToProcess.length),
-          }));
-        }
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Failed to create job:', error);
+        return;
       }
 
-    } catch (error) {
-      console.error('Error running enrichment:', error);
-    } finally {
-      setIsRunning(false);
-      setProgress({ completed: 0, total: 0 });
-      // Refresh table to get latest state
+      const data = await response.json();
+
+      // Set active job and start polling
+      setActiveJob({
+        id: data.jobId,
+        status: 'pending',
+        currentIndex: 0,
+        rowIds: rowsToProcess.map(r => r.id),
+        processedCount: 0,
+        errorCount: 0,
+        totalCost: 0,
+      });
+
+      // Refresh table to show processing status
       fetchTable(tableId);
+
+    } catch (error) {
+      console.error('Error creating job:', error);
     }
   };
 
-  const handleCancel = () => {
-    cancelledRef.current = true;
+  const handleCancel = async () => {
+    if (!activeJob) return;
+
+    try {
+      await fetch(`/api/enrichment/jobs?jobId=${activeJob.id}`, {
+        method: 'DELETE',
+      });
+
+      setActiveJob(null);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      fetchTable(tableId);
+    } catch (error) {
+      console.error('Error cancelling job:', error);
+    }
   };
 
   const handleButtonClick = (e: React.MouseEvent) => {
@@ -188,8 +213,8 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     }
   };
 
-  const progressPercent = progress.total > 0
-    ? Math.round((progress.completed / progress.total) * 100)
+  const progressPercent = activeJob && activeJob.rowIds.length > 0
+    ? Math.round((activeJob.processedCount / activeJob.rowIds.length) * 100)
     : 0;
 
   return (
@@ -203,7 +228,7 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
             ? 'text-red-400 bg-red-500/20 border-red-500/30 hover:bg-red-500/30'
             : 'text-emerald-400 bg-emerald-500/20 border-emerald-500/30 hover:bg-emerald-500/30'
         )}
-        title={isRunning ? `Stop (${progressPercent}%)` : 'Run enrichment'}
+        title={isRunning ? `Stop (${progressPercent}% - runs in background)` : 'Run enrichment'}
       >
         {isRunning ? (
           <Loader2 className="w-3 h-3 animate-spin" />
@@ -213,7 +238,7 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
       </button>
 
       {/* Progress indicator */}
-      {isRunning && progress.total > 0 && (
+      {isRunning && activeJob && (
         <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-white/10 rounded overflow-hidden">
           <div
             className="h-full bg-emerald-400 transition-all duration-300"
@@ -227,6 +252,9 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
         <div className="absolute top-full left-0 mt-1 z-50 min-w-[200px]
                         bg-[#1a1a2e]/95 backdrop-blur-xl border border-white/10
                         rounded-lg shadow-xl overflow-hidden">
+          <div className="px-3 py-1.5 text-xs text-emerald-400 border-b border-white/10">
+            Runs in background - close tab OK
+          </div>
           <button
             onClick={() => handleRunEnrichment('all')}
             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/80
@@ -244,7 +272,6 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
             Run on Incomplete
           </button>
           <div className="border-t border-white/10" />
-          {/* Custom row count option */}
           {!showCustomInput ? (
             <button
               onClick={() => setShowCustomInput(true)}
