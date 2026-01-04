@@ -23,35 +23,6 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 // Default pricing for unknown models
 const DEFAULT_PRICING = { input: 0.15, output: 0.60 };
 
-// Model-specific rate limits (to respect Vertex AI quotas)
-const MODEL_RATE_LIMITS: Record<string, { batchSize: number; delayMs: number }> = {
-  'gemini-2.5-flash': { batchSize: 10, delayMs: 500 },
-  'gemini-2.5-flash-lite': { batchSize: 10, delayMs: 500 },
-  'gemini-2.5-pro': { batchSize: 2, delayMs: 2000 },
-  'gemini-2.0-flash': { batchSize: 10, delayMs: 500 },
-  'gemini-2.0-flash-001': { batchSize: 10, delayMs: 500 },
-  'gemini-2.0-flash-lite-001': { batchSize: 10, delayMs: 500 },
-  'gemini-1.5-flash': { batchSize: 10, delayMs: 500 },
-  'gemini-1.5-pro': { batchSize: 5, delayMs: 1000 },
-};
-const DEFAULT_RATE_LIMIT = { batchSize: 5, delayMs: 1000 };
-
-// In-memory progress tracking (in production, use Redis or similar)
-interface JobProgress {
-  completed: number;
-  total: number;
-  status: string;
-  tableId: string;
-  targetColumnId: string;
-  completedRowIds: string[]; // Track which rows have completed
-  lastFetchedIndex: number; // Track what the client has already fetched
-  totalCost: number; // Accumulated cost in dollars
-  costLimitExceeded: boolean; // Whether cost limit was hit
-  skippedDueToCost: number; // Number of rows skipped due to cost limit
-  cancelled: boolean; // Whether job was cancelled by user
-}
-const progressMap = new Map<string, JobProgress>();
-
 // Result from AI call including token usage
 interface AIResult {
   text: string;
@@ -59,7 +30,16 @@ interface AIResult {
   outputTokens: number;
 }
 
-// POST /api/enrichment/run - Run enrichment on rows
+// Result for a single row
+interface RowResult {
+  rowId: string;
+  success: boolean;
+  data?: Record<string, CellValue>;
+  error?: string;
+  cost?: number;
+}
+
+// POST /api/enrichment/run - Run enrichment on rows (synchronously)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -67,10 +47,10 @@ export async function POST(request: NextRequest) {
       configId,
       tableId,
       targetColumnId,
-      rowIds, // Optional: specific rows to enrich
-      onlyEmpty = false, // Only enrich cells without values
-      includeErrors = false, // Also include cells with error status
-      forceRerun = false, // Force re-run on all rows (clears existing values)
+      rowIds, // Required: specific rows to enrich (batch from client)
+      onlyEmpty = false,
+      includeErrors = false,
+      forceRerun = false,
     } = body;
 
     if (!configId || !tableId || !targetColumnId) {
@@ -99,13 +79,13 @@ export async function POST(request: NextRequest) {
     // Create output columns if they don't exist (from Data Guide)
     const outputColumnIds: Record<string, string> = {};
     const definedOutputColumns = config.outputColumns as string[] | null;
+    let newColumnsCreated: typeof columns = [];
 
     if (definedOutputColumns && definedOutputColumns.length > 0) {
       const maxOrder = columns.reduce((max, col) => Math.max(max, col.order), 0);
       let currentOrder = maxOrder + 1;
 
       for (const outputColName of definedOutputColumns) {
-        // Check if column already exists (case-insensitive)
         const existingCol = columns.find(
           c => c.name.toLowerCase() === outputColName.toLowerCase()
         );
@@ -113,7 +93,6 @@ export async function POST(request: NextRequest) {
         if (existingCol) {
           outputColumnIds[outputColName.toLowerCase()] = existingCol.id;
         } else {
-          // Create new column for this output
           const newColId = generateId();
           const newColumn = {
             id: newColId,
@@ -128,34 +107,33 @@ export async function POST(request: NextRequest) {
           await db.insert(schema.columns).values(newColumn);
           outputColumnIds[outputColName.toLowerCase()] = newColId;
           columns.push({ ...newColumn, enrichmentConfigId: null, formulaConfigId: null });
+          newColumnsCreated.push({ ...newColumn, enrichmentConfigId: null, formulaConfigId: null });
         }
       }
     }
 
     const columnMap = new Map(columns.map((col) => [col.id, col]));
 
-    // Get rows to enrich
+    // Get rows to enrich - must have rowIds for batch processing
     let rows;
     if (rowIds && Array.isArray(rowIds) && rowIds.length > 0) {
       rows = await db.select().from(schema.rows).where(inArray(schema.rows.id, rowIds));
     } else {
+      // If no rowIds, get all rows but limit to prevent timeout
       rows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, tableId));
     }
 
     // Filter rows based on run mode
     if (forceRerun) {
-      // Force re-run: include all rows, will overwrite existing values
-      // No filtering needed
+      // Force re-run: include all rows
     } else if (onlyEmpty && includeErrors) {
-      // Run on incomplete: empty OR error cells
       rows = rows.filter((row) => {
         const cellValue = row.data[targetColumnId];
-        if (!cellValue || !cellValue.value) return true; // Empty
-        if (cellValue.status === 'error') return true; // Error
+        if (!cellValue || !cellValue.value) return true;
+        if (cellValue.status === 'error') return true;
         return false;
       });
     } else if (onlyEmpty) {
-      // Only empty cells (no value)
       rows = rows.filter((row) => {
         const cellValue = row.data[targetColumnId];
         return !cellValue || !cellValue.value;
@@ -163,263 +141,125 @@ export async function POST(request: NextRequest) {
     }
 
     if (rows.length === 0) {
-      return NextResponse.json({ message: 'No rows to enrich', rowsProcessed: 0 });
+      return NextResponse.json({
+        message: 'No rows to enrich',
+        results: [],
+        newColumns: newColumnsCreated,
+      });
     }
 
-    // Create a job ID for progress tracking
-    const jobId = crypto.randomUUID();
-    progressMap.set(jobId, {
-      completed: 0,
-      total: rows.length,
-      status: 'running',
-      tableId,
-      targetColumnId,
-      completedRowIds: [],
-      lastFetchedIndex: 0,
-      totalCost: 0,
-      costLimitExceeded: false,
-      skippedDueToCost: 0,
-      cancelled: false,
-    });
+    // Process rows synchronously
+    const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
+    const pricing = MODEL_PRICING[config.model || 'gemini-2.0-flash'] || DEFAULT_PRICING;
+    const results: RowResult[] = [];
+    let totalCost = 0;
 
-    // Process enrichment asynchronously
-    processEnrichmentBatch(jobId, rows, config, targetColumnId, columnMap, outputColumnIds);
+    // Process rows one by one (or could do small parallel batches)
+    for (const row of rows) {
+      try {
+        // Build prompt
+        const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
 
-    return NextResponse.json({
-      jobId,
-      message: 'Enrichment started',
-      totalRows: rows.length,
-      outputColumns: Object.keys(outputColumnIds),
-    });
-  } catch (error) {
-    console.error('Error starting enrichment:', error);
-    return NextResponse.json({ error: 'Failed to start enrichment' }, { status: 500 });
-  }
-}
+        // Call AI
+        const aiResult = await callAI(prompt, config);
 
-async function processEnrichmentBatch(
-  jobId: string,
-  rows: typeof schema.rows.$inferSelect[],
-  config: typeof schema.enrichmentConfigs.$inferSelect,
-  targetColumnId: string,
-  columnMap: Map<string, typeof schema.columns.$inferSelect>,
-  outputColumnIds: Record<string, string> = {}
-) {
-  // Get model-specific rate limits
-  const rateLimit = MODEL_RATE_LIMITS[config.model || 'gemini-2.0-flash'] || DEFAULT_RATE_LIMIT;
-  const batchSize = rateLimit.batchSize;
-  const delayMs = rateLimit.delayMs;
-  const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
-  const definedOutputColumns = (config.outputColumns as string[] | null) || [];
+        // Calculate cost
+        const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
+        totalCost += rowCost;
 
-  // Cost tracking
-  const costLimitEnabled = config.costLimitEnabled ?? false;
-  const maxCostPerRow = config.maxCostPerRow ?? null;
-  const pricing = MODEL_PRICING[config.model || 'gemini-2.0-flash'] || DEFAULT_PRICING;
-  let totalCost = 0;
-  let rowsProcessed = 0;
+        // Parse result
+        const parsedResult = parseAIResponse(aiResult.text);
 
-  for (let i = 0; i < rows.length; i += batchSize) {
-    const progress = progressMap.get(jobId);
+        // Build updated data
+        const updatedData: Record<string, CellValue> = {
+          ...(row.data as Record<string, CellValue>),
+          [targetColumnId]: {
+            value: parsedResult.displayValue,
+            status: 'complete' as const,
+            enrichmentData: parsedResult.structuredData,
+            rawResponse: aiResult.text,
+          },
+        };
 
-    // Check if job was cancelled
-    if (progress?.cancelled) {
-      // Mark remaining rows as cancelled
-      const remainingRows = rows.slice(i);
-      for (const row of remainingRows) {
+        // Populate output columns
+        if (hasOutputColumns && parsedResult.structuredData) {
+          for (const [outputName, columnId] of Object.entries(outputColumnIds)) {
+            const matchingKey = Object.keys(parsedResult.structuredData).find(
+              key => key.toLowerCase() === outputName
+            );
+
+            if (matchingKey) {
+              const value = parsedResult.structuredData[matchingKey];
+              updatedData[columnId] = {
+                value: value !== null && value !== undefined ? String(value) : null,
+                status: 'complete' as const,
+              };
+            } else {
+              updatedData[columnId] = {
+                value: null,
+                status: 'complete' as const,
+              };
+            }
+          }
+        }
+
+        // Save to database
+        await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+
+        results.push({
+          rowId: row.id,
+          success: true,
+          data: updatedData,
+          cost: rowCost,
+        });
+
+      } catch (error) {
+        console.error(`Error enriching row ${row.id}:`, error);
+
+        // Mark as error
         const updatedData: Record<string, CellValue> = {
           ...(row.data as Record<string, CellValue>),
           [targetColumnId]: {
             value: null,
             status: 'error' as const,
-            error: 'Cancelled by user',
+            error: (error as Error).message,
           },
         };
+
         if (hasOutputColumns) {
           for (const columnId of Object.values(outputColumnIds)) {
-            updatedData[columnId] = { value: null, status: 'error' as const, error: 'Cancelled by user' };
-          }
-        }
-        await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-      }
-      progress.status = 'cancelled';
-      progress.completed = rows.length;
-      break;
-    }
-
-    // Check if we've exceeded cost limit before starting new batch
-    if (costLimitEnabled && maxCostPerRow !== null && progress) {
-      const maxTotalCost = maxCostPerRow * rows.length;
-      if (totalCost >= maxTotalCost) {
-        // Mark remaining rows as skipped
-        const remainingRows = rows.slice(i);
-        for (const row of remainingRows) {
-          const updatedData: Record<string, CellValue> = {
-            ...(row.data as Record<string, CellValue>),
-            [targetColumnId]: {
-              value: null,
-              status: 'error' as const,
-              error: 'Cost limit exceeded',
-            },
-          };
-          if (hasOutputColumns) {
-            for (const columnId of Object.values(outputColumnIds)) {
-              updatedData[columnId] = { value: null, status: 'error' as const, error: 'Cost limit exceeded' };
-            }
-          }
-          await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-        }
-        progress.costLimitExceeded = true;
-        progress.skippedDueToCost = remainingRows.length;
-        progress.completed = rows.length;
-        progress.status = 'complete';
-        break;
-      }
-    }
-
-    const batch = rows.slice(i, i + batchSize);
-
-    await Promise.all(
-      batch.map(async (row) => {
-        const progress = progressMap.get(jobId);
-
-        // Check cost limit before each row
-        if (costLimitEnabled && maxCostPerRow !== null && progress) {
-          const maxTotalCost = maxCostPerRow * rows.length;
-          if (totalCost >= maxTotalCost) {
-            // Skip this row
-            const updatedData: Record<string, CellValue> = {
-              ...(row.data as Record<string, CellValue>),
-              [targetColumnId]: {
-                value: null,
-                status: 'error' as const,
-                error: 'Cost limit exceeded',
-              },
-            };
-            if (hasOutputColumns) {
-              for (const columnId of Object.values(outputColumnIds)) {
-                updatedData[columnId] = { value: null, status: 'error' as const, error: 'Cost limit exceeded' };
-              }
-            }
-            await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-            progress.skippedDueToCost++;
-            return;
-          }
-        }
-
-        try {
-          // Build prompt with variable substitution and JSON format instructions
-          const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns);
-
-          // Call AI and get token usage
-          const aiResult = await callAI(prompt, config);
-
-          // Calculate cost for this row
-          const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
-          totalCost += rowCost;
-          rowsProcessed++;
-
-          // Update progress with cost
-          if (progress) {
-            progress.totalCost = totalCost;
-          }
-
-          // Parse the result - try to extract JSON for structured data
-          const parsedResult = parseAIResponse(aiResult.text);
-
-          // Update row with result
-          const updatedData: Record<string, CellValue> = {
-            ...(row.data as Record<string, CellValue>),
-            [targetColumnId]: {
-              value: parsedResult.displayValue,
-              status: 'complete' as const,
-              enrichmentData: parsedResult.structuredData,
-              rawResponse: aiResult.text,
-            },
-          };
-
-          // If we have output columns defined, populate them with extracted values
-          if (hasOutputColumns && parsedResult.structuredData) {
-            for (const [outputName, columnId] of Object.entries(outputColumnIds)) {
-              // Look for matching key in structured data (case-insensitive)
-              const matchingKey = Object.keys(parsedResult.structuredData).find(
-                key => key.toLowerCase() === outputName
-              );
-
-              if (matchingKey) {
-                const value = parsedResult.structuredData[matchingKey];
-                updatedData[columnId] = {
-                  value: value !== null && value !== undefined ? String(value) : null,
-                  status: 'complete' as const,
-                };
-              } else {
-                // No matching value found for this output column
-                updatedData[columnId] = {
-                  value: null,
-                  status: 'complete' as const,
-                };
-              }
-            }
-          }
-
-          await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-        } catch (error) {
-          console.error(`Error enriching row ${row.id}:`, error);
-
-          // Mark as error
-          const updatedData: Record<string, CellValue> = {
-            ...(row.data as Record<string, CellValue>),
-            [targetColumnId]: {
+            updatedData[columnId] = {
               value: null,
               status: 'error' as const,
               error: (error as Error).message,
-            },
-          };
-
-          // Also mark output columns as error
-          if (hasOutputColumns) {
-            for (const columnId of Object.values(outputColumnIds)) {
-              updatedData[columnId] = {
-                value: null,
-                status: 'error' as const,
-                error: (error as Error).message,
-              };
-            }
+            };
           }
-
-          await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
         }
-      })
-    );
 
-    // Update progress and track completed row IDs
-    if (progress) {
-      progress.completed = Math.min(i + batchSize, rows.length);
-      // Add batch row IDs to completed list
-      batch.forEach(row => {
-        if (!progress.completedRowIds.includes(row.id)) {
-          progress.completedRowIds.push(row.id);
-        }
-      });
+        await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+
+        results.push({
+          rowId: row.id,
+          success: false,
+          data: updatedData,
+          error: (error as Error).message,
+        });
+      }
     }
 
-    // Delay between batches
-    if (i + batchSize < rows.length) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
+    return NextResponse.json({
+      results,
+      totalCost,
+      processedCount: results.length,
+      successCount: results.filter(r => r.success).length,
+      errorCount: results.filter(r => !r.success).length,
+      newColumns: newColumnsCreated,
+    });
 
-  // Mark job as complete
-  const progress = progressMap.get(jobId);
-  if (progress) {
-    progress.status = 'complete';
-    progress.totalCost = totalCost;
+  } catch (error) {
+    console.error('Error running enrichment:', error);
+    return NextResponse.json({ error: 'Failed to run enrichment' }, { status: 500 });
   }
-
-  // Clean up old jobs after 10 minutes
-  setTimeout(() => {
-    progressMap.delete(jobId);
-  }, 600000);
 }
 
 function buildPrompt(
@@ -433,7 +273,6 @@ function buildPrompt(
   // Replace {{column_name}} with actual values
   const variablePattern = /\{\{([^}]+)\}\}/g;
   prompt = prompt.replace(variablePattern, (match, columnName) => {
-    // Find column by name
     const column = Array.from(columnMap.values()).find(
       (col) => col.name.toLowerCase() === columnName.toLowerCase().trim()
     );
@@ -443,10 +282,10 @@ function buildPrompt(
       return cellValue?.value?.toString() ?? '';
     }
 
-    return match; // Keep original if column not found
+    return match;
   });
 
-  // If output columns are defined, append JSON format instructions
+  // Add JSON format instructions if output columns defined
   if (outputColumns.length > 0) {
     const jsonTemplate = outputColumns.reduce((acc, col) => {
       acc[col] = `<${col} value>`;
@@ -471,10 +310,8 @@ interface ParsedAIResponse {
 }
 
 function parseAIResponse(response: string): ParsedAIResponse {
-  // Try to extract JSON from the response
   const cleanedResponse = response.trim();
 
-  // Helper to convert parsed JSON to structured data (handles arrays by stringifying)
   const toStructuredData = (parsed: Record<string, unknown>): Record<string, string | number | null> => {
     const result: Record<string, string | number | null> = {};
     for (const [key, value] of Object.entries(parsed)) {
@@ -483,10 +320,8 @@ function parseAIResponse(response: string): ParsedAIResponse {
       } else if (typeof value === 'string' || typeof value === 'number') {
         result[key] = value;
       } else if (Array.isArray(value)) {
-        // Convert arrays to comma-separated string
         result[key] = value.map(v => String(v ?? '')).join(', ');
       } else if (typeof value === 'object') {
-        // Convert nested objects to JSON string
         result[key] = JSON.stringify(value);
       } else {
         result[key] = String(value);
@@ -495,7 +330,7 @@ function parseAIResponse(response: string): ParsedAIResponse {
     return result;
   };
 
-  // Try direct JSON parse first
+  // Try direct JSON parse
   try {
     const parsed = JSON.parse(cleanedResponse);
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
@@ -509,22 +344,21 @@ function parseAIResponse(response: string): ParsedAIResponse {
       };
     }
   } catch {
-    // Not valid JSON, try to extract from markdown code blocks
+    // Not valid JSON
   }
 
-  // Try to find JSON in markdown code blocks (case-insensitive, handles various formats)
+  // Try markdown code blocks
   const jsonBlockPatterns = [
-    /```json\s*([\s\S]*?)```/i,      // ```json ... ```
-    /```JSON\s*([\s\S]*?)```/,        // ```JSON ... ```
-    /```\s*([\s\S]*?)```/,            // ``` ... ``` (no language)
-    /~~~json\s*([\s\S]*?)~~~/i,       // ~~~json ... ~~~
+    /```json\s*([\s\S]*?)```/i,
+    /```JSON\s*([\s\S]*?)```/,
+    /```\s*([\s\S]*?)```/,
+    /~~~json\s*([\s\S]*?)~~~/i,
   ];
 
   for (const pattern of jsonBlockPatterns) {
-    const jsonBlockMatch = cleanedResponse.match(pattern);
-    if (jsonBlockMatch) {
-      const content = jsonBlockMatch[1].trim();
-      // Only try to parse if it looks like JSON (starts with {)
+    const match = cleanedResponse.match(pattern);
+    if (match) {
+      const content = match[1].trim();
       if (content.startsWith('{')) {
         try {
           const parsed = JSON.parse(content);
@@ -539,16 +373,15 @@ function parseAIResponse(response: string): ParsedAIResponse {
             };
           }
         } catch {
-          // Not valid JSON in this code block, try next pattern
+          // Continue
         }
       }
     }
   }
 
-  // Try to find inline JSON object - use balanced brace matching instead of greedy regex
+  // Try inline JSON with balanced braces
   const jsonStartIndex = cleanedResponse.indexOf('{');
   if (jsonStartIndex !== -1) {
-    // Try to find balanced JSON by progressively extending
     let braceCount = 0;
     let inString = false;
     let escapeNext = false;
@@ -556,27 +389,15 @@ function parseAIResponse(response: string): ParsedAIResponse {
     for (let i = jsonStartIndex; i < cleanedResponse.length; i++) {
       const char = cleanedResponse[i];
 
-      if (escapeNext) {
-        escapeNext = false;
-        continue;
-      }
-
-      if (char === '\\' && inString) {
-        escapeNext = true;
-        continue;
-      }
-
-      if (char === '"' && !escapeNext) {
-        inString = !inString;
-        continue;
-      }
+      if (escapeNext) { escapeNext = false; continue; }
+      if (char === '\\' && inString) { escapeNext = true; continue; }
+      if (char === '"' && !escapeNext) { inString = !inString; continue; }
 
       if (!inString) {
         if (char === '{') braceCount++;
         if (char === '}') braceCount--;
 
         if (braceCount === 0) {
-          // Found complete JSON object
           const jsonStr = cleanedResponse.slice(jsonStartIndex, i + 1);
           try {
             const parsed = JSON.parse(jsonStr);
@@ -591,7 +412,7 @@ function parseAIResponse(response: string): ParsedAIResponse {
               };
             }
           } catch {
-            // Not valid JSON, continue searching
+            // Continue
           }
           break;
         }
@@ -599,51 +420,7 @@ function parseAIResponse(response: string): ParsedAIResponse {
     }
   }
 
-  // Last resort: Try to repair truncated JSON (AI hit token limit)
-  const lastBraceIndex = cleanedResponse.lastIndexOf('}');
-  const firstBraceIndex = cleanedResponse.indexOf('{');
-  if (firstBraceIndex !== -1 && lastBraceIndex > firstBraceIndex) {
-    // There's at least one { and one } - try to extract partial JSON
-    let jsonCandidate = cleanedResponse.slice(firstBraceIndex, lastBraceIndex + 1);
-
-    // Count braces to see if we need to add closing ones
-    let openBraces = 0;
-    let inString = false;
-    let escapeNext = false;
-
-    for (const char of jsonCandidate) {
-      if (escapeNext) { escapeNext = false; continue; }
-      if (char === '\\' && inString) { escapeNext = true; continue; }
-      if (char === '"' && !escapeNext) { inString = !inString; continue; }
-      if (!inString) {
-        if (char === '{') openBraces++;
-        if (char === '}') openBraces--;
-      }
-    }
-
-    // Add missing closing braces if needed
-    if (openBraces > 0) {
-      jsonCandidate += '}'.repeat(openBraces);
-    }
-
-    try {
-      const parsed = JSON.parse(jsonCandidate);
-      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        const structuredData = toStructuredData(parsed);
-        const dataCount = Object.keys(structuredData).length;
-        return {
-          displayValue: dataCount === 1
-            ? String(Object.values(structuredData)[0] ?? '')
-            : `${dataCount} datapoints`,
-          structuredData,
-        };
-      }
-    } catch {
-      // Still can't parse - fall through to default
-    }
-  }
-
-  // No structured data found - wrap plain text as structured data with "result" key
+  // Fallback: wrap as plain text
   return {
     displayValue: cleanedResponse,
     structuredData: { result: cleanedResponse },
@@ -657,13 +434,12 @@ async function callAI(
   const projectId = process.env.GOOGLE_CLOUD_PROJECT;
   const apiKey = process.env.GEMINI_API_KEY;
 
-  // Prefer Vertex AI for better rate limits, fall back to Gemini API
   if (projectId) {
     return callVertexAI(prompt, config, projectId);
   } else if (apiKey) {
     return callGeminiAPI(prompt, config, apiKey);
   } else {
-    throw new Error('No AI provider configured. Set GOOGLE_CLOUD_PROJECT for Vertex AI or GEMINI_API_KEY for Gemini API.');
+    throw new Error('No AI provider configured. Set GOOGLE_CLOUD_PROJECT or GEMINI_API_KEY.');
   }
 }
 
@@ -672,35 +448,29 @@ async function callVertexAI(
   config: typeof schema.enrichmentConfigs.$inferSelect,
   projectId: string
 ): Promise<AIResult> {
-  try {
-    const { getGenerativeModel } = await import('@/lib/vertex-ai');
+  const { getGenerativeModel } = await import('@/lib/vertex-ai');
 
-    const model = getGenerativeModel(config.model || 'gemini-2.0-flash', {
-      temperature: config.temperature ?? 0.7,
-      maxOutputTokens: 8192, // Use max tokens, cost limit handles budget
-    });
+  const model = getGenerativeModel(config.model || 'gemini-2.0-flash', {
+    temperature: config.temperature ?? 0.7,
+    maxOutputTokens: 8192,
+  });
 
-    const result = await model.generateContent(prompt);
-    const response = result.response;
+  const result = await model.generateContent(prompt);
+  const response = result.response;
 
-    // Extract token usage from response
-    const usageMetadata = response.usageMetadata;
-    const inputTokens = usageMetadata?.promptTokenCount ?? 0;
-    const outputTokens = usageMetadata?.candidatesTokenCount ?? 0;
+  const usageMetadata = response.usageMetadata;
+  const inputTokens = usageMetadata?.promptTokenCount ?? 0;
+  const outputTokens = usageMetadata?.candidatesTokenCount ?? 0;
 
-    if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
-      return {
-        text: response.candidates[0].content.parts[0].text,
-        inputTokens,
-        outputTokens,
-      };
-    }
-
-    return { text: '', inputTokens, outputTokens };
-  } catch (error) {
-    console.error('Vertex AI error:', error);
-    throw error;
+  if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
+    return {
+      text: response.candidates[0].content.parts[0].text,
+      inputTokens,
+      outputTokens,
+    };
   }
+
+  return { text: '', inputTokens, outputTokens };
 }
 
 async function callGeminiAPI(
@@ -708,115 +478,39 @@ async function callGeminiAPI(
   config: typeof schema.enrichmentConfigs.$inferSelect,
   apiKey: string
 ): Promise<AIResult> {
-  try {
-    const modelId = config.model || 'gemini-1.5-flash';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+  const modelId = config.model || 'gemini-1.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: config.temperature ?? 0.7,
+        maxOutputTokens: 8192,
       },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: config.temperature ?? 0.7,
-          maxOutputTokens: 8192, // Use max tokens, cost limit handles budget
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('Gemini API error:', errorData);
-      throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    // Extract token usage from response
-    const usageMetadata = data.usageMetadata;
-    const inputTokens = usageMetadata?.promptTokenCount ?? 0;
-    const outputTokens = usageMetadata?.candidatesTokenCount ?? 0;
-
-    if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-      return {
-        text: data.candidates[0].content.parts[0].text,
-        inputTokens,
-        outputTokens,
-      };
-    }
-
-    return { text: '', inputTokens, outputTokens };
-  } catch (error) {
-    console.error('Gemini API error:', error);
-    throw error;
-  }
-}
-
-// Export progress checker
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const jobId = searchParams.get('jobId');
-
-  if (!jobId) {
-    return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
-  }
-
-  const progress = progressMap.get(jobId);
-
-  if (!progress) {
-    return NextResponse.json({ error: 'Job not found' }, { status: 404 });
-  }
-
-  // Return newly completed row IDs since last fetch (up to 100 at a time to avoid huge responses)
-  const newlyCompletedRowIds = progress.completedRowIds.slice(
-    progress.lastFetchedIndex,
-    progress.lastFetchedIndex + 100
-  );
-
-  // Update the last fetched index
-  progress.lastFetchedIndex += newlyCompletedRowIds.length;
-
-  return NextResponse.json({
-    completed: progress.completed,
-    total: progress.total,
-    status: progress.status,
-    tableId: progress.tableId,
-    targetColumnId: progress.targetColumnId,
-    newlyCompletedRowIds,
-    totalCost: progress.totalCost,
-    costLimitExceeded: progress.costLimitExceeded,
-    skippedDueToCost: progress.skippedDueToCost,
-    cancelled: progress.cancelled,
+    }),
   });
-}
 
-// DELETE /api/enrichment/run?jobId=xxx - Cancel a running enrichment job
-export async function DELETE(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const jobId = searchParams.get('jobId');
-
-  if (!jobId) {
-    return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
   }
 
-  const progress = progressMap.get(jobId);
+  const data = await response.json();
 
-  if (!progress) {
-    return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+  const usageMetadata = data.usageMetadata;
+  const inputTokens = usageMetadata?.promptTokenCount ?? 0;
+  const outputTokens = usageMetadata?.candidatesTokenCount ?? 0;
+
+  if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+    return {
+      text: data.candidates[0].content.parts[0].text,
+      inputTokens,
+      outputTokens,
+    };
   }
 
-  // Mark job as cancelled - the processing loop will handle cleanup
-  progress.cancelled = true;
-
-  return NextResponse.json({
-    success: true,
-    message: 'Cancellation requested. Remaining rows will be marked as cancelled.',
-    jobId,
-  });
+  return { text: '', inputTokens, outputTokens };
 }

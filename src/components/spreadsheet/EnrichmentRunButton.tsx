@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Play, Square, RotateCcw, Loader2, Hash } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTableStore } from '@/stores/tableStore';
-import type { Column } from '@/lib/db/schema';
+import type { Column, CellValue } from '@/lib/db/schema';
 
 interface EnrichmentRunButtonProps {
   column: Column;
@@ -13,18 +13,18 @@ interface EnrichmentRunButtonProps {
 
 type RunMode = 'all' | 'incomplete' | 'force' | 'custom';
 
+const BATCH_SIZE = 3; // Process 3 rows at a time to stay within Vercel timeout
+
 export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProps) {
-  const { activeEnrichmentJobs, setActiveJob, rows, updateCell } = useTableStore();
+  const { rows, updateCell, addColumn, fetchTable } = useTableStore();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isPolling, setIsPolling] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customRowCount, setCustomRowCount] = useState('10');
+  const [progress, setProgress] = useState({ completed: 0, total: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const customInputRef = useRef<HTMLInputElement>(null);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  const activeJobId = activeEnrichmentJobs.get(column.id);
-  const isRunning = !!activeJobId;
+  const cancelledRef = useRef(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -46,67 +46,6 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     }
   }, [showCustomInput]);
 
-  // Poll for job progress
-  useEffect(() => {
-    if (!activeJobId) {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
-      setIsPolling(false);
-      return;
-    }
-
-    setIsPolling(true);
-
-    const pollProgress = async () => {
-      try {
-        const response = await fetch(`/api/enrichment/run?jobId=${activeJobId}`);
-        if (!response.ok) {
-          // Job not found, clear it
-          setActiveJob(column.id, null);
-          return;
-        }
-
-        const data = await response.json();
-
-        // Update cells with new data if there are completed rows
-        if (data.newlyCompletedRowIds && data.newlyCompletedRowIds.length > 0) {
-          // Fetch updated row data
-          const rowsResponse = await fetch(`/api/rows?tableId=${tableId}`);
-          if (rowsResponse.ok) {
-            const updatedRows = await rowsResponse.json();
-            // Update cells for completed rows
-            for (const rowId of data.newlyCompletedRowIds) {
-              const updatedRow = updatedRows.find((r: { id: string }) => r.id === rowId);
-              if (updatedRow && updatedRow.data[column.id]) {
-                updateCell(rowId, column.id, updatedRow.data[column.id]);
-              }
-            }
-          }
-        }
-
-        // Check if job is complete
-        if (data.status === 'complete' || data.status === 'cancelled') {
-          setActiveJob(column.id, null);
-        }
-      } catch (error) {
-        console.error('Error polling job progress:', error);
-      }
-    };
-
-    // Poll immediately and then every 2 seconds
-    pollProgress();
-    pollIntervalRef.current = setInterval(pollProgress, 2000);
-
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
-    };
-  }, [activeJobId, column.id, tableId, setActiveJob, updateCell]);
-
   const handleRunEnrichment = async (mode: RunMode, customCount?: number) => {
     setIsDropdownOpen(false);
     setShowCustomInput(false);
@@ -114,10 +53,9 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     if (!column.enrichmentConfigId) return;
 
     // Determine which rows to process based on mode
-    let rowsToProcess = rows;
+    let rowsToProcess = [...rows];
 
     if (mode === 'custom' && customCount) {
-      // Take first N rows
       rowsToProcess = rows.slice(0, customCount);
     } else if (mode === 'incomplete') {
       rowsToProcess = rows.filter((row) => {
@@ -129,60 +67,118 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     }
     // 'all' and 'force' use all rows
 
-    // Update UI to show processing
+    if (rowsToProcess.length === 0) {
+      return;
+    }
+
+    setIsRunning(true);
+    cancelledRef.current = false;
+    setProgress({ completed: 0, total: rowsToProcess.length });
+
+    // Mark all target cells as 'processing'
     for (const row of rowsToProcess) {
       updateCell(row.id, column.id, { value: null, status: 'processing' });
     }
 
     try {
-      const response = await fetch('/api/enrichment/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          configId: column.enrichmentConfigId,
-          tableId,
-          targetColumnId: column.id,
-          // For custom mode, pass specific row IDs
-          rowIds: mode === 'custom' ? rowsToProcess.map(r => r.id) : undefined,
-          onlyEmpty: mode === 'incomplete',
-          includeErrors: mode === 'incomplete',
-          forceRerun: mode === 'force',
-        }),
-      });
+      // Process in batches
+      for (let i = 0; i < rowsToProcess.length; i += BATCH_SIZE) {
+        // Check for cancellation
+        if (cancelledRef.current) {
+          // Mark remaining as cancelled
+          for (let j = i; j < rowsToProcess.length; j++) {
+            updateCell(rowsToProcess[j].id, column.id, {
+              value: null,
+              status: 'error',
+              error: 'Cancelled by user',
+            });
+          }
+          break;
+        }
 
-      if (!response.ok) {
-        throw new Error('Failed to start enrichment');
+        const batch = rowsToProcess.slice(i, i + BATCH_SIZE);
+        const batchRowIds = batch.map(r => r.id);
+
+        try {
+          const response = await fetch('/api/enrichment/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              configId: column.enrichmentConfigId,
+              tableId,
+              targetColumnId: column.id,
+              rowIds: batchRowIds,
+              onlyEmpty: mode === 'incomplete',
+              includeErrors: mode === 'incomplete',
+              forceRerun: mode === 'force',
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error('API request failed');
+          }
+
+          const data = await response.json();
+
+          // Update cells from results
+          if (data.results) {
+            for (const result of data.results) {
+              if (result.data && result.data[column.id]) {
+                updateCell(result.rowId, column.id, result.data[column.id]);
+              }
+              // Also update any output columns
+              if (result.data) {
+                for (const [colId, cellData] of Object.entries(result.data)) {
+                  if (colId !== column.id) {
+                    updateCell(result.rowId, colId, cellData as CellValue);
+                  }
+                }
+              }
+            }
+          }
+
+          // Add any new columns to the store
+          if (data.newColumns && data.newColumns.length > 0) {
+            for (const newCol of data.newColumns) {
+              addColumn(newCol);
+            }
+          }
+
+          // Update progress
+          setProgress(prev => ({
+            ...prev,
+            completed: Math.min(i + BATCH_SIZE, rowsToProcess.length),
+          }));
+
+        } catch (batchError) {
+          console.error('Batch error:', batchError);
+          // Mark batch as error
+          for (const row of batch) {
+            updateCell(row.id, column.id, {
+              value: null,
+              status: 'error',
+              error: (batchError as Error).message,
+            });
+          }
+          setProgress(prev => ({
+            ...prev,
+            completed: Math.min(i + BATCH_SIZE, rowsToProcess.length),
+          }));
+        }
       }
 
-      const data = await response.json();
-
-      if (data.jobId) {
-        setActiveJob(column.id, data.jobId);
-      }
     } catch (error) {
-      console.error('Error starting enrichment:', error);
-      // Mark cells as error
-      for (const row of rowsToProcess) {
-        updateCell(row.id, column.id, {
-          value: null,
-          status: 'error',
-          error: (error as Error).message
-        });
-      }
+      console.error('Error running enrichment:', error);
+    } finally {
+      setIsRunning(false);
+      setProgress({ completed: 0, total: 0 });
+      // Refresh table to get latest state
+      fetchTable(tableId);
     }
   };
 
-  const handleCancel = async () => {
-    if (!activeJobId) return;
-
-    try {
-      await fetch(`/api/enrichment/run?jobId=${activeJobId}`, {
-        method: 'DELETE',
-      });
-      // Job status will be updated via polling
-    } catch (error) {
-      console.error('Error cancelling enrichment:', error);
-    }
+  const handleCancel = () => {
+    cancelledRef.current = true;
   };
 
   const handleButtonClick = (e: React.MouseEvent) => {
@@ -193,6 +189,10 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
       setIsDropdownOpen(!isDropdownOpen);
     }
   };
+
+  const progressPercent = progress.total > 0
+    ? Math.round((progress.completed / progress.total) * 100)
+    : 0;
 
   return (
     <div className="relative flex-shrink-0" ref={dropdownRef}>
@@ -205,18 +205,24 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
             ? 'text-red-400 bg-red-500/20 border-red-500/30 hover:bg-red-500/30'
             : 'text-emerald-400 bg-emerald-500/20 border-emerald-500/30 hover:bg-emerald-500/30'
         )}
-        title={isRunning ? 'Stop enrichment' : 'Run enrichment'}
+        title={isRunning ? `Stop (${progressPercent}%)` : 'Run enrichment'}
       >
         {isRunning ? (
-          isPolling ? (
-            <Loader2 className="w-3 h-3 animate-spin" />
-          ) : (
-            <Square className="w-3 h-3" />
-          )
+          <Loader2 className="w-3 h-3 animate-spin" />
         ) : (
           <Play className="w-3 h-3" />
         )}
       </button>
+
+      {/* Progress indicator */}
+      {isRunning && progress.total > 0 && (
+        <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-white/10 rounded overflow-hidden">
+          <div
+            className="h-full bg-emerald-400 transition-all duration-300"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+      )}
 
       {/* Dropdown menu */}
       {isDropdownOpen && !isRunning && (
