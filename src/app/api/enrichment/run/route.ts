@@ -148,104 +148,105 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Process rows synchronously
+    // Process rows IN PARALLEL for speed
     const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
     const pricing = MODEL_PRICING[config.model || 'gemini-2.0-flash'] || DEFAULT_PRICING;
-    const results: RowResult[] = [];
     let totalCost = 0;
 
-    // Process rows one by one (or could do small parallel batches)
-    for (const row of rows) {
-      try {
-        // Build prompt
-        const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
+    // Process all rows in parallel using Promise.all
+    const results = await Promise.all(
+      rows.map(async (row): Promise<RowResult> => {
+        try {
+          // Build prompt
+          const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
 
-        // Call AI
-        const aiResult = await callAI(prompt, config);
+          // Call AI
+          const aiResult = await callAI(prompt, config);
 
-        // Calculate cost
-        const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
-        totalCost += rowCost;
+          // Calculate cost
+          const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
+          totalCost += rowCost;
 
-        // Parse result
-        const parsedResult = parseAIResponse(aiResult.text);
+          // Parse result
+          const parsedResult = parseAIResponse(aiResult.text);
 
-        // Build updated data
-        const updatedData: Record<string, CellValue> = {
-          ...(row.data as Record<string, CellValue>),
-          [targetColumnId]: {
-            value: parsedResult.displayValue,
-            status: 'complete' as const,
-            enrichmentData: parsedResult.structuredData,
-            rawResponse: aiResult.text,
-          },
-        };
+          // Build updated data
+          const updatedData: Record<string, CellValue> = {
+            ...(row.data as Record<string, CellValue>),
+            [targetColumnId]: {
+              value: parsedResult.displayValue,
+              status: 'complete' as const,
+              enrichmentData: parsedResult.structuredData,
+              rawResponse: aiResult.text,
+            },
+          };
 
-        // Populate output columns
-        if (hasOutputColumns && parsedResult.structuredData) {
-          for (const [outputName, columnId] of Object.entries(outputColumnIds)) {
-            const matchingKey = Object.keys(parsedResult.structuredData).find(
-              key => key.toLowerCase() === outputName
-            );
+          // Populate output columns
+          if (hasOutputColumns && parsedResult.structuredData) {
+            for (const [outputName, columnId] of Object.entries(outputColumnIds)) {
+              const matchingKey = Object.keys(parsedResult.structuredData).find(
+                key => key.toLowerCase() === outputName
+              );
 
-            if (matchingKey) {
-              const value = parsedResult.structuredData[matchingKey];
-              updatedData[columnId] = {
-                value: value !== null && value !== undefined ? String(value) : null,
-                status: 'complete' as const,
-              };
-            } else {
-              updatedData[columnId] = {
-                value: null,
-                status: 'complete' as const,
-              };
+              if (matchingKey) {
+                const value = parsedResult.structuredData[matchingKey];
+                updatedData[columnId] = {
+                  value: value !== null && value !== undefined ? String(value) : null,
+                  status: 'complete' as const,
+                };
+              } else {
+                updatedData[columnId] = {
+                  value: null,
+                  status: 'complete' as const,
+                };
+              }
             }
           }
-        }
 
-        // Save to database
-        await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+          // Save to database
+          await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
 
-        results.push({
-          rowId: row.id,
-          success: true,
-          data: updatedData,
-          cost: rowCost,
-        });
+          return {
+            rowId: row.id,
+            success: true,
+            data: updatedData,
+            cost: rowCost,
+          };
 
-      } catch (error) {
-        console.error(`Error enriching row ${row.id}:`, error);
+        } catch (error) {
+          console.error(`Error enriching row ${row.id}:`, error);
 
-        // Mark as error
-        const updatedData: Record<string, CellValue> = {
-          ...(row.data as Record<string, CellValue>),
-          [targetColumnId]: {
-            value: null,
-            status: 'error' as const,
-            error: (error as Error).message,
-          },
-        };
-
-        if (hasOutputColumns) {
-          for (const columnId of Object.values(outputColumnIds)) {
-            updatedData[columnId] = {
+          // Mark as error
+          const updatedData: Record<string, CellValue> = {
+            ...(row.data as Record<string, CellValue>),
+            [targetColumnId]: {
               value: null,
               status: 'error' as const,
               error: (error as Error).message,
-            };
+            },
+          };
+
+          if (hasOutputColumns) {
+            for (const columnId of Object.values(outputColumnIds)) {
+              updatedData[columnId] = {
+                value: null,
+                status: 'error' as const,
+                error: (error as Error).message,
+              };
+            }
           }
+
+          await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+
+          return {
+            rowId: row.id,
+            success: false,
+            data: updatedData,
+            error: (error as Error).message,
+          };
         }
-
-        await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-
-        results.push({
-          rowId: row.id,
-          success: false,
-          data: updatedData,
-          error: (error as Error).message,
-        });
-      }
-    }
+      })
+    );
 
     return NextResponse.json({
       results,

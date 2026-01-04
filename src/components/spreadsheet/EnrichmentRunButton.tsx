@@ -13,7 +13,7 @@ interface EnrichmentRunButtonProps {
 
 type RunMode = 'all' | 'incomplete' | 'force' | 'custom';
 
-const BATCH_SIZE = 3; // Process 3 rows at a time to stay within Vercel timeout
+const BATCH_SIZE = 10; // Process 10 rows in parallel per batch
 
 export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProps) {
   const { rows, updateCell, addColumn, fetchTable } = useTableStore();
