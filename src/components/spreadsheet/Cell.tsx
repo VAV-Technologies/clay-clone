@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, AlertCircle, RotateCcw, CheckCircle2, ChevronRight, Database } from 'lucide-react';
+import { Loader2, AlertCircle, RotateCcw, CheckCircle2, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTableStore } from '@/stores/tableStore';
 import type { Row, Column, CellValue } from '@/lib/db/schema';
@@ -27,8 +27,6 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
 
   // Check if this is an enrichment column with a config
   const isEnrichmentColumn = column.type === 'enrichment' && column.enrichmentConfigId;
-  const hasStructuredData = isEnrichmentColumn && enrichmentData && Object.keys(enrichmentData).length > 0;
-  const dataPointCount = hasStructuredData ? Object.keys(enrichmentData!).length : 0;
 
   const handleRetryCell = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -75,8 +73,8 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
     // If it's a completed enrichment column, show the data viewer
     if (isEnrichmentColumn && status === 'complete') {
       // Use enrichmentData if available, otherwise create a simple object with the display value
-      const dataToShow = hasStructuredData
-        ? enrichmentData!
+      const dataToShow = enrichmentData && Object.keys(enrichmentData).length > 0
+        ? enrichmentData
         : displayValue !== null && displayValue !== undefined
           ? { result: displayValue }
           : {};
@@ -174,34 +172,14 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
     }
 
     if (status === 'complete') {
-      // Show the actual value
-      if (displayValue !== null && displayValue !== undefined && displayValue !== '') {
-        return (
-          <span className="truncate">{displayValue}</span>
-        );
-      }
-
-      // If no display value but has structured data, show datapoints badge
-      if (hasStructuredData) {
-        return (
-          <div className="flex items-center gap-2 cursor-pointer group/badge">
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400
-                          group-hover/badge:bg-emerald-500/30 transition-colors">
-              <Database className="w-3 h-3" />
-              <span className="text-xs font-medium">
-                {dataPointCount} {dataPointCount === 1 ? 'datapoint' : 'datapoints'}
-              </span>
-              <ChevronRight className="w-3 h-3 opacity-60" />
-            </div>
-          </div>
-        );
-      }
-
-      // Fallback - completed but no value
       return (
-        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
-          <CheckCircle2 className="w-3 h-3" />
-          <span className="text-xs font-medium">Completed</span>
+        <div className="flex items-center gap-2 cursor-pointer group/badge">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400
+                        group-hover/badge:bg-emerald-500/30 transition-colors">
+            <CheckCircle2 className="w-3 h-3" />
+            <span className="text-xs font-medium">Completed</span>
+            <ChevronRight className="w-3 h-3 opacity-60" />
+          </div>
         </div>
       );
     }
