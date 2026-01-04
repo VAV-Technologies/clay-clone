@@ -45,12 +45,26 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     };
   }, [column.id]);
 
-  // Poll for job status when running
+  // Process job batches and poll for status when running
   useEffect(() => {
     if (isRunning && activeJob) {
-      pollIntervalRef.current = setInterval(async () => {
-        await pollJobStatus(activeJob.id);
-      }, 3000); // Poll every 3 seconds
+      // Call process endpoint and then poll for status
+      const processAndPoll = async () => {
+        try {
+          // Trigger processing
+          await fetch('/api/cron/process-enrichment');
+          // Then check status
+          await pollJobStatus(activeJob.id);
+        } catch (error) {
+          console.error('Error processing:', error);
+        }
+      };
+
+      // Process immediately
+      processAndPoll();
+
+      // Then continue processing every 2 seconds
+      pollIntervalRef.current = setInterval(processAndPoll, 2000);
 
       return () => {
         if (pollIntervalRef.current) {
@@ -228,7 +242,7 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
             ? 'text-red-400 bg-red-500/20 border-red-500/30 hover:bg-red-500/30'
             : 'text-emerald-400 bg-emerald-500/20 border-emerald-500/30 hover:bg-emerald-500/30'
         )}
-        title={isRunning ? `Stop (${progressPercent}% - runs in background)` : 'Run enrichment'}
+        title={isRunning ? `Stop (${progressPercent}% complete)` : 'Run enrichment'}
       >
         {isRunning ? (
           <Loader2 className="w-3 h-3 animate-spin" />
@@ -253,7 +267,7 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
                         bg-[#1a1a2e]/95 backdrop-blur-xl border border-white/10
                         rounded-lg shadow-xl overflow-hidden">
           <div className="px-3 py-1.5 text-xs text-emerald-400 border-b border-white/10">
-            Runs in background - close tab OK
+            Auto-resumes if you leave and return
           </div>
           <button
             onClick={() => handleRunEnrichment('all')}
