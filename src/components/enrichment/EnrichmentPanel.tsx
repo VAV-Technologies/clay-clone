@@ -21,7 +21,7 @@ import {
 import { cn } from '@/lib/utils';
 import { GlassButton, GlassCard } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
-import type { Row } from '@/lib/db/schema';
+import type { Row, CellValue } from '@/lib/db/schema';
 
 interface EnrichmentPanelProps {
   isOpen: boolean;
@@ -456,7 +456,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       // Get row IDs to test
       const testRowIds = rows.slice(0, Math.min(numRows, rows.length)).map(r => r.id);
 
-      // Run on selected rows
+      // Run on selected rows (synchronous - returns results directly)
       const response = await fetch('/api/enrichment/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -468,49 +468,32 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         }),
       });
 
-      if (!response.ok) throw new Error('Test failed');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Test failed');
+      }
 
       const result = await response.json();
 
-      // Poll for result
-      const pollInterval = setInterval(async () => {
-        const statusRes = await fetch(`/api/enrichment/run?jobId=${result.jobId}`);
-        const status = await statusRes.json();
+      // Reload table to get new column and updated rows
+      await fetchTable(currentTable.id);
 
-        if (status.status === 'complete') {
-          clearInterval(pollInterval);
+      // Get updated rows for display
+      const rowRes = await fetch(`/api/rows?tableId=${currentTable.id}`);
+      const updatedRows = await rowRes.json();
 
-          // Reload table to get new column and updated rows
-          await fetchTable(currentTable.id);
-
-          // Get updated rows for display
-          const rowRes = await fetch(`/api/rows?tableId=${currentTable.id}`);
-          const updatedRows = await rowRes.json();
-
-          const results: string[] = [];
-          testRowIds.forEach((rowId) => {
-            const updatedRow = updatedRows.find((r: { id: string }) => r.id === rowId);
-            if (updatedRow) {
-              const cellValue = updatedRow.data[targetColumnId];
-              results.push(cellValue?.value || 'No result');
-            }
-          });
-
-          setTestResults(results);
-          setIsTesting(false);
-          setTestingRows(0);
+      const results: string[] = [];
+      testRowIds.forEach((rowId) => {
+        const updatedRow = updatedRows.find((r: { id: string }) => r.id === rowId);
+        if (updatedRow) {
+          const cellValue = updatedRow.data[targetColumnId];
+          results.push(cellValue?.value || 'No result');
         }
-      }, 1000);
+      });
 
-      // Timeout after 60 seconds for larger tests
-      setTimeout(() => {
-        clearInterval(pollInterval);
-        if (isTesting) {
-          setError('Test timed out');
-          setIsTesting(false);
-          setTestingRows(0);
-        }
-      }, 60000);
+      setTestResults(results);
+      setIsTesting(false);
+      setTestingRows(0);
     } catch (err) {
       setError((err as Error).message);
       setIsTesting(false);
@@ -565,7 +548,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         updateCell(rowId, targetColumnId, { value: null, status: 'processing' });
       });
 
-      // Start enrichment
+      // Start enrichment (synchronous - returns results directly)
       const response = await fetch('/api/enrichment/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -578,49 +561,33 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to start enrichment');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to run enrichment');
+      }
 
       const result = await response.json();
 
-      // Close panel immediately - enrichment runs in background
+      // Update progress
+      setProgress({
+        completed: result.processedCount || 0,
+        total: result.processedCount || 0
+      });
+
+      // Update cells with results
+      if (result.results && Array.isArray(result.results)) {
+        result.results.forEach((rowResult: { rowId: string; data?: Record<string, CellValue> }) => {
+          if (rowResult.data && rowResult.data[targetColumnId]) {
+            updateCell(rowResult.rowId, targetColumnId, rowResult.data[targetColumnId]);
+          }
+        });
+      }
+
+      // Reload table to ensure everything is in sync
+      await fetchTable(currentTable.id);
+
       setIsRunning(false);
       onClose();
-
-      // Start background polling for updates
-      const pollInterval = setInterval(async () => {
-        try {
-          const statusRes = await fetch(`/api/enrichment/run?jobId=${result.jobId}`);
-          if (!statusRes.ok) {
-            clearInterval(pollInterval);
-            return;
-          }
-          const status = await statusRes.json();
-
-          // Fetch only newly completed rows (server tracks what we've already fetched)
-          if (status.newlyCompletedRowIds && status.newlyCompletedRowIds.length > 0) {
-            const rowsRes = await fetch(`/api/rows?tableId=${currentTable.id}&rowIds=${status.newlyCompletedRowIds.join(',')}`);
-            if (rowsRes.ok) {
-              const updatedRows = await rowsRes.json();
-              // Update each row in the store
-              updatedRows.forEach((row: Row) => {
-                const cellData = row.data[targetColumnId];
-                if (cellData) {
-                  updateCell(row.id, targetColumnId, cellData);
-                }
-              });
-            }
-          }
-
-          if (status.status === 'complete') {
-            clearInterval(pollInterval);
-          }
-        } catch (pollError) {
-          console.error('Polling error:', pollError);
-        }
-      }, 2000); // Poll every 2 seconds
-
-      // Timeout after 10 minutes
-      setTimeout(() => clearInterval(pollInterval), 600000);
 
     } catch (err) {
       setError((err as Error).message);
