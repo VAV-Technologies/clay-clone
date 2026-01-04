@@ -69,6 +69,8 @@ export async function POST(request: NextRequest) {
       targetColumnId,
       rowIds, // Optional: specific rows to enrich
       onlyEmpty = false, // Only enrich cells without values
+      includeErrors = false, // Also include cells with error status
+      forceRerun = false, // Force re-run on all rows (clears existing values)
     } = body;
 
     if (!configId || !tableId || !targetColumnId) {
@@ -140,8 +142,20 @@ export async function POST(request: NextRequest) {
       rows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, tableId));
     }
 
-    // Filter to only empty cells if requested
-    if (onlyEmpty) {
+    // Filter rows based on run mode
+    if (forceRerun) {
+      // Force re-run: include all rows, will overwrite existing values
+      // No filtering needed
+    } else if (onlyEmpty && includeErrors) {
+      // Run on incomplete: empty OR error cells
+      rows = rows.filter((row) => {
+        const cellValue = row.data[targetColumnId];
+        if (!cellValue || !cellValue.value) return true; // Empty
+        if (cellValue.status === 'error') return true; // Error
+        return false;
+      });
+    } else if (onlyEmpty) {
+      // Only empty cells (no value)
       rows = rows.filter((row) => {
         const cellValue = row.data[targetColumnId];
         return !cellValue || !cellValue.value;

@@ -637,7 +637,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         <div className="flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-lavender" />
           <h2 className="font-semibold text-white">
-            {isEditMode ? `Re-run: ${editColumn?.name}` : 'AI Enrichment'}
+            {isEditMode ? `Edit: ${editColumn?.name}` : 'AI Enrichment'}
           </h2>
         </div>
         <button
@@ -993,24 +993,23 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             Save Configuration
           </GlassButton>
         )}
-        {/* Run button */}
-        <GlassButton
-          variant="primary"
-          className="w-full"
-          onClick={handleRun}
-          disabled={!prompt || (!isEditMode && !outputColumnName.trim()) || isTesting || isRunning || !canRunEnrichment}
-          loading={isRunning}
-        >
-          <Play className="w-4 h-4 mr-1" />
-          {isEditMode
-            ? selectedRows.size > 0
-              ? `Re-run on ${selectedRows.size} Selected`
-              : 'Re-run on All Rows'
-            : selectedRows.size > 0
-              ? `Run on ${selectedRows.size} Selected`
-              : 'Run on All Rows'
-          }
-        </GlassButton>
+        {/* Create button - only for new enrichments (not edit mode) */}
+        {/* In edit mode, use the play button on the column header to run enrichment */}
+        {!isEditMode && (
+          <GlassButton
+            variant="primary"
+            className="w-full"
+            onClick={handleRun}
+            disabled={!prompt || !outputColumnName.trim() || isTesting || isRunning || !canRunEnrichment}
+            loading={isRunning}
+          >
+            <Play className="w-4 h-4 mr-1" />
+            {selectedRows.size > 0
+              ? `Create & Run on ${selectedRows.size} Selected`
+              : 'Create & Run on All Rows'
+            }
+          </GlassButton>
+        )}
       </div>
 
       {/* Prompt Optimizer Modal */}

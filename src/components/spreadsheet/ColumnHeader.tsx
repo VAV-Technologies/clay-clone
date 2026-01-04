@@ -20,10 +20,12 @@ import {
 import { cn } from '@/lib/utils';
 import { Dropdown } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
+import { EnrichmentRunButton } from './EnrichmentRunButton';
 import type { Column } from '@/lib/db/schema';
 
 interface ColumnHeaderProps {
   column: Column;
+  tableId: string;
   onEnrichmentClick?: (columnId: string) => void;
   onFormulaClick?: (columnId: string) => void;
 }
@@ -38,7 +40,7 @@ const TYPE_ICONS = {
   formula: Code,
 };
 
-export function ColumnHeader({ column, onEnrichmentClick, onFormulaClick }: ColumnHeaderProps) {
+export function ColumnHeader({ column, tableId, onEnrichmentClick, onFormulaClick }: ColumnHeaderProps) {
   const {
     sortColumn,
     sortDirection,
@@ -242,6 +244,11 @@ export function ColumnHeader({ column, onEnrichmentClick, onFormulaClick }: Colu
         />
       ) : (
         <TypeIcon className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
+      )}
+
+      {/* Play/Pause button for enrichment columns - right after type icon */}
+      {isEnrichmentColumn && (
+        <EnrichmentRunButton column={column} tableId={tableId} />
       )}
 
       {/* Name */}

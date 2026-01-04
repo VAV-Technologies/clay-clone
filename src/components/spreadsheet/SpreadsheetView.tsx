@@ -303,6 +303,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
               <ColumnHeader
                 key={column.id}
                 column={column}
+                tableId={tableId}
                 onEnrichmentClick={onEnrich}
                 onFormulaClick={onFormula}
               />

@@ -44,6 +44,9 @@ interface TableState {
   // Column visibility
   hiddenColumns: Set<string>;
 
+  // Active enrichment jobs (columnId → jobId)
+  activeEnrichmentJobs: Map<string, string>;
+
   // Actions
   setCurrentTable: (table: Table | null) => void;
   setColumns: (columns: Column[]) => void;
@@ -80,6 +83,10 @@ interface TableState {
   toggleColumnVisibility: (columnId: string) => void;
   showAllColumns: () => void;
 
+  // Enrichment job actions
+  setActiveJob: (columnId: string, jobId: string | null) => void;
+  getActiveJobId: (columnId: string) => string | null;
+
   // Computed
   getFilteredRows: () => Row[];
   getSortedRows: () => Row[];
@@ -104,6 +111,7 @@ export const useTableStore = create<TableState>((set, get) => ({
   rowDisplayStart: 0,
   rowDisplayLimit: null,
   hiddenColumns: new Set(),
+  activeEnrichmentJobs: new Map(),
 
   setCurrentTable: (table) => set({ currentTable: table }),
 
@@ -329,6 +337,20 @@ export const useTableStore = create<TableState>((set, get) => ({
     }),
 
   showAllColumns: () => set({ hiddenColumns: new Set() }),
+
+  // Enrichment job actions
+  setActiveJob: (columnId, jobId) =>
+    set((state) => {
+      const newJobs = new Map(state.activeEnrichmentJobs);
+      if (jobId === null) {
+        newJobs.delete(columnId);
+      } else {
+        newJobs.set(columnId, jobId);
+      }
+      return { activeEnrichmentJobs: newJobs };
+    }),
+
+  getActiveJobId: (columnId) => get().activeEnrichmentJobs.get(columnId) ?? null,
 
   // Computed: Get displayed rows (sorted + sliced by range)
   getDisplayedRows: () => {
