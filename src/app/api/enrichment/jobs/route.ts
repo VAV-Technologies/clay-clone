@@ -126,24 +126,48 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// DELETE /api/enrichment/jobs?jobId=xxx - Cancel a job
+// DELETE /api/enrichment/jobs?jobId=xxx OR ?columnId=xxx - Cancel job(s)
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const jobId = searchParams.get('jobId');
+  const columnId = searchParams.get('columnId');
 
-  if (!jobId) {
-    return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
+  if (!jobId && !columnId) {
+    return NextResponse.json({ error: 'jobId or columnId is required' }, { status: 400 });
   }
 
   try {
-    await db.update(schema.enrichmentJobs)
-      .set({
-        status: 'cancelled',
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.enrichmentJobs.id, jobId));
+    if (jobId) {
+      // Cancel single job by ID
+      await db.update(schema.enrichmentJobs)
+        .set({
+          status: 'cancelled',
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.enrichmentJobs.id, jobId));
 
-    return NextResponse.json({ success: true, message: 'Job cancelled' });
+      return NextResponse.json({ success: true, message: 'Job cancelled' });
+    } else if (columnId) {
+      // Cancel all active jobs for this column
+      await db.update(schema.enrichmentJobs)
+        .set({
+          status: 'cancelled',
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.enrichmentJobs.targetColumnId, columnId),
+            or(
+              eq(schema.enrichmentJobs.status, 'pending'),
+              eq(schema.enrichmentJobs.status, 'running')
+            )
+          )
+        );
+
+      return NextResponse.json({ success: true, message: 'All jobs for column cancelled' });
+    }
+
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   } catch (error) {
     console.error('Error cancelling job:', error);
     return NextResponse.json({ error: 'Failed to cancel job' }, { status: 500 });

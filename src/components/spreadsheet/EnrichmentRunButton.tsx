@@ -218,6 +218,26 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     }
   };
 
+  const handleCancelAll = async () => {
+    setIsDropdownOpen(false);
+
+    try {
+      // Cancel all jobs for this column
+      await fetch(`/api/enrichment/jobs?columnId=${column.id}`, {
+        method: 'DELETE',
+      });
+
+      setActiveJob(null);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      fetchTable(tableId);
+    } catch (error) {
+      console.error('Error cancelling all jobs:', error);
+    }
+  };
+
   const handleButtonClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isRunning) {
@@ -343,6 +363,15 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
           >
             <RotateCcw className="w-4 h-4 text-amber-400" />
             Force Re-run All
+          </button>
+          <div className="border-t border-white/10" />
+          <button
+            onClick={handleCancelAll}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400
+                       hover:bg-red-500/10 transition-colors text-left"
+          >
+            <Square className="w-4 h-4" />
+            Cancel All Runs
           </button>
         </div>
       )}
