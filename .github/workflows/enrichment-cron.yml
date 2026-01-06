@@ -1,0 +1,21 @@
+name: Enrichment Processing Cron
+
+on:
+  schedule:
+    # Run every 5 minutes (GitHub Actions minimum)
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  process-enrichment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Process enrichment batches
+        run: |
+          # Call the endpoint multiple times to process more rows per run
+          for i in {1..5}; do
+            echo "Batch $i..."
+            curl -s "https://dataflow-pi.vercel.app/api/cron/process-enrichment"
+            echo ""
+            sleep 30
+          done
