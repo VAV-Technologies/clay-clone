@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Plus, Sparkles, Code } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -24,6 +24,7 @@ const ROW_HEIGHT = 36;
 const HEADER_HEIGHT = 40;
 const CHECKBOX_WIDTH = 40;
 const ROW_NUMBER_WIDTH = 50;
+const STATUS_ROW_HEIGHT = 24;
 
 interface EnrichmentDataState {
   isOpen: boolean;
@@ -46,6 +47,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
   const {
     currentTable,
     columns,
+    rows,
     isLoading,
     editingCell,
     selectedRows,
@@ -68,6 +70,29 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
   const displayedRows = getDisplayedRows();
   // Use visible columns (hidden columns filtered out)
   const visibleColumns = getVisibleColumns();
+
+  // Calculate enrichment status counts for each enrichment column
+  const enrichmentStats = useMemo(() => {
+    const stats: Record<string, { completed: number; errors: number; inQueue: number; processing: number }> = {};
+
+    for (const col of visibleColumns) {
+      if (col.type === 'enrichment' && col.enrichmentConfigId) {
+        let completed = 0, errors = 0, inQueue = 0, processing = 0;
+
+        for (const row of rows) {
+          const cell = row.data[col.id];
+          if (!cell || !cell.status) inQueue++;
+          else if (cell.status === 'complete') completed++;
+          else if (cell.status === 'error') errors++;
+          else if (cell.status === 'processing') processing++;
+          else inQueue++;
+        }
+
+        stats[col.id] = { completed, errors, inQueue, processing };
+      }
+    }
+    return stats;
+  }, [visibleColumns, rows]);
 
   const rowVirtualizer = useVirtualizer({
     count: displayedRows.length,
@@ -321,6 +346,63 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                 <Plus className="w-4 h-4" />
               </button>
             </div>
+          </div>
+
+          {/* Enrichment Status Summary Row */}
+          <div
+            className="flex border-b border-white/[0.08] bg-[#0d0d1a]/80"
+            style={{ height: STATUS_ROW_HEIGHT }}
+          >
+            {/* Checkbox spacer */}
+            <div
+              className="border-r border-white/[0.05]"
+              style={{ width: CHECKBOX_WIDTH, minWidth: CHECKBOX_WIDTH }}
+            />
+
+            {/* Row number spacer */}
+            <div
+              className="border-r border-white/[0.05]"
+              style={{ width: ROW_NUMBER_WIDTH, minWidth: ROW_NUMBER_WIDTH }}
+            />
+
+            {/* Status cells */}
+            {visibleColumns.map((column) => {
+              const stats = enrichmentStats[column.id];
+
+              if (!stats) {
+                return (
+                  <div
+                    key={`status-${column.id}`}
+                    className="border-r border-white/[0.05]"
+                    style={{ width: column.width || 150, minWidth: column.width || 150 }}
+                  />
+                );
+              }
+
+              return (
+                <div
+                  key={`status-${column.id}`}
+                  className="flex items-center gap-2 px-2 text-[10px] border-r border-white/[0.05] overflow-hidden"
+                  style={{ width: column.width || 150, minWidth: column.width || 150 }}
+                >
+                  {stats.completed > 0 && (
+                    <span className="text-emerald-400">{stats.completed} done</span>
+                  )}
+                  {stats.processing > 0 && (
+                    <span className="text-lavender">{stats.processing} running</span>
+                  )}
+                  {stats.inQueue > 0 && (
+                    <span className="text-white/40">{stats.inQueue} queued</span>
+                  )}
+                  {stats.errors > 0 && (
+                    <span className="text-red-400">{stats.errors} errors</span>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Add column spacer */}
+            <div style={{ width: ADD_COLUMN_WIDTH }} />
           </div>
 
           {/* Rows */}

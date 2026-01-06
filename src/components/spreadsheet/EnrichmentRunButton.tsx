@@ -11,7 +11,7 @@ interface EnrichmentRunButtonProps {
   tableId: string;
 }
 
-type RunMode = 'all' | 'incomplete' | 'force' | 'custom';
+type RunMode = 'all' | 'incomplete' | 'force' | 'custom' | 'errors';
 
 interface JobStatus {
   id: string;
@@ -152,6 +152,11 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
         if (!cellValue || !cellValue.value) return true;
         if (cellValue.status === 'error') return true;
         return false;
+      });
+    } else if (mode === 'errors') {
+      rowsToProcess = rows.filter((row) => {
+        const cellValue = row.data[column.id];
+        return cellValue?.status === 'error';
       });
     }
 
@@ -363,6 +368,14 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
           >
             <RotateCcw className="w-4 h-4 text-amber-400" />
             Force Re-run All
+          </button>
+          <button
+            onClick={() => handleRunEnrichment('errors')}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/80
+                       hover:bg-white/10 transition-colors text-left"
+          >
+            <RotateCcw className="w-4 h-4 text-red-400" />
+            Re-run Rows with Errors
           </button>
           <div className="border-t border-white/10" />
           <button
