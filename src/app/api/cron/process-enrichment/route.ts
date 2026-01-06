@@ -6,8 +6,8 @@ import type { CellValue } from '@/lib/db/schema';
 // Vercel function config - max duration for hobby is 10s, pro is 60s
 export const maxDuration = 60; // Will use max available for your plan
 
-const BATCH_SIZE = 20; // Process 20 rows per call (avoid rate limits)
-const CONCURRENT_REQUESTS = 5; // Max concurrent AI requests to avoid 429 errors
+const BATCH_SIZE = 50; // Process 50 rows per call
+const CONCURRENT_REQUESTS = 10; // Max concurrent AI requests (Vertex allows 2000 RPM)
 
 // Gemini model pricing (per 1M tokens)
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
