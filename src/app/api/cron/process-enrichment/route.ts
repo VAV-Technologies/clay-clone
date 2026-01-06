@@ -6,7 +6,8 @@ import type { CellValue } from '@/lib/db/schema';
 // Vercel function config - max duration for hobby is 10s, pro is 60s
 export const maxDuration = 60; // Will use max available for your plan
 
-const BATCH_SIZE = 100; // Process 100 rows per call (balance between speed and timeout)
+const BATCH_SIZE = 20; // Process 20 rows per call (avoid rate limits)
+const CONCURRENT_REQUESTS = 5; // Max concurrent AI requests to avoid 429 errors
 
 // Gemini model pricing (per 1M tokens)
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
@@ -155,9 +156,8 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
   let batchCost = 0;
   let batchErrors = 0;
 
-  // Process rows in parallel
-  await Promise.all(
-    rows.map(async (row) => {
+  // Process rows with limited concurrency to avoid rate limits
+  const processRow = async (row: typeof rows[0]) => {
       try {
         const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
         const aiResult = await callAI(prompt, config);
@@ -220,8 +220,17 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
 
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
       }
-    })
-  );
+  };
+
+  // Process with limited concurrency
+  for (let i = 0; i < rows.length; i += CONCURRENT_REQUESTS) {
+    const chunk = rows.slice(i, i + CONCURRENT_REQUESTS);
+    await Promise.all(chunk.map(processRow));
+    // Small delay between chunks to avoid rate limits
+    if (i + CONCURRENT_REQUESTS < rows.length) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  }
 
   // Update job progress
   const newIndex = currentIndex + batchRowIds.length;
