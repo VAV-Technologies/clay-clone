@@ -156,14 +156,14 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
       const errorMessage = cellData?.error || 'Unknown error';
       return (
         <div className="flex items-center gap-2 group/error relative">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 cursor-help">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 cursor-pointer">
             <AlertCircle className="w-3 h-3" />
-            <span className="text-xs font-medium truncate max-w-[120px]">{errorMessage}</span>
+            <span className="text-xs font-medium">Error</span>
           </div>
           {/* Error tooltip on hover */}
           <div className="absolute bottom-full left-0 mb-1 hidden group-hover/error:block z-50">
-            <div className="bg-red-950/95 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-200 shadow-xl max-w-[250px]">
-              <div className="font-medium text-red-400 mb-1">Error</div>
+            <div className="bg-red-950/95 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-200 shadow-xl max-w-[300px]">
+              <div className="font-medium text-red-400 mb-1">Error Details</div>
               <div className="break-words">{errorMessage}</div>
             </div>
           </div>
@@ -184,8 +184,12 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
       );
     }
 
-    // Pending or no status
-    return <span className="text-white/20">-</span>;
+    // Pending or no status - show "In Queue"
+    return (
+      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 text-white/40">
+        <span className="text-xs font-medium">In Queue</span>
+      </div>
+    );
   };
 
   const renderContent = () => {
