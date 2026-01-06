@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
-import { eq } from 'drizzle-orm';
+import { eq, or } from 'drizzle-orm';
 
 // PATCH /api/columns/[id] - Update column
 export async function PATCH(
@@ -60,6 +60,19 @@ export async function DELETE(
 
     if (!existing) {
       return NextResponse.json({ error: 'Column not found' }, { status: 404 });
+    }
+
+    // If this is an enrichment column, cancel any running jobs
+    if (existing.type === 'enrichment') {
+      await db
+        .update(schema.enrichmentJobs)
+        .set({
+          status: 'cancelled',
+          updatedAt: new Date(),
+        })
+        .where(
+          eq(schema.enrichmentJobs.targetColumnId, id)
+        );
     }
 
     // Delete the column
