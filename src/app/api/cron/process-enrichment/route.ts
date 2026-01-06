@@ -3,7 +3,10 @@ import { db, schema } from '@/lib/db';
 import { eq, or, inArray } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
 
-const BATCH_SIZE = 50; // Process 50 rows per cron invocation
+// Vercel function config - max duration for hobby is 10s, pro is 60s
+export const maxDuration = 60; // Will use max available for your plan
+
+const BATCH_SIZE = 100; // Process 100 rows per call (balance between speed and timeout)
 
 // Gemini model pricing (per 1M tokens)
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
