@@ -3,7 +3,7 @@ import { db, schema } from '@/lib/db';
 import { eq, or, inArray } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
 
-const BATCH_SIZE = 25; // Process 25 rows per cron invocation
+const BATCH_SIZE = 50; // Process 50 rows per cron invocation
 
 // Gemini model pricing (per 1M tokens)
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
@@ -21,12 +21,18 @@ interface AIResult {
   outputTokens: number;
 }
 
-// GET /api/cron/process-enrichment - Called by Vercel Cron
+// GET /api/cron/process-enrichment - Called by external cron service
 export async function GET(request: NextRequest) {
-  // Verify cron secret (optional but recommended)
+  // Optional: Verify cron secret via query param or header
+  const { searchParams } = new URL(request.url);
+  const secret = searchParams.get('secret');
   const authHeader = request.headers.get('authorization');
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  if (process.env.CRON_SECRET) {
+    const providedSecret = secret || authHeader?.replace('Bearer ', '');
+    if (providedSecret !== process.env.CRON_SECRET) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
   }
 
   try {

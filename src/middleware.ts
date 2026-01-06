@@ -7,10 +7,11 @@ const DEVICE_TOKEN_COOKIE = 'dataflow_device_token';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow access to auth page and API routes
+  // Allow access to auth page, cron endpoints, and other public routes
   if (
     pathname === '/auth' ||
     pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/cron') ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon')
   ) {
