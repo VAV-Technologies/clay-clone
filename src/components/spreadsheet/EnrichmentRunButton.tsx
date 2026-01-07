@@ -161,40 +161,18 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     }
 
     if (rowsToProcess.length === 0) {
-      alert(`No rows to process. Mode: ${mode}, Total rows: ${rows.length}, Column: ${column.id}`);
       return;
     }
 
-    alert(`Starting ${mode} run with ${rowsToProcess.length} rows`);
-
     try {
-      // First, cancel any existing jobs for this column (with timeout)
-      alert('Step 1: Cancelling existing jobs...');
-      const controller1 = new AbortController();
-      const timeout1 = setTimeout(() => controller1.abort(), 10000);
-      try {
-        const deleteRes = await fetch(`/api/enrichment/jobs?columnId=${column.id}`, {
-          method: 'DELETE',
-          signal: controller1.signal,
-        });
-        clearTimeout(timeout1);
-        alert(`Step 1 done: ${deleteRes.status}`);
-      } catch (e) {
-        clearTimeout(timeout1);
-        alert(`Step 1 timed out or failed, continuing anyway...`);
-      }
-
-      // Clear local state
+      // Clear local state first
       setActiveJob(null);
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
         pollIntervalRef.current = null;
       }
 
-      // Create background job (with longer timeout for large datasets)
-      alert('Step 2: Creating job...');
-      const controller2 = new AbortController();
-      const timeout2 = setTimeout(() => controller2.abort(), 60000); // 60s for large jobs
+      // Create background job - POST auto-cancels any existing jobs
       const response = await fetch('/api/enrichment/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -204,18 +182,15 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
           targetColumnId: column.id,
           rowIds: rowsToProcess.map(r => r.id),
         }),
-        signal: controller2.signal,
       });
-      clearTimeout(timeout2);
 
       if (!response.ok) {
         const error = await response.json();
-        alert(`Step 2 FAILED: ${JSON.stringify(error)}`);
+        console.error('Failed to create job:', error);
         return;
       }
 
       const data = await response.json();
-      alert(`Step 2 done: Job created ${data.jobId}`);
 
       // Set active job and start polling
       setActiveJob({
@@ -229,12 +204,9 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
       });
 
       // Refresh table to show processing status
-      alert('Step 3: Refreshing table...');
       await fetchTable(tableId);
-      alert('Step 3 done: Table refreshed');
 
     } catch (error) {
-      alert(`ERROR: ${(error as Error).message}`);
       console.error('Error creating job:', error);
     }
   };
