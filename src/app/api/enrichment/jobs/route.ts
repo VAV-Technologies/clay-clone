@@ -16,10 +16,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if there's already an active job for this column
-    const existingJob = await db
-      .select()
-      .from(schema.enrichmentJobs)
+    // Auto-cancel any existing active jobs for this column (instead of blocking)
+    await db.update(schema.enrichmentJobs)
+      .set({
+        status: 'cancelled',
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(schema.enrichmentJobs.targetColumnId, targetColumnId),
@@ -29,13 +31,6 @@ export async function POST(request: NextRequest) {
           )
         )
       );
-
-    if (existingJob.length > 0) {
-      return NextResponse.json(
-        { error: 'A job is already running for this column', existingJobId: existingJob[0].id },
-        { status: 409 }
-      );
-    }
 
     // Create new job
     const jobId = nanoid(12);
