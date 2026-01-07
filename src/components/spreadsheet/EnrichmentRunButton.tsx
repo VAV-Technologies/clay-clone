@@ -161,8 +161,11 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     }
 
     if (rowsToProcess.length === 0) {
+      alert(`No rows to process. Mode: ${mode}, Total rows: ${rows.length}, Column: ${column.id}`);
       return;
     }
+
+    alert(`Starting ${mode} run with ${rowsToProcess.length} rows`);
 
     try {
       // First, cancel any existing jobs for this column
