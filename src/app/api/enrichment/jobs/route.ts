@@ -93,6 +93,8 @@ export async function GET(request: NextRequest) {
   const columnId = searchParams.get('columnId');
   const jobId = searchParams.get('jobId');
 
+  const STALE_JOB_MINUTES = 10;
+
   try {
     let jobs;
 
@@ -117,6 +119,26 @@ export async function GET(request: NextRequest) {
             eq(schema.enrichmentJobs.status, 'running')
           )
         );
+    }
+
+    // Auto-complete stale jobs (not updated in 10+ minutes)
+    const now = Date.now();
+    for (const job of jobs) {
+      if (job.status === 'pending' || job.status === 'running') {
+        const updatedAt = job.updatedAt ? new Date(job.updatedAt).getTime() : 0;
+        const minutesSinceUpdate = (now - updatedAt) / 1000 / 60;
+
+        if (minutesSinceUpdate > STALE_JOB_MINUTES) {
+          await db.update(schema.enrichmentJobs)
+            .set({
+              status: 'complete',
+              updatedAt: new Date(),
+              completedAt: new Date(),
+            })
+            .where(eq(schema.enrichmentJobs.id, job.id));
+          job.status = 'complete';
+        }
+      }
     }
 
     return NextResponse.json({ jobs });
