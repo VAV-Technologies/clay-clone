@@ -8,6 +8,8 @@ export const maxDuration = 60; // Will use max available for your plan
 
 const BATCH_SIZE = 50; // Process 50 rows per call
 const CONCURRENT_REQUESTS = 10; // Max concurrent AI requests (Vertex allows 2000 RPM)
+const AI_TIMEOUT_MS = 30000; // 30 second timeout per AI call
+const STALE_JOB_MINUTES = 10; // Auto-complete jobs stuck for 10+ minutes
 
 // Gemini model pricing (per 1M tokens)
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
@@ -23,6 +25,16 @@ interface AIResult {
   text: string;
   inputTokens: number;
   outputTokens: number;
+}
+
+// Timeout wrapper for promises
+function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(errorMsg)), ms)
+    ),
+  ]);
 }
 
 // GET /api/cron/process-enrichment - Called by external cron service
@@ -59,6 +71,23 @@ export async function GET(request: NextRequest) {
 
     // Process one batch for each active job
     for (const job of activeJobs) {
+      // Check for stale jobs (stuck for too long)
+      const updatedAt = job.updatedAt ? new Date(job.updatedAt).getTime() : 0;
+      const minutesSinceUpdate = (Date.now() - updatedAt) / 1000 / 60;
+
+      if (minutesSinceUpdate > STALE_JOB_MINUTES && job.currentIndex > 0) {
+        // Job is stuck - mark as complete
+        console.log(`Job ${job.id} is stale (${minutesSinceUpdate.toFixed(1)} min), marking complete`);
+        await db.update(schema.enrichmentJobs)
+          .set({
+            status: 'complete',
+            updatedAt: new Date(),
+            completedAt: new Date(),
+          })
+          .where(eq(schema.enrichmentJobs.id, job.id));
+        continue;
+      }
+
       const processed = await processJobBatch(job);
       totalProcessed += processed;
     }
@@ -160,7 +189,11 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
   const processRow = async (row: typeof rows[0]) => {
       try {
         const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
-        const aiResult = await callAI(prompt, config);
+        const aiResult = await withTimeout(
+          callAI(prompt, config),
+          AI_TIMEOUT_MS,
+          'AI request timed out after 30 seconds'
+        );
 
         const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
         batchCost += rowCost;
