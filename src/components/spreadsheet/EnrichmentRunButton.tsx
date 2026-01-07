@@ -45,26 +45,14 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     };
   }, [column.id]);
 
-  // Process job batches and poll for status when running
+  // Poll for job status when running - external cron handles actual processing
   useEffect(() => {
     if (isRunning && activeJob) {
-      // Call process endpoint and then poll for status
-      const processAndPoll = async () => {
-        try {
-          // Trigger processing
-          await fetch('/api/cron/process-enrichment');
-          // Then check status
-          await pollJobStatus(activeJob.id);
-        } catch (error) {
-          console.error('Error processing:', error);
-        }
-      };
+      // Poll immediately
+      pollJobStatus(activeJob.id);
 
-      // Process immediately
-      processAndPoll();
-
-      // Then continue processing every 2 seconds
-      pollIntervalRef.current = setInterval(processAndPoll, 2000);
+      // Then poll every 3 seconds for status updates
+      pollIntervalRef.current = setInterval(() => pollJobStatus(activeJob.id), 3000);
 
       return () => {
         if (pollIntervalRef.current) {
