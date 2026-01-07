@@ -165,6 +165,18 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     }
 
     try {
+      // First, cancel any existing jobs for this column
+      await fetch(`/api/enrichment/jobs?columnId=${column.id}`, {
+        method: 'DELETE',
+      });
+
+      // Clear local state
+      setActiveJob(null);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+
       // Create background job
       const response = await fetch('/api/enrichment/jobs', {
         method: 'POST',
