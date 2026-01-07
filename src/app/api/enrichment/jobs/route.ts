@@ -51,25 +51,8 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     });
 
-    // Mark all target cells as 'processing' in the database
-    const rows = await db
-      .select()
-      .from(schema.rows)
-      .where(eq(schema.rows.tableId, tableId));
-
-    const rowIdSet = new Set(rowIds);
-    for (const row of rows) {
-      if (rowIdSet.has(row.id)) {
-        const updatedData = {
-          ...(row.data as Record<string, unknown>),
-          [targetColumnId]: {
-            value: null,
-            status: 'processing' as const,
-          },
-        };
-        await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-      }
-    }
+    // Skip pre-marking cells as 'processing' - too slow for large datasets
+    // Cells will be updated when actually processed by the cron job
 
     return NextResponse.json({
       jobId,
