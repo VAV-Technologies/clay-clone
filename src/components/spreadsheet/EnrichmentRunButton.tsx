@@ -168,12 +168,21 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
     alert(`Starting ${mode} run with ${rowsToProcess.length} rows`);
 
     try {
-      // First, cancel any existing jobs for this column
+      // First, cancel any existing jobs for this column (with timeout)
       alert('Step 1: Cancelling existing jobs...');
-      const deleteRes = await fetch(`/api/enrichment/jobs?columnId=${column.id}`, {
-        method: 'DELETE',
-      });
-      alert(`Step 1 done: ${deleteRes.status}`);
+      const controller1 = new AbortController();
+      const timeout1 = setTimeout(() => controller1.abort(), 10000);
+      try {
+        const deleteRes = await fetch(`/api/enrichment/jobs?columnId=${column.id}`, {
+          method: 'DELETE',
+          signal: controller1.signal,
+        });
+        clearTimeout(timeout1);
+        alert(`Step 1 done: ${deleteRes.status}`);
+      } catch (e) {
+        clearTimeout(timeout1);
+        alert(`Step 1 timed out or failed, continuing anyway...`);
+      }
 
       // Clear local state
       setActiveJob(null);
@@ -182,8 +191,10 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
         pollIntervalRef.current = null;
       }
 
-      // Create background job
+      // Create background job (with longer timeout for large datasets)
       alert('Step 2: Creating job...');
+      const controller2 = new AbortController();
+      const timeout2 = setTimeout(() => controller2.abort(), 60000); // 60s for large jobs
       const response = await fetch('/api/enrichment/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -193,7 +204,9 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
           targetColumnId: column.id,
           rowIds: rowsToProcess.map(r => r.id),
         }),
+        signal: controller2.signal,
       });
+      clearTimeout(timeout2);
 
       if (!response.ok) {
         const error = await response.json();
