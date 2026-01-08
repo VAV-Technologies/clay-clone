@@ -24,7 +24,7 @@ interface JobStatus {
 }
 
 export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProps) {
-  const { rows, fetchTable } = useTableStore();
+  const { rows, fetchTable, updateCell } = useTableStore();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customRowCount, setCustomRowCount] = useState('10');
@@ -191,8 +191,15 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
         totalCost: 0,
       });
 
-      // Refresh table to show processing status
-      await fetchTable(tableId);
+      // Immediately update local cell states to 'pending' for instant feedback
+      // This shows "In Queue" status without waiting for the cron job
+      rowsToProcess.forEach((row) => {
+        const currentCell = row.data[column.id];
+        updateCell(row.id, column.id, {
+          ...currentCell,
+          status: 'pending',
+        });
+      });
 
     } catch (error) {
       console.error('Error creating job:', error);
