@@ -48,6 +48,14 @@ function isGpt5Model(modelId: string): boolean {
   return modelId.startsWith('gpt-5');
 }
 
+// GPT-5 models require a newer API version
+function getApiVersionForModel(modelId: string, defaultVersion: string): string {
+  if (isGpt5Model(modelId)) {
+    return '2025-01-01-preview';
+  }
+  return defaultVersion;
+}
+
 export function getDeploymentName(modelId: string): string {
   // Check for custom deployment name in env (e.g., AZURE_DEPLOYMENT_GPT_4O)
   const envKey = `AZURE_DEPLOYMENT_${modelId.toUpperCase().replace(/-/g, '_')}`;
@@ -77,8 +85,9 @@ export async function generateContent(
 ): Promise<AzureAIResult> {
   const azureConf = getAzureConfig();
   const deploymentName = getDeploymentName(modelId);
+  const apiVersion = getApiVersionForModel(modelId, azureConf.apiVersion);
 
-  const url = `${azureConf.endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${azureConf.apiVersion}`;
+  const url = `${azureConf.endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
 
   // GPT-5 models use max_completion_tokens, older models use max_tokens
   const tokenParam = isGpt5Model(modelId)
