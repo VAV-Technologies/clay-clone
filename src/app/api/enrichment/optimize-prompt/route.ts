@@ -1,5 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Hardcoded GPT-5-Chat configuration for prompt optimization
+const GPT5_CHAT_CONFIG = {
+  url: 'https://mama-mkof4van-eastus2.cognitiveservices.azure.com/openai/deployments/gpt-5-chat/chat/completions?api-version=2025-01-01-preview',
+  apiKey: 'EAUz04QAIN1DxUG2MijyS0k1ZuPgDbLIIQhk1irZooGRBp3LJCQmJQQJ99CAACHYHv6XJ3w3AAAAACOGzQm5',
+};
+
+// Call GPT-5-Chat for prompt optimization
+async function callGPT5Chat(prompt: string): Promise<string> {
+  const response = await fetch(GPT5_CHAT_CONFIG.url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': GPT5_CHAT_CONFIG.apiKey,
+    },
+    body: JSON.stringify({
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_completion_tokens: 4096,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`GPT-5-Chat API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
 // Helper: Check if column name is semantic (not "Column 563" etc)
 function isSemanticColumnName(name: string): boolean {
   const trimmed = name.trim();
@@ -98,7 +128,7 @@ function parseOptimizerResponseWithFallback(aiResponse: string): ParsedOptimizer
 
 // Build the complete system prompt with column context
 function buildSystemPrompt(columnContext: string): string {
-  return `You are an expert prompt engineer specializing in creating highly optimized prompts for AI-powered data enrichment and GTM workflows. Your task is to transform user requests into production-ready prompts that are structured for maximum effectiveness, cost efficiency, and minimal token waste.
+  return `You are an expert prompt engineer specializing in creating highly optimized prompts for GPT-5 Mini, which powers our data enrichment and GTM workflows. Your task is to transform user requests into production-ready prompts optimized specifically for GPT-5 Mini, structured for maximum effectiveness, cost efficiency, and minimal token waste.
 
 ## AVAILABLE INPUT COLUMNS
 
@@ -155,7 +185,7 @@ Generate prompts using this EXACT structure:
 #========================#
 #    ROLE & CONTEXT      #
 #========================#
-[Who the AI is - STATIC, 1-2 sentences max]
+[Who GPT-5 Mini is - STATIC, 1-2 sentences max]
 
 #========================#
 #    TASK OBJECTIVE      #
@@ -242,7 +272,7 @@ Ask yourself:
 Transform the user's request into an optimized prompt with minimal Data Guide now.`;
 }
 
-// POST /api/enrichment/optimize-prompt - Optimize a prompt using Gemini 2.5 Pro
+// POST /api/enrichment/optimize-prompt - Optimize a prompt using GPT-5-Chat
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -261,21 +291,11 @@ export async function POST(request: NextRequest) {
     // Build system prompt with column context
     const systemPrompt = buildSystemPrompt(columnContext);
 
-    const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-    const apiKey = process.env.GEMINI_API_KEY;
+    // Build full prompt
+    const fullPrompt = `${systemPrompt}\n\n---\n\nUser's prompt to optimize:\n${prompt}`;
 
-    let aiResponse: string;
-
-    if (projectId) {
-      aiResponse = await optimizeWithVertexAI(prompt, projectId, systemPrompt);
-    } else if (apiKey) {
-      aiResponse = await optimizeWithGeminiAPI(prompt, apiKey, systemPrompt);
-    } else {
-      return NextResponse.json(
-        { error: 'No AI provider configured. Set GOOGLE_CLOUD_PROJECT for Vertex AI or GEMINI_API_KEY for Gemini API.' },
-        { status: 500 }
-      );
-    }
+    // Call GPT-5-Chat for optimization
+    const aiResponse = await callGPT5Chat(fullPrompt);
 
     // Parse the response to extract prompt and Data Guide
     const parsed = parseOptimizerResponseWithFallback(aiResponse);
@@ -293,67 +313,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function optimizeWithVertexAI(
-  userPrompt: string,
-  projectId: string,
-  systemPrompt: string
-): Promise<string> {
-  const { getGenerativeModel } = await import('@/lib/vertex-ai');
-
-  const model = getGenerativeModel('gemini-2.0-flash', {
-    temperature: 0.7,
-    maxOutputTokens: 4096,
-  });
-
-  const fullPrompt = `${systemPrompt}\n\n---\n\nUser's prompt to optimize:\n${userPrompt}`;
-
-  const result = await model.generateContent(fullPrompt);
-  const response = result.response;
-
-  if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
-    return response.candidates[0].content.parts[0].text;
-  }
-
-  throw new Error('No response from AI');
-}
-
-async function optimizeWithGeminiAPI(
-  userPrompt: string,
-  apiKey: string,
-  systemPrompt: string
-): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
-
-  const fullPrompt = `${systemPrompt}\n\n---\n\nUser's prompt to optimize:\n${userPrompt}`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: fullPrompt }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 4096,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-
-  if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-    return data.candidates[0].content.parts[0].text;
-  }
-
-  throw new Error('No response from AI');
-}
