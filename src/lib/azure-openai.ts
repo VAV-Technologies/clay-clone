@@ -51,7 +51,7 @@ function isGpt5Model(modelId: string): boolean {
 // GPT-5 models require a newer API version
 function getApiVersionForModel(modelId: string, defaultVersion: string): string {
   if (isGpt5Model(modelId)) {
-    return '2025-01-01-preview';
+    return '2024-12-01-preview';
   }
   return defaultVersion;
 }
