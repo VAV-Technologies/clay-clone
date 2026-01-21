@@ -89,10 +89,22 @@ export async function generateContent(
 
   const url = `${azureConf.endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
 
-  // GPT-5 models use max_completion_tokens, older models use max_tokens
-  const tokenParam = isGpt5Model(modelId)
+  // GPT-5 models use max_completion_tokens and don't support temperature
+  const isGpt5 = isGpt5Model(modelId);
+  const tokenParam = isGpt5
     ? { max_completion_tokens: config.maxTokens ?? 8192 }
     : { max_tokens: config.maxTokens ?? 8192 };
+
+  // Build request body - GPT-5 models don't support temperature parameter
+  const requestBody: Record<string, unknown> = {
+    messages: [{ role: 'user', content: prompt }],
+    ...tokenParam,
+  };
+
+  // Only add temperature for non-GPT-5 models
+  if (!isGpt5) {
+    requestBody.temperature = config.temperature ?? 0.7;
+  }
 
   const response = await fetch(url, {
     method: 'POST',
@@ -100,11 +112,7 @@ export async function generateContent(
       'Content-Type': 'application/json',
       'api-key': azureConf.apiKey,
     },
-    body: JSON.stringify({
-      messages: [{ role: 'user', content: prompt }],
-      temperature: config.temperature ?? 0.7,
-      ...tokenParam,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
