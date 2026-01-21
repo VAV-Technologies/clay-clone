@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, AlertCircle, RotateCcw, CheckCircle2, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTableStore } from '@/stores/tableStore';
@@ -18,7 +19,10 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
   const { updateCell, setEditingCell, fetchTable } = useTableStore();
   const [editValue, setEditValue] = useState('');
   const [isRetrying, setIsRetrying] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
+  const errorBadgeRef = useRef<HTMLDivElement>(null);
 
   const cellData = row.data[column.id] as CellValue | undefined;
   const displayValue = cellData?.value ?? '';
@@ -140,6 +144,14 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
     }
   };
 
+  const handleErrorHover = useCallback((show: boolean) => {
+    if (show && errorBadgeRef.current) {
+      const rect = errorBadgeRef.current.getBoundingClientRect();
+      setTooltipPosition({ x: rect.left, y: rect.bottom + 4 });
+    }
+    setShowTooltip(show);
+  }, []);
+
   const renderEnrichmentContent = () => {
     if (status === 'processing') {
       return (
@@ -155,19 +167,32 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
     if (status === 'error') {
       const errorMessage = cellData?.error || 'Unknown error';
       return (
-        <div className="flex items-center gap-2 group/error relative">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">
-            <AlertCircle className="w-3 h-3" />
-            <span className="text-xs font-medium">Error</span>
-          </div>
-          {/* Error tooltip on hover */}
-          <div className="absolute top-full left-0 mt-1 hidden group-hover/error:block z-50 pointer-events-none">
-            <div className="bg-red-950/95 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-200 shadow-xl max-w-[300px]">
-              <div className="font-medium text-red-400 mb-1">Error Details</div>
-              <div className="break-words">{errorMessage}</div>
+        <>
+          <div
+            ref={errorBadgeRef}
+            onMouseEnter={() => handleErrorHover(true)}
+            onMouseLeave={() => handleErrorHover(false)}
+            className="flex items-center gap-2 relative"
+          >
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">
+              <AlertCircle className="w-3 h-3" />
+              <span className="text-xs font-medium">Error</span>
             </div>
           </div>
-        </div>
+          {/* Portal the tooltip to document.body to escape overflow containers */}
+          {showTooltip && typeof document !== 'undefined' && createPortal(
+            <div
+              className="fixed z-[9999] pointer-events-none"
+              style={{ left: tooltipPosition.x, top: tooltipPosition.y }}
+            >
+              <div className="bg-red-950/95 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-200 shadow-xl max-w-[300px]">
+                <div className="font-medium text-red-400 mb-1">Error Details</div>
+                <div className="break-words">{errorMessage}</div>
+              </div>
+            </div>,
+            document.body
+          )}
+        </>
       );
     }
 
