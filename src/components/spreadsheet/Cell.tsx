@@ -161,7 +161,7 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
             <span className="text-xs font-medium">Error</span>
           </div>
           {/* Error tooltip on hover */}
-          <div className="absolute bottom-full left-0 mb-1 hidden group-hover/error:block z-50 pointer-events-none">
+          <div className="absolute top-full left-0 mt-1 hidden group-hover/error:block z-50 pointer-events-none">
             <div className="bg-red-950/95 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-200 shadow-xl max-w-[300px]">
               <div className="font-medium text-red-400 mb-1">Error Details</div>
               <div className="break-words">{errorMessage}</div>

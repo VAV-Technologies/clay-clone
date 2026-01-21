@@ -102,6 +102,7 @@ export async function generateContent(
     },
     body: JSON.stringify({
       messages: [{ role: 'user', content: prompt }],
+      model: deploymentName,
       temperature: config.temperature ?? 0.7,
       ...tokenParam,
     }),
