@@ -29,19 +29,43 @@ interface EnrichmentPanelProps {
   editColumnId?: string | null; // If set, we're editing an existing enrichment column
 }
 
-const MODELS = [
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Latest and fastest' },
-  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Lightweight and efficient' },
-  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Most capable' },
-  { id: 'gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', description: 'Fast and stable' },
-  { id: 'gemini-2.0-flash-lite-001', name: 'Gemini 2.0 Flash Lite', description: 'Lightweight option' },
+interface ModelOption {
+  id: string;
+  name: string;
+  description: string;
+  provider: 'google' | 'azure';
+  enabled?: boolean; // Models without this or set to false are greyed out
+}
+
+const MODELS: ModelOption[] = [
+  // Google Gemini Models
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Latest and fastest', provider: 'google' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', description: 'Lightweight and efficient', provider: 'google' },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Most capable Gemini', provider: 'google' },
+  { id: 'gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', description: 'Fast and stable', provider: 'google' },
+  { id: 'gemini-2.0-flash-lite-001', name: 'Gemini 2.0 Flash Lite', description: 'Lightweight option', provider: 'google' },
+  // Azure OpenAI Models
+  { id: 'gpt-4o', name: 'GPT-4o', description: 'Latest GPT-4 multimodal', provider: 'azure' },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and cost-effective', provider: 'azure' },
+  { id: 'gpt-5', name: 'GPT-5', description: 'Next-gen flagship model', provider: 'azure' },
+  { id: 'gpt-5-mini', name: 'GPT-5 Mini', description: 'Fast and affordable GPT-5', provider: 'azure', enabled: true },
+  { id: 'gpt-5-turbo', name: 'GPT-5 Turbo', description: 'Fast GPT-5 variant', provider: 'azure' },
+  // DeepSeek Models (deployed on Azure AI Foundry)
+  { id: 'deepseek-chat', name: 'DeepSeek V3', description: 'Fast, cost-effective', provider: 'azure' },
+  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', description: 'Deep reasoning mode', provider: 'azure' },
 ];
+
+const GOOGLE_MODELS = MODELS.filter(m => m.provider === 'google');
+// Azure OpenAI models (GPT series) - exclude DeepSeek for UI grouping
+const AZURE_MODELS = MODELS.filter(m => m.provider === 'azure' && m.id.startsWith('gpt-'));
+// DeepSeek models (runs on Azure AI Foundry, but grouped separately in UI)
+const DEEPSEEK_MODELS = MODELS.filter(m => m.id.startsWith('deepseek-'));
 
 export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPanelProps) {
   const { currentTable, columns, rows, selectedRows, updateCell, addColumn, fetchTable } = useTableStore();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const [model, setModel] = useState('gemini-2.5-flash');
+  const [model, setModel] = useState('gpt-5-mini');
   const [prompt, setPrompt] = useState('');
   const [outputColumnName, setOutputColumnName] = useState('AI Output');
   const [temperature, setTemperature] = useState(0.7);
@@ -97,7 +121,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           .then(res => res.json())
           .then(config => {
             console.log('Loaded enrichment config:', config);
-            setModel(config.model || 'gemini-2.5-flash');
+            setModel(config.model || 'gpt-5-mini');
             setPrompt(config.prompt || '');
             setTemperature(config.temperature ?? 0.7);
             setCostLimitEnabled(config.costLimitEnabled ?? false);
@@ -129,7 +153,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
 
             if (matchingConfig) {
               console.log('Found matching config by name:', matchingConfig);
-              setModel(matchingConfig.model || 'gemini-2.5-flash');
+              setModel(matchingConfig.model || 'gpt-5-mini');
               setPrompt(matchingConfig.prompt || '');
               setTemperature(matchingConfig.temperature ?? 0.7);
               setCostLimitEnabled(matchingConfig.costLimitEnabled ?? false);
@@ -182,7 +206,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
     }
     if (isOpen && !editColumnId) {
       // Reset to defaults for new enrichment
-      setModel('gemini-2.5-flash');
+      setModel('gpt-5-mini');
       setPrompt('');
       setOutputColumnName('AI Output');
       setTemperature(0.7);
@@ -618,28 +642,106 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Model Selection */}
-        <div className="space-y-2 pb-4 border-b border-white/10">
+        <div className="space-y-3 pb-4 border-b border-white/10">
           <label className="text-sm font-medium text-white/70">Model</label>
+
+          {/* Google AI Section */}
           <div className="space-y-2">
-            {MODELS.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setModel(m.id)}
-                className={cn(
-                  'w-full flex items-center justify-between p-3 rounded-lg',
-                  'border transition-all',
-                  model === m.id
-                    ? 'bg-lavender/10 border-lavender/30'
-                    : 'bg-white/5 border-white/10 hover:border-white/20'
-                )}
-              >
-                <div className="text-left">
-                  <p className="text-sm font-medium text-white">{m.name}</p>
-                  <p className="text-xs text-white/50">{m.description}</p>
-                </div>
-                {model === m.id && <Check className="w-4 h-4 text-lavender" />}
-              </button>
-            ))}
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-lavender" />
+              <span className="text-xs font-medium text-white/50 uppercase tracking-wide">Google AI</span>
+            </div>
+            <div className="space-y-1.5">
+              {GOOGLE_MODELS.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => m.enabled && setModel(m.id)}
+                  disabled={!m.enabled}
+                  className={cn(
+                    'w-full flex items-center justify-between p-2.5 rounded-lg',
+                    'border transition-all',
+                    !m.enabled && 'opacity-40 cursor-not-allowed',
+                    model === m.id
+                      ? 'bg-lavender/10 border-lavender/30'
+                      : m.enabled
+                        ? 'bg-white/5 border-white/10 hover:border-white/20'
+                        : 'bg-white/5 border-white/10'
+                  )}
+                >
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-white">{m.name}</p>
+                    <p className="text-xs text-white/50">{m.description}</p>
+                  </div>
+                  {model === m.id && <Check className="w-4 h-4 text-lavender" />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Azure OpenAI Section */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-blue-400" />
+              <span className="text-xs font-medium text-white/50 uppercase tracking-wide">Azure OpenAI</span>
+            </div>
+            <div className="space-y-1.5">
+              {AZURE_MODELS.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => m.enabled && setModel(m.id)}
+                  disabled={!m.enabled}
+                  className={cn(
+                    'w-full flex items-center justify-between p-2.5 rounded-lg',
+                    'border transition-all',
+                    !m.enabled && 'opacity-40 cursor-not-allowed',
+                    model === m.id
+                      ? 'bg-blue-500/10 border-blue-500/30'
+                      : m.enabled
+                        ? 'bg-white/5 border-white/10 hover:border-white/20'
+                        : 'bg-white/5 border-white/10'
+                  )}
+                >
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-white">{m.name}</p>
+                    <p className="text-xs text-white/50">{m.description}</p>
+                  </div>
+                  {model === m.id && <Check className="w-4 h-4 text-blue-400" />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* DeepSeek Section */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span className="text-xs font-medium text-white/50 uppercase tracking-wide">DeepSeek</span>
+            </div>
+            <div className="space-y-1.5">
+              {DEEPSEEK_MODELS.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => m.enabled && setModel(m.id)}
+                  disabled={!m.enabled}
+                  className={cn(
+                    'w-full flex items-center justify-between p-2.5 rounded-lg',
+                    'border transition-all',
+                    !m.enabled && 'opacity-40 cursor-not-allowed',
+                    model === m.id
+                      ? 'bg-emerald-500/10 border-emerald-500/30'
+                      : m.enabled
+                        ? 'bg-white/5 border-white/10 hover:border-white/20'
+                        : 'bg-white/5 border-white/10'
+                  )}
+                >
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-white">{m.name}</p>
+                    <p className="text-xs text-white/50">{m.description}</p>
+                  </div>
+                  {model === m.id && <Check className="w-4 h-4 text-emerald-400" />}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
