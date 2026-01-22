@@ -67,6 +67,11 @@ function ProjectContent() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [isMoving, setIsMoving] = useState(false);
 
+  // Delete modal state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteTableId, setDeleteTableId] = useState<string | null>(null);
+  const [deleteTableName, setDeleteTableName] = useState('');
+
   useEffect(() => {
     fetchProject();
     fetchAllFolders();
@@ -138,14 +143,19 @@ function ProjectContent() {
     }
   };
 
-  const handleDeleteTable = async (tableId: string, tableName: string) => {
+  const handleDeleteTable = async () => {
+    if (!deleteTableId) return;
+
     try {
-      const response = await fetch(`/api/tables/${tableId}`, {
+      const response = await fetch(`/api/tables/${deleteTableId}`, {
         method: 'DELETE',
       });
 
       if (response.ok) {
-        toast.success('Table deleted', `"${tableName}" has been deleted`);
+        toast.success('Table deleted', `"${deleteTableName}" has been deleted`);
+        setIsDeleteModalOpen(false);
+        setDeleteTableId(null);
+        setDeleteTableName('');
         fetchProject();
       } else {
         const data = await response.json().catch(() => ({}));
@@ -220,6 +230,13 @@ function ProjectContent() {
     setMoveTableName(table.name);
     setSelectedFolderId(null);
     setIsMoveModalOpen(true);
+    setOpenMenuId(null);
+  };
+
+  const openDeleteModal = (table: Table) => {
+    setDeleteTableId(table.id);
+    setDeleteTableName(table.name);
+    setIsDeleteModalOpen(true);
     setOpenMenuId(null);
   };
 
@@ -367,8 +384,7 @@ function ProjectContent() {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              setOpenMenuId(null);
-                              handleDeleteTable(table.id, table.name);
+                              openDeleteModal(table);
                             }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
                           >
@@ -541,6 +557,42 @@ function ProjectContent() {
               disabled={!selectedFolderId}
             >
               Move
+            </GlassButton>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setDeleteTableId(null);
+          setDeleteTableName('');
+        }}
+        title="Delete Table"
+      >
+        <div className="space-y-4">
+          <p className="text-white/70">
+            Are you sure you want to delete "{deleteTableName}"? This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <GlassButton
+              variant="ghost"
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setDeleteTableId(null);
+                setDeleteTableName('');
+              }}
+            >
+              Cancel
+            </GlassButton>
+            <GlassButton
+              variant="primary"
+              onClick={handleDeleteTable}
+              className="!bg-red-500/20 !border-red-500/30 hover:!bg-red-500/30"
+            >
+              Delete
             </GlassButton>
           </div>
         </div>
