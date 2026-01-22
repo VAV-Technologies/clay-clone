@@ -3,6 +3,8 @@ import { db, schema } from '@/lib/db';
 import { eq, or, like } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/fix-stuck - Fix stuck processing cells
 export async function GET() {
   try {

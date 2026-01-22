@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/nuke-table?id=xxx - Delete a table completely
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
