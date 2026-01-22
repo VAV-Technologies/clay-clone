@@ -68,8 +68,8 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
       const result = await response.json();
 
       if (result.success) {
-        // Refresh the entire table to get updated output columns
-        await fetchTable(tableId);
+        // Refresh the entire table to get updated output columns (silent to avoid full-page blur)
+        await fetchTable(tableId, true);
       } else {
         updateCell(row.id, column.id, { value: null, status: 'error', error: result.error });
       }

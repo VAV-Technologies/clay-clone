@@ -499,8 +499,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
 
       const result = await response.json();
 
-      // Reload table to get new column and updated rows
-      await fetchTable(currentTable.id);
+      // Reload table to get new column and updated rows (silent to avoid full-page blur)
+      await fetchTable(currentTable.id, true);
 
       // Get updated rows for display
       const rowRes = await fetch(`/api/rows?tableId=${currentTable.id}`);
@@ -631,8 +631,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         });
       }
 
-      // Reload table to ensure everything is in sync
-      await fetchTable(currentTable.id);
+      // Reload table to ensure everything is in sync (silent to avoid full-page blur)
+      await fetchTable(currentTable.id, true);
 
       setIsRunning(false);
 

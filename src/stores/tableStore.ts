@@ -71,7 +71,7 @@ interface TableState {
   setSort: (columnId: string | null, direction?: 'asc' | 'desc') => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
-  fetchTable: (tableId: string) => Promise<void>;
+  fetchTable: (tableId: string, silent?: boolean) => Promise<void>;
 
   // Row display range actions
   setRowDisplayRange: (start: number, limit: number | null) => void;
@@ -233,8 +233,10 @@ export const useTableStore = create<TableState>((set, get) => ({
 
   setError: (error) => set({ error }),
 
-  fetchTable: async (tableId: string) => {
-    set({ isLoading: true, error: null });
+  fetchTable: async (tableId: string, silent?: boolean) => {
+    if (!silent) {
+      set({ isLoading: true, error: null });
+    }
     try {
       const [tableRes, columnsRes, rowsRes] = await Promise.all([
         fetch(`/api/tables/${tableId}`),

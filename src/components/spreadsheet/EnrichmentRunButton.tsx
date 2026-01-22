@@ -88,13 +88,13 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
         if (job) {
           setActiveJob(job);
 
-          // If job completed, refresh table data
+          // If job completed, refresh table data silently (no loading overlay)
           if (job.status === 'complete' || job.status === 'cancelled' || job.status === 'error') {
             if (pollIntervalRef.current) {
               clearInterval(pollIntervalRef.current);
               pollIntervalRef.current = null;
             }
-            fetchTable(tableId);
+            fetchTable(tableId, true);
           }
         }
       }
