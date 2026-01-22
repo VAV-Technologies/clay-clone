@@ -95,6 +95,9 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
               pollIntervalRef.current = null;
             }
             fetchTable(tableId, true);
+          } else {
+            // Job still running - refresh table data to show 'processing' status
+            fetchTable(tableId, true);
           }
         }
       }
