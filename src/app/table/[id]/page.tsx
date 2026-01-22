@@ -24,7 +24,7 @@ function TableContent() {
   const router = useRouter();
   const tableId = params.id as string;
 
-  const { currentTable, columns, rows } = useTableStore();
+  const { currentTable, columns, rows, getDisplayedRows, getVisibleColumns } = useTableStore();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isEnrichmentOpen, setIsEnrichmentOpen] = useState(false);
   const [editEnrichmentColumnId, setEditEnrichmentColumnId] = useState<string | null>(null);
@@ -37,12 +37,18 @@ function TableContent() {
   }, []);
 
   const handleExport = useCallback(() => {
-    if (!currentTable || rows.length === 0) return;
+    if (!currentTable) return;
+
+    // Use displayed rows (filtered + sorted) and visible columns
+    const displayedRows = getDisplayedRows();
+    const visibleColumns = getVisibleColumns();
+
+    if (displayedRows.length === 0) return;
 
     // Build CSV data with column names as headers
-    const headers = columns.map(col => col.name);
-    const csvRows = rows.map(row => {
-      return columns.map(col => {
+    const headers = visibleColumns.map(col => col.name);
+    const csvRows = displayedRows.map(row => {
+      return visibleColumns.map(col => {
         const cellValue = row.data[col.id];
         return cellValue?.value?.toString() ?? '';
       });
@@ -62,7 +68,7 @@ function TableContent() {
     link.download = `${currentTable.name}-export.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [currentTable, columns, rows]);
+  }, [currentTable, getDisplayedRows, getVisibleColumns]);
 
   const handleOpenEnrichment = useCallback((columnId?: string) => {
     setEditEnrichmentColumnId(columnId || null);
