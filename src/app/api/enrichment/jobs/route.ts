@@ -127,14 +127,37 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// DELETE /api/enrichment/jobs?jobId=xxx OR ?columnId=xxx - Cancel job(s)
+// DELETE /api/enrichment/jobs?jobId=xxx OR ?columnId=xxx OR ?all=true - Cancel job(s)
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const jobId = searchParams.get('jobId');
   const columnId = searchParams.get('columnId');
+  const cancelAll = searchParams.get('all') === 'true';
 
-  if (!jobId && !columnId) {
-    return NextResponse.json({ error: 'jobId or columnId is required' }, { status: 400 });
+  if (!jobId && !columnId && !cancelAll) {
+    return NextResponse.json({ error: 'jobId, columnId, or all=true is required' }, { status: 400 });
+  }
+
+  // Cancel ALL active jobs
+  if (cancelAll) {
+    try {
+      const result = await db.update(schema.enrichmentJobs)
+        .set({
+          status: 'cancelled',
+          updatedAt: new Date(),
+        })
+        .where(
+          or(
+            eq(schema.enrichmentJobs.status, 'pending'),
+            eq(schema.enrichmentJobs.status, 'running')
+          )
+        );
+
+      return NextResponse.json({ success: true, message: 'All active jobs cancelled' });
+    } catch (error) {
+      console.error('Error cancelling all jobs:', error);
+      return NextResponse.json({ error: 'Failed to cancel jobs' }, { status: 500 });
+    }
   }
 
   try {
