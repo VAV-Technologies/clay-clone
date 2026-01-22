@@ -11,7 +11,7 @@ interface EnrichmentRunButtonProps {
   tableId: string;
 }
 
-type RunMode = 'all' | 'incomplete' | 'force' | 'custom' | 'errors';
+type RunMode = 'all' | 'not_run' | 'force' | 'custom' | 'errors';
 
 interface JobStatus {
   id: string;
