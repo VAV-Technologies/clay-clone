@@ -169,7 +169,7 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
 
   // Mark current batch cells as 'processing' for visual feedback
   for (const row of rows) {
-    const currentCellValue = (row.data as Record<string, CellValue>)[targetColumnId];
+    const currentCellValue = (row.data as Record<string, CellValue>)[targetColumnId] || {};
     const updatedData = {
       ...(row.data as Record<string, CellValue>),
       [targetColumnId]: {
