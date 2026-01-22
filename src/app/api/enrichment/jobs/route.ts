@@ -17,9 +17,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get existing active jobs for this column before cancelling
-    const existingJobs = await db.select()
-      .from(schema.enrichmentJobs)
+    // Auto-cancel any existing active jobs for this column (fast - single update)
+    await db.update(schema.enrichmentJobs)
+      .set({
+        status: 'cancelled',
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(schema.enrichmentJobs.targetColumnId, targetColumnId),
@@ -29,43 +32,6 @@ export async function POST(request: NextRequest) {
           )
         )
       );
-
-    // Auto-cancel any existing active jobs for this column (instead of blocking)
-    if (existingJobs.length > 0) {
-      await db.update(schema.enrichmentJobs)
-        .set({
-          status: 'cancelled',
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(schema.enrichmentJobs.targetColumnId, targetColumnId),
-            or(
-              eq(schema.enrichmentJobs.status, 'pending'),
-              eq(schema.enrichmentJobs.status, 'running')
-            )
-          )
-        );
-
-      // Reset cell statuses for cancelled jobs
-      for (const cancelledJob of existingJobs) {
-        const rowsToReset = await db.select().from(schema.rows)
-          .where(inArray(schema.rows.id, cancelledJob.rowIds));
-
-        await Promise.all(rowsToReset.map(row => {
-          const cellValue = (row.data as Record<string, CellValue>)[targetColumnId];
-          if (cellValue?.status === 'pending' || cellValue?.status === 'processing') {
-            const { status, ...rest } = cellValue;
-            const updatedData = {
-              ...(row.data as Record<string, CellValue>),
-              [targetColumnId]: Object.keys(rest).length > 0 ? rest : undefined,
-            };
-            return db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-          }
-          return Promise.resolve();
-        }));
-      }
-    }
 
     // Create new job
     const jobId = nanoid(12);
@@ -86,26 +52,32 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     });
 
-    // Mark target cells as 'pending' in database for consistency
-    // This ensures cells show "In Queue" even after page refresh
-    const targetRows = await db.select().from(schema.rows).where(inArray(schema.rows.id, rowIds));
-    await Promise.all(targetRows.map(row => {
-      const currentCellValue = (row.data as Record<string, CellValue>)[targetColumnId] || {};
-      const updatedData = {
-        ...(row.data as Record<string, CellValue>),
-        [targetColumnId]: {
-          ...currentCellValue,
-          status: 'pending' as const,
-        },
-      };
-      return db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-    }));
-
-    return NextResponse.json({
+    // Return response IMMEDIATELY - don't wait for cell updates
+    const response = NextResponse.json({
       jobId,
       message: 'Job created successfully',
       totalRows: rowIds.length,
     });
+
+    // Fire off cell status updates in background (don't await)
+    // This is best-effort - if it fails, cron will set status when processing
+    db.select().from(schema.rows).where(inArray(schema.rows.id, rowIds))
+      .then(targetRows => {
+        return Promise.all(targetRows.map(row => {
+          const currentCellValue = (row.data as Record<string, CellValue>)[targetColumnId] || {};
+          const updatedData = {
+            ...(row.data as Record<string, CellValue>),
+            [targetColumnId]: {
+              ...currentCellValue,
+              status: 'pending' as const,
+            },
+          };
+          return db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+        }));
+      })
+      .catch(err => console.error('Background cell update failed:', err));
+
+    return response;
   } catch (error) {
     console.error('Error creating job:', error);
     return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
