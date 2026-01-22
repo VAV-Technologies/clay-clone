@@ -329,7 +329,7 @@ function ProjectContent() {
                         {/* Backdrop to close menu */}
                         <div
                           className="fixed inset-0 z-[100]"
-                          onMouseDown={(e) => {
+                          onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             setOpenMenuId(null);
