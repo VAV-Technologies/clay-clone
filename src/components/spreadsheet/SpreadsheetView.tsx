@@ -75,6 +75,63 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
     fetchTable(tableId);
   }, [tableId, fetchTable]);
 
+  // Poll for updates when enrichment jobs are active
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout | null = null;
+    let isMounted = true;
+
+    const checkForActiveJobs = async (): Promise<boolean> => {
+      try {
+        // Get all enrichment columns
+        const enrichmentColumns = columns.filter(c => c.type === 'enrichment');
+        if (enrichmentColumns.length === 0) return false;
+
+        // Check if any jobs are running for this table's columns
+        for (const col of enrichmentColumns) {
+          const response = await fetch(`/api/enrichment/jobs?columnId=${col.id}`);
+          if (response.ok) {
+            const data = await response.json();
+            const activeJob = data.jobs?.find(
+              (j: { status: string }) => j.status === 'pending' || j.status === 'running'
+            );
+            if (activeJob) return true;
+          }
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    };
+
+    const startPolling = async () => {
+      if (!isMounted) return;
+
+      const hasActiveJobs = await checkForActiveJobs();
+      if (!isMounted) return;
+
+      if (hasActiveJobs) {
+        // Refresh table data silently
+        fetchTable(tableId);
+
+        // Continue polling every 5 seconds when jobs are active
+        pollInterval = setTimeout(startPolling, 5000);
+      } else {
+        // Check again in 10 seconds in case new jobs are created
+        pollInterval = setTimeout(startPolling, 10000);
+      }
+    };
+
+    // Start polling after initial load
+    if (!isLoading && columns.length > 0) {
+      startPolling();
+    }
+
+    return () => {
+      isMounted = false;
+      if (pollInterval) clearTimeout(pollInterval);
+    };
+  }, [tableId, columns, isLoading, fetchTable]);
+
   // Use displayed rows (filtered + sorted + range limited)
   const displayedRows = getDisplayedRows();
   // Use visible columns (hidden columns filtered out)
