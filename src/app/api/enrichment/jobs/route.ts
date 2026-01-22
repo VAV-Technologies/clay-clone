@@ -128,21 +128,68 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// DELETE /api/enrichment/jobs?jobId=xxx OR ?columnId=xxx OR ?all=true - Cancel job(s)
+// DELETE /api/enrichment/jobs?jobId=xxx OR ?columnId=xxx OR ?all=true OR ?resetStuck=true - Cancel job(s)
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const jobId = searchParams.get('jobId');
   const columnId = searchParams.get('columnId');
   const cancelAll = searchParams.get('all') === 'true';
+  const resetStuck = searchParams.get('resetStuck') === 'true';
 
-  if (!jobId && !columnId && !cancelAll) {
-    return NextResponse.json({ error: 'jobId, columnId, or all=true is required' }, { status: 400 });
+  if (!jobId && !columnId && !cancelAll && !resetStuck) {
+    return NextResponse.json({ error: 'jobId, columnId, all=true, or resetStuck=true is required' }, { status: 400 });
   }
 
-  // Cancel ALL active jobs
+  // Reset stuck cell statuses from cancelled jobs
+  if (resetStuck) {
+    try {
+      // Get all cancelled jobs to reset their cell statuses
+      const cancelledJobs = await db.select()
+        .from(schema.enrichmentJobs)
+        .where(eq(schema.enrichmentJobs.status, 'cancelled'));
+
+      let cellsReset = 0;
+      for (const job of cancelledJobs) {
+        if (job.rowIds && job.targetColumnId) {
+          const rowIds = typeof job.rowIds === 'string' ? JSON.parse(job.rowIds) : job.rowIds;
+          for (const rowId of rowIds) {
+            const row = await db.select().from(schema.rows).where(eq(schema.rows.id, rowId)).limit(1);
+            if (row[0]) {
+              const data = typeof row[0].data === 'string' ? JSON.parse(row[0].data) : row[0].data;
+              if (data[job.targetColumnId] && (data[job.targetColumnId].status === 'processing' || data[job.targetColumnId].status === 'pending')) {
+                delete data[job.targetColumnId].status;
+                await db.update(schema.rows)
+                  .set({ data: JSON.stringify(data) })
+                  .where(eq(schema.rows.id, rowId));
+                cellsReset++;
+              }
+            }
+          }
+        }
+      }
+
+      return NextResponse.json({ success: true, message: `Reset ${cellsReset} stuck cells`, cellsReset });
+    } catch (error) {
+      console.error('Error resetting stuck cells:', error);
+      return NextResponse.json({ error: 'Failed to reset stuck cells' }, { status: 500 });
+    }
+  }
+
+  // Cancel ALL active jobs and reset stuck cell statuses
   if (cancelAll) {
     try {
-      const result = await db.update(schema.enrichmentJobs)
+      // First get all active jobs so we can reset their cell statuses
+      const activeJobs = await db.select()
+        .from(schema.enrichmentJobs)
+        .where(
+          or(
+            eq(schema.enrichmentJobs.status, 'pending'),
+            eq(schema.enrichmentJobs.status, 'running')
+          )
+        );
+
+      // Cancel the jobs
+      await db.update(schema.enrichmentJobs)
         .set({
           status: 'cancelled',
           updatedAt: new Date(),
@@ -154,7 +201,27 @@ export async function DELETE(request: NextRequest) {
           )
         );
 
-      return NextResponse.json({ success: true, message: 'All active jobs cancelled' });
+      // Reset cell statuses for all affected rows
+      for (const job of activeJobs) {
+        if (job.rowIds && job.targetColumnId) {
+          const rowIds = typeof job.rowIds === 'string' ? JSON.parse(job.rowIds) : job.rowIds;
+          // Reset each cell's status to null (not run)
+          for (const rowId of rowIds) {
+            const row = await db.select().from(schema.rows).where(eq(schema.rows.id, rowId)).limit(1);
+            if (row[0]) {
+              const data = typeof row[0].data === 'string' ? JSON.parse(row[0].data) : row[0].data;
+              if (data[job.targetColumnId]) {
+                delete data[job.targetColumnId].status;
+                await db.update(schema.rows)
+                  .set({ data: JSON.stringify(data) })
+                  .where(eq(schema.rows.id, rowId));
+              }
+            }
+          }
+        }
+      }
+
+      return NextResponse.json({ success: true, message: 'All active jobs cancelled and cell statuses reset', jobsReset: activeJobs.length });
     } catch (error) {
       console.error('Error cancelling all jobs:', error);
       return NextResponse.json({ error: 'Failed to cancel jobs' }, { status: 500 });
