@@ -5,6 +5,21 @@ import { nanoid } from 'nanoid';
 import type { CellValue } from '@/lib/db/schema';
 import { callAI as callUnifiedAI, getModelPricing, getProviderFromModel, getProviderRateLimits } from '@/lib/ai-provider';
 
+// Vercel function config - extend timeout for AI calls
+export const maxDuration = 60;
+
+const AI_TIMEOUT_MS = 30000; // 30 second timeout per AI call
+
+// Timeout wrapper for promises
+function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(errorMsg)), ms)
+    ),
+  ]);
+}
+
 function generateId() {
   return nanoid(12);
 }
@@ -143,11 +158,15 @@ export async function POST(request: NextRequest) {
         // Build prompt
         const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
 
-        // Call AI using unified provider
-        const aiResult = await callUnifiedAI(prompt, modelId, {
-          temperature: config.temperature ?? 0.7,
-          maxOutputTokens: 8192,
-        });
+        // Call AI using unified provider (with timeout)
+        const aiResult = await withTimeout(
+          callUnifiedAI(prompt, modelId, {
+            temperature: config.temperature ?? 0.7,
+            maxOutputTokens: 8192,
+          }),
+          AI_TIMEOUT_MS,
+          'AI request timed out after 30 seconds'
+        );
 
         // Calculate cost
         const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
