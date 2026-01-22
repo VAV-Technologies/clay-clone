@@ -79,11 +79,11 @@ export function getProviderRateLimits(provider: AIProvider): {
   delayBetweenChunks: number;
 } {
   if (provider === 'azure') {
-    // Azure default quota: ~240 RPM for GPT-4o
-    // DeepSeek models on Azure AI Foundry also use these limits
+    // Azure OpenAI: Standard deployments support 60K-300K+ TPM
+    // Increased limits for better throughput (~600 RPM, still conservative)
     return {
-      concurrentRequests: 10,
-      delayBetweenChunks: 250, // ms - slightly higher to stay within RPM
+      concurrentRequests: 30,
+      delayBetweenChunks: 50, // ms
     };
   }
   // Google Vertex AI
