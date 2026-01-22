@@ -82,22 +82,22 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
 
   // Calculate enrichment status counts for each enrichment column
   const enrichmentStats = useMemo(() => {
-    const stats: Record<string, { completed: number; errors: number; inQueue: number; processing: number }> = {};
+    const stats: Record<string, { completed: number; errors: number; inQueue: number; processing: number; notRun: number }> = {};
 
     for (const col of visibleColumns) {
       if (col.type === 'enrichment' && col.enrichmentConfigId) {
-        let completed = 0, errors = 0, inQueue = 0, processing = 0;
+        let completed = 0, errors = 0, inQueue = 0, processing = 0, notRun = 0;
 
         for (const row of rows) {
           const cell = row.data[col.id];
-          if (!cell || !cell.status) inQueue++;
+          if (!cell || !cell.status) notRun++;        // No status = not run
+          else if (cell.status === 'pending') inQueue++; // Pending = queued
           else if (cell.status === 'complete') completed++;
           else if (cell.status === 'error') errors++;
           else if (cell.status === 'processing') processing++;
-          else inQueue++;
         }
 
-        stats[col.id] = { completed, errors, inQueue, processing };
+        stats[col.id] = { completed, errors, inQueue, processing, notRun };
       }
     }
     return stats;
@@ -399,13 +399,16 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                     <span className="text-emerald-400">{stats.completed} done</span>
                   )}
                   {stats.processing > 0 && (
-                    <span className="text-lavender">{stats.processing} running</span>
+                    <span className="text-lavender">{stats.processing} processing</span>
                   )}
                   {stats.inQueue > 0 && (
-                    <span className="text-white/40">{stats.inQueue} queued</span>
+                    <span className="text-amber-400">{stats.inQueue} queued</span>
                   )}
                   {stats.errors > 0 && (
                     <span className="text-red-400">{stats.errors} errors</span>
+                  )}
+                  {stats.notRun > 0 && (
+                    <span className="text-white/40">{stats.notRun} not run</span>
                   )}
                 </div>
               );

@@ -218,10 +218,19 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
       );
     }
 
-    // Pending or no status - show "In Queue"
+    // Pending status - actually queued to run
+    if (status === 'pending') {
+      return (
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+          <span className="text-xs font-medium">In Queue</span>
+        </div>
+      );
+    }
+
+    // No status - never been run
     return (
       <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 text-white/40">
-        <span className="text-xs font-medium">In Queue</span>
+        <span className="text-xs font-medium">Not Run</span>
       </div>
     );
   };
