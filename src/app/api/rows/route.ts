@@ -3,6 +3,8 @@ import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
 
+export const maxDuration = 60;
+
 // GET /api/rows?tableId= - Get rows for a table
 // Optional: rowIds= to filter specific rows (comma-separated)
 export async function GET(request: NextRequest) {

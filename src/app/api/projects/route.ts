@@ -3,11 +3,22 @@ import { db, schema } from '@/lib/db';
 import { eq, isNull } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
 
+export const maxDuration = 60;
+
 // GET /api/projects - Get all projects in tree structure
 export async function GET() {
   try {
-    const allProjects = await db.select().from(schema.projects);
-    const allTables = await db.select().from(schema.tables);
+    // Fetch projects and tables in parallel with reasonable limits to prevent timeouts
+    const [allProjects, allTables] = await Promise.all([
+      db.select().from(schema.projects).limit(1000),
+      db.select({
+        id: schema.tables.id,
+        projectId: schema.tables.projectId,
+        name: schema.tables.name,
+        createdAt: schema.tables.createdAt,
+        updatedAt: schema.tables.updatedAt,
+      }).from(schema.tables).limit(5000),
+    ]);
 
     type ProjectWithTree = typeof allProjects[0] & {
       children: ProjectWithTree[];

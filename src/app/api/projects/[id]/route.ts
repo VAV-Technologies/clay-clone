@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 
+export const maxDuration = 60;
+
 // GET /api/projects/[id] - Get single project
 export async function GET(
   request: NextRequest,

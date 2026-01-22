@@ -3,6 +3,8 @@ import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
 
+export const maxDuration = 60;
+
 // GET /api/tables?projectId= - Get tables for a project
 export async function GET(request: NextRequest) {
   try {

@@ -3,6 +3,7 @@ import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 // GET /api/tables/[id] - Get single table with columns
 export async function GET(
@@ -82,17 +83,20 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    // Delete enrichment jobs for this table
-    await db.delete(schema.enrichmentJobs).where(eq(schema.enrichmentJobs.tableId, id));
+    // Use a transaction to ensure all deletes succeed or fail together
+    await db.transaction(async (tx) => {
+      // Delete enrichment jobs for this table
+      await tx.delete(schema.enrichmentJobs).where(eq(schema.enrichmentJobs.tableId, id));
 
-    // Delete columns
-    await db.delete(schema.columns).where(eq(schema.columns.tableId, id));
+      // Delete columns
+      await tx.delete(schema.columns).where(eq(schema.columns.tableId, id));
 
-    // Delete rows
-    await db.delete(schema.rows).where(eq(schema.rows.tableId, id));
+      // Delete rows
+      await tx.delete(schema.rows).where(eq(schema.rows.tableId, id));
 
-    // Delete table
-    await db.delete(schema.tables).where(eq(schema.tables.id, id));
+      // Delete table
+      await tx.delete(schema.tables).where(eq(schema.tables.id, id));
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
