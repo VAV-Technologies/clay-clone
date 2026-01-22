@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/tables/[id] - Get single table with columns
 export async function GET(
   request: NextRequest,
@@ -79,6 +81,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+
+    // Delete enrichment jobs for this table
+    await db.delete(schema.enrichmentJobs).where(eq(schema.enrichmentJobs.tableId, id));
 
     // Delete columns
     await db.delete(schema.columns).where(eq(schema.columns.tableId, id));

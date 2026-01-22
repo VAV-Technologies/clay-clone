@@ -139,6 +139,9 @@ function ProjectContent() {
       if (response.ok) {
         toast.success('Table deleted', `"${tableName}" has been deleted`);
         fetchProject();
+      } else {
+        const data = await response.json().catch(() => ({}));
+        toast.error('Error', data.error || 'Failed to delete table');
       }
     } catch (error) {
       toast.error('Error', 'Failed to delete table');
