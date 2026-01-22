@@ -1,21 +1,26 @@
 import { NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
+import { sql } from 'drizzle-orm';
+
+export const maxDuration = 60;
 
 // GET /api/stats - Get database storage stats
 export async function GET() {
   try {
-    // Count rows in each table by fetching all and counting
-    const projects = await db.select().from(schema.projects);
-    const tables = await db.select().from(schema.tables);
-    const columns = await db.select().from(schema.columns);
-    const rows = await db.select().from(schema.rows);
-    const enrichmentConfigs = await db.select().from(schema.enrichmentConfigs);
-    const formulaConfigs = await db.select().from(schema.formulaConfigs);
+    // Use COUNT queries instead of fetching all rows (much faster)
+    const [projectCount, tableCount, columnCount, rowCount, enrichmentCount, formulaCount] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(schema.projects),
+      db.select({ count: sql<number>`count(*)` }).from(schema.tables),
+      db.select({ count: sql<number>`count(*)` }).from(schema.columns),
+      db.select({ count: sql<number>`count(*)` }).from(schema.rows),
+      db.select({ count: sql<number>`count(*)` }).from(schema.enrichmentConfigs),
+      db.select({ count: sql<number>`count(*)` }).from(schema.formulaConfigs),
+    ]);
 
     // Estimate storage based on row count
     // Turso free tier: 9GB storage, 500M row reads/month
     // Rough estimate: average row size ~500 bytes
-    const totalRows = rows.length;
+    const totalRows = Number(rowCount[0]?.count ?? 0);
     const estimatedStorageBytes = totalRows * 500; // rough estimate
 
     // Turso free tier limits
@@ -24,12 +29,12 @@ export async function GET() {
 
     return NextResponse.json({
       counts: {
-        projects: projects.length,
-        tables: tables.length,
-        columns: columns.length,
+        projects: Number(projectCount[0]?.count ?? 0),
+        tables: Number(tableCount[0]?.count ?? 0),
+        columns: Number(columnCount[0]?.count ?? 0),
         rows: totalRows,
-        enrichmentConfigs: enrichmentConfigs.length,
-        formulaConfigs: formulaConfigs.length,
+        enrichmentConfigs: Number(enrichmentCount[0]?.count ?? 0),
+        formulaConfigs: Number(formulaCount[0]?.count ?? 0),
       },
       storage: {
         estimatedBytes: estimatedStorageBytes,
