@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
-import { eq, and, or, inArray } from 'drizzle-orm';
+import { eq, and, or, inArray, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import type { CellValue } from '@/lib/db/schema';
 
 // POST /api/enrichment/jobs - Create a new background job
 export async function POST(request: NextRequest) {
@@ -52,32 +51,24 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     });
 
-    // Return response IMMEDIATELY - don't wait for cell updates
-    const response = NextResponse.json({
+    // Update all cell statuses in a SINGLE SQL query using jsonb_set
+    // This is fast (one round trip) and avoids N individual updates
+    // Note: targetColumnId is safe (comes from our column schema, not user input)
+    await db.execute(sql.raw(`
+      UPDATE "rows"
+      SET data = jsonb_set(
+        COALESCE(data, '{}'),
+        ARRAY['${targetColumnId}'],
+        COALESCE(data->'${targetColumnId}', '{}') || '{"status": "pending"}'::jsonb
+      )
+      WHERE id = ANY(ARRAY[${rowIds.map((id: string) => `'${id}'`).join(',')}])
+    `));
+
+    return NextResponse.json({
       jobId,
       message: 'Job created successfully',
       totalRows: rowIds.length,
     });
-
-    // Fire off cell status updates in background (don't await)
-    // This is best-effort - if it fails, cron will set status when processing
-    db.select().from(schema.rows).where(inArray(schema.rows.id, rowIds))
-      .then(targetRows => {
-        return Promise.all(targetRows.map(row => {
-          const currentCellValue = (row.data as Record<string, CellValue>)[targetColumnId] || {};
-          const updatedData = {
-            ...(row.data as Record<string, CellValue>),
-            [targetColumnId]: {
-              ...currentCellValue,
-              status: 'pending' as const,
-            },
-          };
-          return db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-        }));
-      })
-      .catch(err => console.error('Background cell update failed:', err));
-
-    return response;
   } catch (error) {
     console.error('Error creating job:', error);
     return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
