@@ -76,6 +76,7 @@ export interface AzureAIResult {
   text: string;
   inputTokens: number;
   outputTokens: number;
+  timeTakenMs: number;
 }
 
 export async function generateContent(
@@ -83,6 +84,7 @@ export async function generateContent(
   prompt: string,
   config: AzureGenerationConfig = {}
 ): Promise<AzureAIResult> {
+  const startTime = Date.now();
   const azureConf = getAzureConfig();
   const deploymentName = getDeploymentName(modelId);
   const apiVersion = getApiVersionForModel(modelId, azureConf.apiVersion);
@@ -115,6 +117,8 @@ export async function generateContent(
     body: JSON.stringify(requestBody),
   });
 
+  const timeTakenMs = Date.now() - startTime;
+
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const errorMessage = errorData.error?.message || `Azure OpenAI error: ${response.status}`;
@@ -127,6 +131,7 @@ export async function generateContent(
     text: data.choices?.[0]?.message?.content || '',
     inputTokens: data.usage?.prompt_tokens ?? 0,
     outputTokens: data.usage?.completion_tokens ?? 0,
+    timeTakenMs,
   };
 }
 

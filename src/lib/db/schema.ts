@@ -80,7 +80,7 @@ export const rowsRelations = relations(rows, ({ one }) => ({
 export const enrichmentConfigs = sqliteTable('enrichment_configs', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  model: text('model', { enum: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'] }).notNull().default('gemini-1.5-flash'),
+  model: text('model').notNull().default('gemini-2.5-flash'),
   prompt: text('prompt').notNull(),
   inputColumns: text('input_columns', { mode: 'json' }).notNull().$type<string[]>(),
   // Output columns defined in Data Guide - each becomes a separate column
@@ -137,6 +137,14 @@ export interface CellValue {
   // Raw AI response for debugging
   rawResponse?: string;
   error?: string;
+  // Usage metadata (no extra cost - from API response)
+  metadata?: {
+    inputTokens: number;
+    outputTokens: number;
+    timeTakenMs: number;
+    totalCost: number;
+    forcedToFinishEarly?: boolean;
+  };
 }
 
 export type Project = typeof projects.$inferSelect;

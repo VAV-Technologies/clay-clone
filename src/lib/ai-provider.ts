@@ -5,6 +5,7 @@ export interface AIResult {
   text: string;
   inputTokens: number;
   outputTokens: number;
+  timeTakenMs: number;
 }
 
 export interface AIGenerationConfig {
@@ -99,6 +100,7 @@ export async function callAI(
   config: AIGenerationConfig = {}
 ): Promise<AIResult> {
   const provider = getProviderFromModel(modelId);
+  const startTime = Date.now();
 
   if (provider === 'azure') {
     // Azure handles both GPT models and DeepSeek models (via Azure AI Foundry)
@@ -134,6 +136,7 @@ export async function callAI(
     });
 
     const result = await model.generateContent(prompt);
+    const timeTakenMs = Date.now() - startTime;
     const response = result.response;
     const usageMetadata = response.usageMetadata;
 
@@ -141,6 +144,7 @@ export async function callAI(
       text: response.candidates?.[0]?.content?.parts?.[0]?.text || '',
       inputTokens: usageMetadata?.promptTokenCount ?? 0,
       outputTokens: usageMetadata?.candidatesTokenCount ?? 0,
+      timeTakenMs,
     };
   }
 
@@ -159,6 +163,8 @@ export async function callAI(
     }),
   });
 
+  const timeTakenMs = Date.now() - startTime;
+
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
@@ -170,5 +176,6 @@ export async function callAI(
     text: data.candidates?.[0]?.content?.parts?.[0]?.text || '',
     inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
     outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+    timeTakenMs,
   };
 }

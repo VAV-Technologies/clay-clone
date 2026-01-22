@@ -2,30 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, or, inArray } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
+import {
+  callAI as callUnifiedAI,
+  getModelPricing,
+  getProviderFromModel,
+  getProviderRateLimits,
+  type AIResult,
+} from '@/lib/ai-provider';
 
 // Vercel function config - max duration for hobby is 10s, pro is 60s
 export const maxDuration = 60; // Will use max available for your plan
 
 const BATCH_SIZE = 50; // Process 50 rows per call
-const CONCURRENT_REQUESTS = 10; // Max concurrent AI requests (Vertex allows 2000 RPM)
 const AI_TIMEOUT_MS = 30000; // 30 second timeout per AI call
 const STALE_JOB_MINUTES = 10; // Auto-complete jobs stuck for 10+ minutes
-
-// Gemini model pricing (per 1M tokens)
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  'gemini-1.5-flash': { input: 0.075, output: 0.30 },
-  'gemini-1.5-pro': { input: 1.25, output: 5.00 },
-  'gemini-2.0-flash': { input: 0.10, output: 0.40 },
-  'gemini-2.5-flash': { input: 0.15, output: 0.60 },
-  'gemini-2.5-pro': { input: 1.25, output: 10.00 },
-};
-const DEFAULT_PRICING = { input: 0.15, output: 0.60 };
-
-interface AIResult {
-  text: string;
-  inputTokens: number;
-  outputTokens: number;
-}
 
 // Timeout wrapper for promises
 function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> {
@@ -181,7 +171,10 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
     return 0;
   }
 
-  const pricing = MODEL_PRICING[config.model || 'gemini-2.0-flash'] || DEFAULT_PRICING;
+  const modelId = config.model || 'gemini-2.5-flash';
+  const pricing = getModelPricing(modelId);
+  const provider = getProviderFromModel(modelId);
+  const rateLimits = getProviderRateLimits(provider);
   let batchCost = 0;
   let batchErrors = 0;
 
@@ -190,7 +183,10 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
       try {
         const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
         const aiResult = await withTimeout(
-          callAI(prompt, config),
+          callUnifiedAI(prompt, modelId, {
+            temperature: config.temperature ?? 0.7,
+            maxOutputTokens: 8192,
+          }),
           AI_TIMEOUT_MS,
           'AI request timed out after 30 seconds'
         );
@@ -207,6 +203,13 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
             status: 'complete' as const,
             enrichmentData: parsedResult.structuredData,
             rawResponse: aiResult.text,
+            metadata: {
+              inputTokens: aiResult.inputTokens,
+              outputTokens: aiResult.outputTokens,
+              timeTakenMs: aiResult.timeTakenMs,
+              totalCost: rowCost,
+              forcedToFinishEarly: false,
+            },
           },
         };
 
@@ -255,13 +258,14 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
       }
   };
 
-  // Process with limited concurrency
-  for (let i = 0; i < rows.length; i += CONCURRENT_REQUESTS) {
-    const chunk = rows.slice(i, i + CONCURRENT_REQUESTS);
+  // Process with limited concurrency (varies by provider)
+  const { concurrentRequests, delayBetweenChunks } = rateLimits;
+  for (let i = 0; i < rows.length; i += concurrentRequests) {
+    const chunk = rows.slice(i, i + concurrentRequests);
     await Promise.all(chunk.map(processRow));
-    // Small delay between chunks to avoid rate limits
-    if (i + CONCURRENT_REQUESTS < rows.length) {
-      await new Promise(resolve => setTimeout(resolve, 200));
+    // Delay between chunks to avoid rate limits (longer for Azure)
+    if (i + concurrentRequests < rows.length) {
+      await new Promise(resolve => setTimeout(resolve, delayBetweenChunks));
     }
   }
 
@@ -310,13 +314,31 @@ function buildPrompt(
       return acc;
     }, {} as Record<string, string>);
 
+    // Add metadata fields to the template
+    const jsonTemplateWithMetadata = {
+      ...jsonTemplate,
+      reasoning: '<brief explanation of your answer, 1-2 sentences>',
+      confidence: '<"high", "medium", or "low">',
+      steps_taken: '<brief list of what you did>',
+    };
+
     prompt += `
 
 ---
 IMPORTANT: You must respond with ONLY a valid JSON object using exactly these keys:
-${JSON.stringify(jsonTemplate, null, 2)}
+${JSON.stringify(jsonTemplateWithMetadata, null, 2)}
 
 Replace each placeholder with the actual value. Do not include any other text, markdown, or explanation. Only output the JSON object.`;
+  } else {
+    // No output columns - still request metadata fields
+    prompt += `
+
+---
+Respond with JSON including these fields:
+- Your actual response data
+- "reasoning": brief explanation (1-2 sentences)
+- "confidence": "high", "medium", or "low"
+- "steps_taken": brief list of what you did`;
   }
 
   return prompt;
@@ -371,53 +393,4 @@ function parseAIResponse(response: string): { displayValue: string; structuredDa
   }
 
   return { displayValue: cleanedResponse, structuredData: { result: cleanedResponse } };
-}
-
-async function callAI(prompt: string, config: typeof schema.enrichmentConfigs.$inferSelect): Promise<AIResult> {
-  const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (projectId) {
-    const { getGenerativeModel } = await import('@/lib/vertex-ai');
-    const model = getGenerativeModel(config.model || 'gemini-2.0-flash', {
-      temperature: config.temperature ?? 0.7,
-      maxOutputTokens: 8192,
-    });
-
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const usageMetadata = response.usageMetadata;
-
-    return {
-      text: response.candidates?.[0]?.content?.parts?.[0]?.text || '',
-      inputTokens: usageMetadata?.promptTokenCount ?? 0,
-      outputTokens: usageMetadata?.candidatesTokenCount ?? 0,
-    };
-  } else if (apiKey) {
-    const modelId = config.model || 'gemini-1.5-flash';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: config.temperature ?? 0.7, maxOutputTokens: 8192 },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return {
-      text: data.candidates?.[0]?.content?.parts?.[0]?.text || '',
-      inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
-      outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
-    };
-  }
-
-  throw new Error('No AI provider configured');
 }

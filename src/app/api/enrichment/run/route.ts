@@ -3,31 +3,10 @@ import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import type { CellValue } from '@/lib/db/schema';
+import { callAI as callUnifiedAI, getModelPricing } from '@/lib/ai-provider';
 
 function generateId() {
   return nanoid(12);
-}
-
-// Gemini model pricing (per 1M tokens)
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  'gemini-1.5-flash': { input: 0.075, output: 0.30 },
-  'gemini-1.5-pro': { input: 1.25, output: 5.00 },
-  'gemini-2.0-flash': { input: 0.10, output: 0.40 },
-  'gemini-2.0-flash-001': { input: 0.10, output: 0.40 },
-  'gemini-2.0-flash-lite-001': { input: 0.075, output: 0.30 },
-  'gemini-2.5-flash': { input: 0.15, output: 0.60 },
-  'gemini-2.5-flash-lite': { input: 0.075, output: 0.30 },
-  'gemini-2.5-pro': { input: 1.25, output: 10.00 },
-};
-
-// Default pricing for unknown models
-const DEFAULT_PRICING = { input: 0.15, output: 0.60 };
-
-// Result from AI call including token usage
-interface AIResult {
-  text: string;
-  inputTokens: number;
-  outputTokens: number;
 }
 
 // Result for a single row
@@ -150,7 +129,8 @@ export async function POST(request: NextRequest) {
 
     // Process rows IN PARALLEL for speed
     const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
-    const pricing = MODEL_PRICING[config.model || 'gemini-2.0-flash'] || DEFAULT_PRICING;
+    const modelId = config.model || 'gemini-2.5-flash';
+    const pricing = getModelPricing(modelId);
     let totalCost = 0;
 
     // Process all rows in parallel using Promise.all
@@ -160,8 +140,11 @@ export async function POST(request: NextRequest) {
           // Build prompt
           const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
 
-          // Call AI
-          const aiResult = await callAI(prompt, config);
+          // Call AI using unified provider
+          const aiResult = await callUnifiedAI(prompt, modelId, {
+            temperature: config.temperature ?? 0.7,
+            maxOutputTokens: 8192,
+          });
 
           // Calculate cost
           const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
@@ -178,6 +161,13 @@ export async function POST(request: NextRequest) {
               status: 'complete' as const,
               enrichmentData: parsedResult.structuredData,
               rawResponse: aiResult.text,
+              metadata: {
+                inputTokens: aiResult.inputTokens,
+                outputTokens: aiResult.outputTokens,
+                timeTakenMs: aiResult.timeTakenMs,
+                totalCost: rowCost,
+                forcedToFinishEarly: false,
+              },
             },
           };
 
@@ -293,13 +283,31 @@ function buildPrompt(
       return acc;
     }, {} as Record<string, string>);
 
+    // Add metadata fields to the template
+    const jsonTemplateWithMetadata = {
+      ...jsonTemplate,
+      reasoning: '<brief explanation of your answer, 1-2 sentences>',
+      confidence: '<"high", "medium", or "low">',
+      steps_taken: '<brief list of what you did>',
+    };
+
     prompt += `
 
 ---
 IMPORTANT: You must respond with ONLY a valid JSON object using exactly these keys:
-${JSON.stringify(jsonTemplate, null, 2)}
+${JSON.stringify(jsonTemplateWithMetadata, null, 2)}
 
 Replace each placeholder with the actual value. Do not include any other text, markdown, or explanation. Only output the JSON object.`;
+  } else {
+    // No output columns - still request metadata fields
+    prompt += `
+
+---
+Respond with JSON including these fields:
+- Your actual response data
+- "reasoning": brief explanation (1-2 sentences)
+- "confidence": "high", "medium", or "low"
+- "steps_taken": brief list of what you did`;
   }
 
   return prompt;
@@ -426,92 +434,4 @@ function parseAIResponse(response: string): ParsedAIResponse {
     displayValue: cleanedResponse,
     structuredData: { result: cleanedResponse },
   };
-}
-
-async function callAI(
-  prompt: string,
-  config: typeof schema.enrichmentConfigs.$inferSelect
-): Promise<AIResult> {
-  const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (projectId) {
-    return callVertexAI(prompt, config, projectId);
-  } else if (apiKey) {
-    return callGeminiAPI(prompt, config, apiKey);
-  } else {
-    throw new Error('No AI provider configured. Set GOOGLE_CLOUD_PROJECT or GEMINI_API_KEY.');
-  }
-}
-
-async function callVertexAI(
-  prompt: string,
-  config: typeof schema.enrichmentConfigs.$inferSelect,
-  projectId: string
-): Promise<AIResult> {
-  const { getGenerativeModel } = await import('@/lib/vertex-ai');
-
-  const model = getGenerativeModel(config.model || 'gemini-2.0-flash', {
-    temperature: config.temperature ?? 0.7,
-    maxOutputTokens: 8192,
-  });
-
-  const result = await model.generateContent(prompt);
-  const response = result.response;
-
-  const usageMetadata = response.usageMetadata;
-  const inputTokens = usageMetadata?.promptTokenCount ?? 0;
-  const outputTokens = usageMetadata?.candidatesTokenCount ?? 0;
-
-  if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
-    return {
-      text: response.candidates[0].content.parts[0].text,
-      inputTokens,
-      outputTokens,
-    };
-  }
-
-  return { text: '', inputTokens, outputTokens };
-}
-
-async function callGeminiAPI(
-  prompt: string,
-  config: typeof schema.enrichmentConfigs.$inferSelect,
-  apiKey: string
-): Promise<AIResult> {
-  const modelId = config.model || 'gemini-1.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: config.temperature ?? 0.7,
-        maxOutputTokens: 8192,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-
-  const usageMetadata = data.usageMetadata;
-  const inputTokens = usageMetadata?.promptTokenCount ?? 0;
-  const outputTokens = usageMetadata?.candidatesTokenCount ?? 0;
-
-  if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-    return {
-      text: data.candidates[0].content.parts[0].text,
-      inputTokens,
-      outputTokens,
-    };
-  }
-
-  return { text: '', inputTokens, outputTokens };
 }

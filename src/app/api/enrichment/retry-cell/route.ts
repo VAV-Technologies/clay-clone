@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
+import { callAI as callUnifiedAI, getModelPricing } from '@/lib/ai-provider';
 
 // POST /api/enrichment/retry-cell - Retry enrichment on a single cell
 export async function POST(request: NextRequest) {
@@ -103,7 +104,16 @@ export async function POST(request: NextRequest) {
 
     // Call AI
     try {
-      const result = await callAI(prompt, config);
+      const modelId = config.model || 'gemini-2.5-flash';
+      const pricing = getModelPricing(modelId);
+      const aiResult = await callUnifiedAI(prompt, modelId, {
+        temperature: config.temperature ?? 0.7,
+        maxOutputTokens: 8192,
+      });
+      const result = aiResult.text;
+
+      // Calculate cost
+      const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
 
       // Parse the result for structured data
       const parsedResult = parseAIResponse(result);
@@ -116,6 +126,13 @@ export async function POST(request: NextRequest) {
           status: 'complete' as const,
           enrichmentData: parsedResult.structuredData,
           rawResponse: result,
+          metadata: {
+            inputTokens: aiResult.inputTokens,
+            outputTokens: aiResult.outputTokens,
+            timeTakenMs: aiResult.timeTakenMs,
+            totalCost: rowCost,
+            forcedToFinishEarly: false,
+          },
         },
       };
 
@@ -211,95 +228,36 @@ function buildPrompt(
       return acc;
     }, {} as Record<string, string>);
 
+    // Add metadata fields to the template
+    const jsonTemplateWithMetadata = {
+      ...jsonTemplate,
+      reasoning: '<brief explanation of your answer, 1-2 sentences>',
+      confidence: '<"high", "medium", or "low">',
+      steps_taken: '<brief list of what you did>',
+    };
+
     prompt += `
 
 ---
 IMPORTANT: You must respond with ONLY a valid JSON object using exactly these keys:
-${JSON.stringify(jsonTemplate, null, 2)}
+${JSON.stringify(jsonTemplateWithMetadata, null, 2)}
 
 Replace each placeholder with the actual value. Do not include any other text, markdown, or explanation. Only output the JSON object.`;
+  } else {
+    // No output columns - still request metadata fields
+    prompt += `
+
+---
+Respond with JSON including these fields:
+- Your actual response data
+- "reasoning": brief explanation (1-2 sentences)
+- "confidence": "high", "medium", or "low"
+- "steps_taken": brief list of what you did`;
   }
 
   return prompt;
 }
 
-async function callAI(
-  prompt: string,
-  config: typeof schema.enrichmentConfigs.$inferSelect
-): Promise<string> {
-  const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (projectId) {
-    return callVertexAI(prompt, config, projectId);
-  } else if (apiKey) {
-    return callGeminiAPI(prompt, config, apiKey);
-  } else {
-    throw new Error('No AI provider configured. Set GOOGLE_CLOUD_PROJECT for Vertex AI or GEMINI_API_KEY for Gemini API.');
-  }
-}
-
-async function callVertexAI(
-  prompt: string,
-  config: typeof schema.enrichmentConfigs.$inferSelect,
-  projectId: string
-): Promise<string> {
-  const { getGenerativeModel } = await import('@/lib/vertex-ai');
-
-  const model = getGenerativeModel(config.model || 'gemini-2.0-flash', {
-    temperature: config.temperature ?? 0.7,
-    maxOutputTokens: 8192, // No token limit for retries
-  });
-
-  const result = await model.generateContent(prompt);
-  const response = result.response;
-
-  if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
-    return response.candidates[0].content.parts[0].text;
-  }
-
-  return '';
-}
-
-async function callGeminiAPI(
-  prompt: string,
-  config: typeof schema.enrichmentConfigs.$inferSelect,
-  apiKey: string
-): Promise<string> {
-  const modelId = config.model || 'gemini-1.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: prompt }],
-        },
-      ],
-      generationConfig: {
-        temperature: config.temperature ?? 0.7,
-        maxOutputTokens: 8192, // No token limit for retries
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-
-  if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-    return data.candidates[0].content.parts[0].text;
-  }
-
-  return '';
-}
 
 interface ParsedAIResponse {
   displayValue: string;

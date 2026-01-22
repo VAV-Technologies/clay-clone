@@ -26,11 +26,20 @@ const CHECKBOX_WIDTH = 40;
 const ROW_NUMBER_WIDTH = 50;
 const STATUS_ROW_HEIGHT = 24;
 
+interface CellMetadata {
+  inputTokens: number;
+  outputTokens: number;
+  timeTakenMs: number;
+  totalCost: number;
+  forcedToFinishEarly?: boolean;
+}
+
 interface EnrichmentDataState {
   isOpen: boolean;
   rowId: string;
   columnId: string;
   data: Record<string, string | number | null>;
+  metadata?: CellMetadata;
 }
 
 export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetViewProps) {
@@ -184,12 +193,13 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
 
   // Handler for showing enrichment data viewer
   const handleShowEnrichmentData = useCallback(
-    (rowId: string, columnId: string, data: Record<string, string | number | null>) => {
+    (rowId: string, columnId: string, data: Record<string, string | number | null>, metadata?: CellMetadata) => {
       setEnrichmentDataState({
         isOpen: true,
         rowId,
         columnId,
         data,
+        metadata,
       });
     },
     []
@@ -491,6 +501,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
         isOpen={enrichmentDataState.isOpen}
         onClose={handleCloseEnrichmentData}
         data={enrichmentDataState.data}
+        metadata={enrichmentDataState.metadata}
         rowId={enrichmentDataState.rowId}
         columnId={enrichmentDataState.columnId}
         tableId={tableId}

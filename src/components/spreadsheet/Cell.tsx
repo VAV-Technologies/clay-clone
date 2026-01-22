@@ -7,12 +7,20 @@ import { cn } from '@/lib/utils';
 import { useTableStore } from '@/stores/tableStore';
 import type { Row, Column, CellValue } from '@/lib/db/schema';
 
+interface CellMetadata {
+  inputTokens: number;
+  outputTokens: number;
+  timeTakenMs: number;
+  totalCost: number;
+  forcedToFinishEarly?: boolean;
+}
+
 interface CellProps {
   row: Row;
   column: Column;
   isEditing: boolean;
   tableId: string;
-  onShowEnrichmentData?: (rowId: string, columnId: string, data: Record<string, string | number | null>) => void;
+  onShowEnrichmentData?: (rowId: string, columnId: string, data: Record<string, string | number | null>, metadata?: CellMetadata) => void;
 }
 
 export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: CellProps) {
@@ -28,6 +36,7 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
   const displayValue = cellData?.value ?? '';
   const status = cellData?.status;
   const enrichmentData = cellData?.enrichmentData;
+  const metadata = cellData?.metadata;
 
   // Check if this is an enrichment column with a config
   const isEnrichmentColumn = column.type === 'enrichment' && column.enrichmentConfigId;
@@ -82,7 +91,7 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
         : displayValue !== null && displayValue !== undefined
           ? { result: displayValue }
           : {};
-      onShowEnrichmentData?.(row.id, column.id, dataToShow);
+      onShowEnrichmentData?.(row.id, column.id, dataToShow, metadata);
       return;
     }
 
