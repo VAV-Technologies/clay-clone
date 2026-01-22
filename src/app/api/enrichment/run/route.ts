@@ -3,7 +3,7 @@ import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import type { CellValue } from '@/lib/db/schema';
-import { callAI as callUnifiedAI, getModelPricing } from '@/lib/ai-provider';
+import { callAI as callUnifiedAI, getModelPricing, getProviderFromModel, getProviderRateLimits } from '@/lib/ai-provider';
 
 function generateId() {
   return nanoid(12);
@@ -127,116 +127,131 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Process rows IN PARALLEL for speed
+    // Process rows with rate limiting to avoid API throttling
     const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
     const modelId = config.model || 'gemini-2.5-flash';
     const pricing = getModelPricing(modelId);
+    const provider = getProviderFromModel(modelId);
+    const rateLimits = getProviderRateLimits(provider);
     let totalCost = 0;
 
-    // Process all rows in parallel using Promise.all
-    const results = await Promise.all(
-      rows.map(async (row): Promise<RowResult> => {
-        try {
-          // Build prompt
-          const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
+    const results: RowResult[] = [];
 
-          // Call AI using unified provider
-          const aiResult = await callUnifiedAI(prompt, modelId, {
-            temperature: config.temperature ?? 0.7,
-            maxOutputTokens: 8192,
-          });
+    // Process a single row
+    const processRow = async (row: typeof rows[0]): Promise<RowResult> => {
+      try {
+        // Build prompt
+        const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
 
-          // Calculate cost
-          const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
-          totalCost += rowCost;
+        // Call AI using unified provider
+        const aiResult = await callUnifiedAI(prompt, modelId, {
+          temperature: config.temperature ?? 0.7,
+          maxOutputTokens: 8192,
+        });
 
-          // Parse result
-          const parsedResult = parseAIResponse(aiResult.text);
+        // Calculate cost
+        const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
+        totalCost += rowCost;
 
-          // Build updated data
-          const updatedData: Record<string, CellValue> = {
-            ...(row.data as Record<string, CellValue>),
-            [targetColumnId]: {
-              value: parsedResult.displayValue,
-              status: 'complete' as const,
-              enrichmentData: parsedResult.structuredData,
-              rawResponse: aiResult.text,
-              metadata: {
-                inputTokens: aiResult.inputTokens,
-                outputTokens: aiResult.outputTokens,
-                timeTakenMs: aiResult.timeTakenMs,
-                totalCost: rowCost,
-                forcedToFinishEarly: false,
-              },
+        // Parse result
+        const parsedResult = parseAIResponse(aiResult.text);
+
+        // Build updated data
+        const updatedData: Record<string, CellValue> = {
+          ...(row.data as Record<string, CellValue>),
+          [targetColumnId]: {
+            value: parsedResult.displayValue,
+            status: 'complete' as const,
+            enrichmentData: parsedResult.structuredData,
+            rawResponse: aiResult.text,
+            metadata: {
+              inputTokens: aiResult.inputTokens,
+              outputTokens: aiResult.outputTokens,
+              timeTakenMs: aiResult.timeTakenMs,
+              totalCost: rowCost,
+              forcedToFinishEarly: false,
             },
-          };
+          },
+        };
 
-          // Populate output columns
-          if (hasOutputColumns && parsedResult.structuredData) {
-            for (const [outputName, columnId] of Object.entries(outputColumnIds)) {
-              const matchingKey = Object.keys(parsedResult.structuredData).find(
-                key => key.toLowerCase() === outputName
-              );
+        // Populate output columns
+        if (hasOutputColumns && parsedResult.structuredData) {
+          for (const [outputName, columnId] of Object.entries(outputColumnIds)) {
+            const matchingKey = Object.keys(parsedResult.structuredData).find(
+              key => key.toLowerCase() === outputName
+            );
 
-              if (matchingKey) {
-                const value = parsedResult.structuredData[matchingKey];
-                updatedData[columnId] = {
-                  value: value !== null && value !== undefined ? String(value) : null,
-                  status: 'complete' as const,
-                };
-              } else {
-                updatedData[columnId] = {
-                  value: null,
-                  status: 'complete' as const,
-                };
-              }
-            }
-          }
-
-          // Save to database
-          await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-
-          return {
-            rowId: row.id,
-            success: true,
-            data: updatedData,
-            cost: rowCost,
-          };
-
-        } catch (error) {
-          console.error(`Error enriching row ${row.id}:`, error);
-
-          // Mark as error
-          const updatedData: Record<string, CellValue> = {
-            ...(row.data as Record<string, CellValue>),
-            [targetColumnId]: {
-              value: null,
-              status: 'error' as const,
-              error: (error as Error).message,
-            },
-          };
-
-          if (hasOutputColumns) {
-            for (const columnId of Object.values(outputColumnIds)) {
+            if (matchingKey) {
+              const value = parsedResult.structuredData[matchingKey];
+              updatedData[columnId] = {
+                value: value !== null && value !== undefined ? String(value) : null,
+                status: 'complete' as const,
+              };
+            } else {
               updatedData[columnId] = {
                 value: null,
-                status: 'error' as const,
-                error: (error as Error).message,
+                status: 'complete' as const,
               };
             }
           }
-
-          await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-
-          return {
-            rowId: row.id,
-            success: false,
-            data: updatedData,
-            error: (error as Error).message,
-          };
         }
-      })
-    );
+
+        // Save to database
+        await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+
+        return {
+          rowId: row.id,
+          success: true,
+          data: updatedData,
+          cost: rowCost,
+        };
+
+      } catch (error) {
+        console.error(`Error enriching row ${row.id}:`, error);
+
+        // Mark as error
+        const updatedData: Record<string, CellValue> = {
+          ...(row.data as Record<string, CellValue>),
+          [targetColumnId]: {
+            value: null,
+            status: 'error' as const,
+            error: (error as Error).message,
+          },
+        };
+
+        if (hasOutputColumns) {
+          for (const columnId of Object.values(outputColumnIds)) {
+            updatedData[columnId] = {
+              value: null,
+              status: 'error' as const,
+              error: (error as Error).message,
+            };
+          }
+        }
+
+        await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+
+        return {
+          rowId: row.id,
+          success: false,
+          data: updatedData,
+          error: (error as Error).message,
+        };
+      }
+    };
+
+    // Process with rate limiting: limited concurrency + delays between chunks
+    const { concurrentRequests, delayBetweenChunks } = rateLimits;
+    for (let i = 0; i < rows.length; i += concurrentRequests) {
+      const chunk = rows.slice(i, i + concurrentRequests);
+      const chunkResults = await Promise.all(chunk.map(processRow));
+      results.push(...chunkResults);
+
+      // Add delay between chunks to avoid rate limits
+      if (i + concurrentRequests < rows.length) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenChunks));
+      }
+    }
 
     return NextResponse.json({
       results,

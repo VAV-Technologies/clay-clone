@@ -532,6 +532,9 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
     setError(null);
     setProgress({ completed: 0, total: 0 });
 
+    // Batch size - process this many rows per API call to avoid timeouts
+    const BATCH_SIZE = 50;
+
     try {
       let targetColumnId: string;
       let configId: string;
@@ -567,43 +570,64 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       // Determine which rows to run on
       const rowIdsToEnrich = selectedRows.size > 0 ? Array.from(selectedRows) : rows.map(r => r.id);
 
+      // Set total progress
+      setProgress({ completed: 0, total: rowIdsToEnrich.length });
+
       // Mark all target cells as 'processing' immediately in the UI
       rowIdsToEnrich.forEach(rowId => {
         updateCell(rowId, targetColumnId, { value: null, status: 'processing' });
       });
 
-      // Start enrichment (synchronous - returns results directly)
-      const response = await fetch('/api/enrichment/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          configId,
-          tableId: currentTable.id,
-          targetColumnId,
-          rowIds: selectedRows.size > 0 ? rowIdsToEnrich : undefined,
-          onlyEmpty: runOnEmpty,
-        }),
-      });
+      // Process in batches to avoid timeouts
+      let completedCount = 0;
+      let errorCount = 0;
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to run enrichment');
-      }
+      for (let i = 0; i < rowIdsToEnrich.length; i += BATCH_SIZE) {
+        const batchRowIds = rowIdsToEnrich.slice(i, i + BATCH_SIZE);
 
-      const result = await response.json();
+        try {
+          const response = await fetch('/api/enrichment/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              configId,
+              tableId: currentTable.id,
+              targetColumnId,
+              rowIds: batchRowIds,
+              onlyEmpty: runOnEmpty,
+            }),
+          });
 
-      // Update progress
-      setProgress({
-        completed: result.processedCount || 0,
-        total: result.processedCount || 0
-      });
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error(`Batch ${i / BATCH_SIZE + 1} failed:`, errorData.error);
+            errorCount += batchRowIds.length;
+          } else {
+            const result = await response.json();
 
-      // Update cells with results
-      if (result.results && Array.isArray(result.results)) {
-        result.results.forEach((rowResult: { rowId: string; data?: Record<string, CellValue> }) => {
-          if (rowResult.data && rowResult.data[targetColumnId]) {
-            updateCell(rowResult.rowId, targetColumnId, rowResult.data[targetColumnId]);
+            // Update cells with results
+            if (result.results && Array.isArray(result.results)) {
+              result.results.forEach((rowResult: { rowId: string; success: boolean; data?: Record<string, CellValue> }) => {
+                if (rowResult.data && rowResult.data[targetColumnId]) {
+                  updateCell(rowResult.rowId, targetColumnId, rowResult.data[targetColumnId]);
+                }
+                if (rowResult.success) {
+                  completedCount++;
+                } else {
+                  errorCount++;
+                }
+              });
+            }
           }
+        } catch (batchError) {
+          console.error(`Batch ${i / BATCH_SIZE + 1} error:`, batchError);
+          errorCount += batchRowIds.length;
+        }
+
+        // Update progress after each batch
+        setProgress({
+          completed: completedCount + errorCount,
+          total: rowIdsToEnrich.length
         });
       }
 
@@ -611,7 +635,13 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       await fetchTable(currentTable.id);
 
       setIsRunning(false);
-      onClose();
+
+      // Show summary if there were errors
+      if (errorCount > 0) {
+        setError(`Completed with ${errorCount} errors out of ${rowIdsToEnrich.length} rows`);
+      } else {
+        onClose();
+      }
 
     } catch (err) {
       setError((err as Error).message);
