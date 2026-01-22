@@ -54,19 +54,20 @@ export async function POST(request: NextRequest) {
     // Update all cell statuses in a SINGLE SQL query using SQLite json_set
     // This is fast (one round trip) and avoids N individual updates
     // Note: targetColumnId is safe (comes from our column schema, not user input)
-    await db.execute(sql.raw(`
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (db as any).run(sql`
       UPDATE "rows"
       SET data = json_set(
         COALESCE(data, '{}'),
-        '$.' || '${targetColumnId}',
+        '$.' || ${targetColumnId},
         json_set(
-          COALESCE(json_extract(data, '$.' || '${targetColumnId}'), '{}'),
+          COALESCE(json_extract(data, '$.' || ${targetColumnId}), '{}'),
           '$.status',
           'pending'
         )
       )
-      WHERE id IN (${rowIds.map((id: string) => `'${id}'`).join(',')})
-    `));
+      WHERE id IN ${rowIds}
+    `);
 
     return NextResponse.json({
       jobId,
