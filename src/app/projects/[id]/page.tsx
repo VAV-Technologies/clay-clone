@@ -72,6 +72,14 @@ function ProjectContent() {
     fetchAllFolders();
   }, [projectId]);
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!openMenuId) return;
+    const handleClickOutside = () => setOpenMenuId(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [openMenuId]);
+
   const fetchProject = async () => {
     try {
       const response = await fetch(`/api/projects/${projectId}`);
@@ -325,18 +333,10 @@ function ProjectContent() {
                     </button>
 
                     {openMenuId === table.id && (
-                      <>
-                        {/* Backdrop to close menu */}
                         <div
-                          className="fixed inset-0 z-[100]"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setOpenMenuId(null);
-                          }}
-                        />
-                        {/* Menu */}
-                        <div className="absolute right-0 top-full mt-1 z-[101] min-w-[160px] py-1 bg-midnight-100 border border-white/10 rounded-xl shadow-xl">
+                          className="absolute right-0 top-full mt-1 z-50 min-w-[160px] py-1 bg-midnight-100 border border-white/10 rounded-xl shadow-xl"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <button
                             type="button"
                             onClick={(e) => {
@@ -376,7 +376,6 @@ function ProjectContent() {
                             Delete
                           </button>
                         </div>
-                      </>
                     )}
                   </div>
                 </div>
