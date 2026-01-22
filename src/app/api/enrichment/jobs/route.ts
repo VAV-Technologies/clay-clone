@@ -51,17 +51,21 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     });
 
-    // Update all cell statuses in a SINGLE SQL query using jsonb_set
+    // Update all cell statuses in a SINGLE SQL query using SQLite json_set
     // This is fast (one round trip) and avoids N individual updates
     // Note: targetColumnId is safe (comes from our column schema, not user input)
     await db.execute(sql.raw(`
       UPDATE "rows"
-      SET data = jsonb_set(
+      SET data = json_set(
         COALESCE(data, '{}'),
-        ARRAY['${targetColumnId}'],
-        COALESCE(data->'${targetColumnId}', '{}') || '{"status": "pending"}'::jsonb
+        '$.' || '${targetColumnId}',
+        json_set(
+          COALESCE(json_extract(data, '$.' || '${targetColumnId}'), '{}'),
+          '$.status',
+          'pending'
+        )
       )
-      WHERE id = ANY(ARRAY[${rowIds.map((id: string) => `'${id}'`).join(',')}])
+      WHERE id IN (${rowIds.map((id: string) => `'${id}'`).join(',')})
     `));
 
     return NextResponse.json({
