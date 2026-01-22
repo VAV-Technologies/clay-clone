@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
-import { eq, and, or } from 'drizzle-orm';
+import { eq, and, or, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
+import type { CellValue } from '@/lib/db/schema';
 
 // POST /api/enrichment/jobs - Create a new background job
 export async function POST(request: NextRequest) {
@@ -16,12 +17,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Auto-cancel any existing active jobs for this column (instead of blocking)
-    await db.update(schema.enrichmentJobs)
-      .set({
-        status: 'cancelled',
-        updatedAt: new Date(),
-      })
+    // Get existing active jobs for this column before cancelling
+    const existingJobs = await db.select()
+      .from(schema.enrichmentJobs)
       .where(
         and(
           eq(schema.enrichmentJobs.targetColumnId, targetColumnId),
@@ -31,6 +29,43 @@ export async function POST(request: NextRequest) {
           )
         )
       );
+
+    // Auto-cancel any existing active jobs for this column (instead of blocking)
+    if (existingJobs.length > 0) {
+      await db.update(schema.enrichmentJobs)
+        .set({
+          status: 'cancelled',
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.enrichmentJobs.targetColumnId, targetColumnId),
+            or(
+              eq(schema.enrichmentJobs.status, 'pending'),
+              eq(schema.enrichmentJobs.status, 'running')
+            )
+          )
+        );
+
+      // Reset cell statuses for cancelled jobs
+      for (const cancelledJob of existingJobs) {
+        const rowsToReset = await db.select().from(schema.rows)
+          .where(inArray(schema.rows.id, cancelledJob.rowIds));
+
+        await Promise.all(rowsToReset.map(row => {
+          const cellValue = (row.data as Record<string, CellValue>)[targetColumnId];
+          if (cellValue?.status === 'pending' || cellValue?.status === 'processing') {
+            const { status, ...rest } = cellValue;
+            const updatedData = {
+              ...(row.data as Record<string, CellValue>),
+              [targetColumnId]: Object.keys(rest).length > 0 ? rest : undefined,
+            };
+            return db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+          }
+          return Promise.resolve();
+        }));
+      }
+    }
 
     // Create new job
     const jobId = nanoid(12);
@@ -51,8 +86,20 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     });
 
-    // Skip pre-marking cells as 'processing' - too slow for large datasets
-    // Cells will be updated when actually processed by the cron job
+    // Mark target cells as 'pending' in database for consistency
+    // This ensures cells show "In Queue" even after page refresh
+    const targetRows = await db.select().from(schema.rows).where(inArray(schema.rows.id, rowIds));
+    await Promise.all(targetRows.map(row => {
+      const currentCellValue = (row.data as Record<string, CellValue>)[targetColumnId] || {};
+      const updatedData = {
+        ...(row.data as Record<string, CellValue>),
+        [targetColumnId]: {
+          ...currentCellValue,
+          status: 'pending' as const,
+        },
+      };
+      return db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+    }));
 
     return NextResponse.json({
       jobId,

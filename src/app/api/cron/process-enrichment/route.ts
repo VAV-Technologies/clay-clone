@@ -62,8 +62,29 @@ export async function GET(request: NextRequest) {
       const minutesSinceUpdate = (Date.now() - updatedAt) / 1000 / 60;
 
       if (minutesSinceUpdate > STALE_JOB_MINUTES && job.currentIndex > 0) {
-        // Job is stuck - mark as complete
+        // Job is stuck - mark as complete and clean up processing cells
         console.log(`Job ${job.id} is stale (${minutesSinceUpdate.toFixed(1)} min), marking complete`);
+
+        // Clean up any cells still at 'processing' status
+        const { targetColumnId, rowIds } = job;
+        const staleCells = await db.select().from(schema.rows).where(inArray(schema.rows.id, rowIds));
+
+        await Promise.all(staleCells.map(row => {
+          const cellValue = (row.data as Record<string, CellValue>)[targetColumnId];
+          if (cellValue?.status === 'processing') {
+            const updatedData = {
+              ...(row.data as Record<string, CellValue>),
+              [targetColumnId]: {
+                ...cellValue,
+                status: 'error' as const,
+                error: 'Processing timed out. Please retry.',
+              },
+            };
+            return db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+          }
+          return Promise.resolve();
+        }));
+
         await db.update(schema.enrichmentJobs)
           .set({
             status: 'complete',
