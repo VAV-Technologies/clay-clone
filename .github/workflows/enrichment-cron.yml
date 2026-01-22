@@ -15,7 +15,7 @@ jobs:
           # Call the endpoint multiple times to process more rows per run
           for i in {1..5}; do
             echo "Batch $i..."
-            curl -s "https://dataflow-pi.vercel.app/api/cron/process-enrichment"
+            curl -s "https://dataflow-pi.vercel.app/api/cron/process-enrichment?secret=${{ secrets.CRON_SECRET }}"
             echo ""
             sleep 30
           done
