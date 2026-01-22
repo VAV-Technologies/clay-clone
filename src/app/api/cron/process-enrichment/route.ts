@@ -13,7 +13,7 @@ import {
 // Vercel function config - max duration for hobby is 10s, pro is 60s
 export const maxDuration = 60; // Will use max available for your plan
 
-const BATCH_SIZE = 50; // Process 50 rows per call
+const BATCH_SIZE = 100; // Process 100 rows per call
 const AI_TIMEOUT_MS = 30000; // 30 second timeout per AI call
 const STALE_JOB_MINUTES = 10; // Auto-complete jobs stuck for 10+ minutes
 

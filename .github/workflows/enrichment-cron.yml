@@ -13,9 +13,15 @@ jobs:
       - name: Process enrichment batches
         run: |
           # Call the endpoint multiple times to process more rows per run
-          for i in {1..5}; do
+          # 10 calls x 50 rows = 500 rows per 5-minute run = 6,000 rows/hour
+          for i in {1..10}; do
             echo "Batch $i..."
-            curl -s "https://dataflow-pi.vercel.app/api/cron/process-enrichment?secret=${{ secrets.CRON_SECRET }}"
-            echo ""
-            sleep 30
+            response=$(curl -s "https://dataflow-pi.vercel.app/api/cron/process-enrichment?secret=${{ secrets.CRON_SECRET }}")
+            echo "$response"
+            # If no active jobs, stop early
+            if echo "$response" | grep -q '"processed":0'; then
+              echo "No more rows to process, stopping early"
+              break
+            fi
+            sleep 20
           done
