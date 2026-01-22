@@ -134,12 +134,11 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
 
     if (mode === 'custom' && customCount) {
       rowsToProcess = rows.slice(0, customCount);
-    } else if (mode === 'incomplete') {
+    } else if (mode === 'not_run') {
+      // Only target cells that have never been run (no status)
       rowsToProcess = rows.filter((row) => {
         const cellValue = row.data[column.id];
-        if (!cellValue || !cellValue.value) return true;
-        if (cellValue.status === 'error') return true;
-        return false;
+        return !cellValue || !cellValue.status;
       });
     } else if (mode === 'errors') {
       rowsToProcess = rows.filter((row) => {
@@ -305,12 +304,12 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
             Run on All Rows
           </button>
           <button
-            onClick={() => handleRunEnrichment('incomplete')}
+            onClick={() => handleRunEnrichment('not_run')}
             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/80
                        hover:bg-white/10 transition-colors text-left"
           >
             <Play className="w-4 h-4 text-emerald-400" />
-            Run on Incomplete
+            Run on All "Not Run"
           </button>
           <div className="border-t border-white/10" />
           {!showCustomInput ? (
