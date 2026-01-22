@@ -167,8 +167,8 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
     return 0;
   }
 
-  // Mark current batch cells as 'processing' for visual feedback
-  for (const row of rows) {
+  // Mark current batch cells as 'processing' for visual feedback (parallel for speed)
+  await Promise.all(rows.map(row => {
     const currentCellValue = (row.data as Record<string, CellValue>)[targetColumnId] || {};
     const updatedData = {
       ...(row.data as Record<string, CellValue>),
@@ -177,8 +177,8 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
         status: 'processing' as const,
       },
     };
-    await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-  }
+    return db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+  }));
 
   const modelId = config.model || 'gemini-2.5-flash';
   const pricing = getModelPricing(modelId);
