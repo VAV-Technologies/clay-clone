@@ -63,6 +63,14 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
     Array<{ name: string; description: string }>
   >([]);
 
+  // Reset form when panel opens
+  useEffect(() => {
+    if (isOpen) {
+      setSubmittedJobId(null);
+      setError(null);
+    }
+  }, [isOpen]);
+
   // Load active batch jobs
   useEffect(() => {
     if (isOpen && currentTable) {
@@ -601,11 +609,22 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
           <GlassCard padding="sm" className="bg-emerald-500/10 border-emerald-500/30">
             <div className="flex items-start gap-2">
               <Check className="w-4 h-4 text-emerald-400 mt-0.5" />
-              <div className="text-sm">
+              <div className="text-sm flex-1">
                 <p className="font-medium text-emerald-400">Batch job submitted!</p>
                 <p className="text-white/60 text-xs mt-1">
                   Processing {getRowCountText()}. Results will appear in 1-24 hours.
                 </p>
+                <button
+                  onClick={() => {
+                    setSubmittedJobId(null);
+                    setPrompt('');
+                    setOutputColumnName('Batch Output');
+                    setOutputColumns([]);
+                  }}
+                  className="mt-2 text-xs text-emerald-400 hover:text-emerald-300 underline"
+                >
+                  Create another job
+                </button>
               </div>
             </div>
           </GlassCard>
@@ -626,11 +645,11 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
           variant="primary"
           className="w-full bg-amber-500/20 border-amber-500/30 hover:bg-amber-500/30"
           onClick={handleSubmit}
-          disabled={!prompt.trim() || !outputColumnName.trim() || isSubmitting}
+          disabled={!prompt.trim() || !outputColumnName.trim() || isSubmitting || !!submittedJobId}
           loading={isSubmitting}
         >
           <Clock className="w-4 h-4 mr-1" />
-          Submit Batch Job ({getRowCountText()})
+          {submittedJobId ? 'Job Submitted' : `Submit Batch Job (${getRowCountText()})`}
         </GlassButton>
 
         <p className="text-xs text-center text-white/40">
