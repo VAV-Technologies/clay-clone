@@ -1,0 +1,356 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { db, schema } from '@/lib/db';
+import { eq, inArray } from 'drizzle-orm';
+import type { CellValue } from '@/lib/db/schema';
+import {
+  downloadBatchResults,
+  parseBatchResults,
+  deleteFile,
+  calculateBatchCost,
+  type BatchResultLine,
+} from '@/lib/azure-batch';
+
+// Vercel function config - extend timeout for downloading results
+export const maxDuration = 120;
+
+// POST /api/enrichment/batch/process-results - Process completed batch results
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { jobId } = body;
+
+    if (!jobId) {
+      return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
+    }
+
+    // Get job
+    const [job] = await db
+      .select()
+      .from(schema.batchEnrichmentJobs)
+      .where(eq(schema.batchEnrichmentJobs.id, jobId));
+
+    if (!job) {
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+    }
+
+    // Check if job has output file
+    if (!job.azureOutputFileId) {
+      return NextResponse.json(
+        { error: 'Job has no output file yet' },
+        { status: 400 }
+      );
+    }
+
+    // Get config for output columns
+    const [config] = await db
+      .select()
+      .from(schema.enrichmentConfigs)
+      .where(eq(schema.enrichmentConfigs.id, job.configId));
+
+    if (!config) {
+      return NextResponse.json({ error: 'Config not found' }, { status: 404 });
+    }
+
+    // Get columns
+    const columns = await db
+      .select()
+      .from(schema.columns)
+      .where(eq(schema.columns.tableId, job.tableId));
+
+    // Build output column ID map
+    const outputColumnIds: Record<string, string> = {};
+    const definedOutputColumns = config.outputColumns as string[] | null;
+
+    if (definedOutputColumns && definedOutputColumns.length > 0) {
+      for (const outputColName of definedOutputColumns) {
+        const existingCol = columns.find(
+          c => c.name.toLowerCase() === outputColName.toLowerCase()
+        );
+        if (existingCol) {
+          outputColumnIds[outputColName.toLowerCase()] = existingCol.id;
+        }
+      }
+    }
+
+    const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
+
+    // Download results
+    console.log(`Downloading batch results for job ${jobId}`);
+    const resultsContent = await downloadBatchResults(job.azureOutputFileId);
+    const results = parseBatchResults(resultsContent);
+
+    // Get row mappings
+    const rowMappings = job.rowMappings as Array<{ rowId: string; customId: string }>;
+    const customIdToRowId = new Map(rowMappings.map(m => [m.customId, m.rowId]));
+
+    // Get all rows for this job
+    const rowIds = rowMappings.map(m => m.rowId);
+    const rows = await db.select().from(schema.rows).where(inArray(schema.rows.id, rowIds));
+    const rowMap = new Map(rows.map(r => [r.id, r]));
+
+    // Process each result
+    let successCount = 0;
+    let errorCount = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    for (const result of results) {
+      const rowId = customIdToRowId.get(result.custom_id);
+      if (!rowId) {
+        console.warn(`No row mapping for custom_id: ${result.custom_id}`);
+        continue;
+      }
+
+      const row = rowMap.get(rowId);
+      if (!row) {
+        console.warn(`Row not found: ${rowId}`);
+        continue;
+      }
+
+      const updatedData: Record<string, CellValue> = {
+        ...(row.data as Record<string, CellValue>),
+      };
+
+      if (result.error) {
+        // Handle error result
+        errorCount++;
+        updatedData[job.targetColumnId] = {
+          value: null,
+          status: 'error' as const,
+          error: result.error.message || result.error.code,
+        };
+
+        for (const colId of Object.values(outputColumnIds)) {
+          updatedData[colId] = {
+            value: null,
+            status: 'error' as const,
+            error: result.error.message || result.error.code,
+          };
+        }
+      } else if (result.response) {
+        // Handle success result
+        successCount++;
+        const usage = result.response.body.usage;
+        totalInputTokens += usage.prompt_tokens;
+        totalOutputTokens += usage.completion_tokens;
+
+        const responseText = result.response.body.choices[0]?.message?.content || '';
+        const parsed = parseAIResponse(responseText);
+        const rowCost = calculateBatchCost(usage.prompt_tokens, usage.completion_tokens);
+
+        updatedData[job.targetColumnId] = {
+          value: parsed.displayValue,
+          status: 'complete' as const,
+          enrichmentData: parsed.structuredData,
+          rawResponse: responseText,
+          metadata: {
+            inputTokens: usage.prompt_tokens,
+            outputTokens: usage.completion_tokens,
+            timeTakenMs: 0, // Batch doesn't have per-row timing
+            totalCost: rowCost,
+          },
+        };
+
+        // Populate output columns
+        if (hasOutputColumns && parsed.structuredData) {
+          for (const [outputName, columnId] of Object.entries(outputColumnIds)) {
+            const matchingKey = Object.keys(parsed.structuredData).find(
+              key => key.toLowerCase() === outputName
+            );
+
+            if (matchingKey) {
+              const value = parsed.structuredData[matchingKey];
+              updatedData[columnId] = {
+                value: value !== null && value !== undefined ? String(value) : null,
+                status: 'complete' as const,
+              };
+            } else {
+              updatedData[columnId] = {
+                value: null,
+                status: 'complete' as const,
+              };
+            }
+          }
+        }
+      }
+
+      // Update row
+      await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, rowId));
+    }
+
+    // Calculate total cost
+    const totalCost = calculateBatchCost(totalInputTokens, totalOutputTokens);
+
+    // Update job as complete
+    await db
+      .update(schema.batchEnrichmentJobs)
+      .set({
+        status: 'complete',
+        processedCount: successCount + errorCount,
+        successCount,
+        errorCount,
+        totalCost,
+        totalInputTokens,
+        totalOutputTokens,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.batchEnrichmentJobs.id, jobId));
+
+    // Clean up Azure files (best effort)
+    try {
+      if (job.azureFileId) {
+        await deleteFile(job.azureFileId);
+      }
+      if (job.azureOutputFileId) {
+        await deleteFile(job.azureOutputFileId);
+      }
+      if (job.azureErrorFileId) {
+        await deleteFile(job.azureErrorFileId);
+      }
+    } catch (cleanupError) {
+      console.error('Failed to clean up Azure files:', cleanupError);
+    }
+
+    return NextResponse.json({
+      success: true,
+      jobId,
+      processedCount: successCount + errorCount,
+      successCount,
+      errorCount,
+      totalCost,
+      totalInputTokens,
+      totalOutputTokens,
+    });
+
+  } catch (error) {
+    console.error('Error processing batch results:', error);
+    return NextResponse.json(
+      { error: (error as Error).message || 'Failed to process batch results' },
+      { status: 500 }
+    );
+  }
+}
+
+interface ParsedAIResponse {
+  displayValue: string;
+  structuredData: Record<string, string | number | null> | undefined;
+}
+
+function parseAIResponse(response: string): ParsedAIResponse {
+  const cleanedResponse = response.trim();
+
+  const toStructuredData = (parsed: Record<string, unknown>): Record<string, string | number | null> => {
+    const result: Record<string, string | number | null> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value === null || value === undefined) {
+        result[key] = null;
+      } else if (typeof value === 'string' || typeof value === 'number') {
+        result[key] = value;
+      } else if (Array.isArray(value)) {
+        result[key] = value.map(v => String(v ?? '')).join(', ');
+      } else if (typeof value === 'object') {
+        result[key] = JSON.stringify(value);
+      } else {
+        result[key] = String(value);
+      }
+    }
+    return result;
+  };
+
+  // Try direct JSON parse
+  try {
+    const parsed = JSON.parse(cleanedResponse);
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      const structuredData = toStructuredData(parsed);
+      const dataCount = Object.keys(structuredData).length;
+      return {
+        displayValue: dataCount === 1
+          ? String(Object.values(structuredData)[0] ?? '')
+          : `${dataCount} datapoints`,
+        structuredData,
+      };
+    }
+  } catch {
+    // Not valid JSON
+  }
+
+  // Try markdown code blocks
+  const jsonBlockPatterns = [
+    /```json\s*([\s\S]*?)```/i,
+    /```JSON\s*([\s\S]*?)```/,
+    /```\s*([\s\S]*?)```/,
+    /~~~json\s*([\s\S]*?)~~~/i,
+  ];
+
+  for (const pattern of jsonBlockPatterns) {
+    const match = cleanedResponse.match(pattern);
+    if (match) {
+      const content = match[1].trim();
+      if (content.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(content);
+          if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+            const structuredData = toStructuredData(parsed);
+            const dataCount = Object.keys(structuredData).length;
+            return {
+              displayValue: dataCount === 1
+                ? String(Object.values(structuredData)[0] ?? '')
+                : `${dataCount} datapoints`,
+              structuredData,
+            };
+          }
+        } catch {
+          // Continue
+        }
+      }
+    }
+  }
+
+  // Try inline JSON with balanced braces
+  const jsonStartIndex = cleanedResponse.indexOf('{');
+  if (jsonStartIndex !== -1) {
+    let braceCount = 0;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = jsonStartIndex; i < cleanedResponse.length; i++) {
+      const char = cleanedResponse[i];
+
+      if (escapeNext) { escapeNext = false; continue; }
+      if (char === '\\' && inString) { escapeNext = true; continue; }
+      if (char === '"' && !escapeNext) { inString = !inString; continue; }
+
+      if (!inString) {
+        if (char === '{') braceCount++;
+        if (char === '}') braceCount--;
+
+        if (braceCount === 0) {
+          const jsonStr = cleanedResponse.slice(jsonStartIndex, i + 1);
+          try {
+            const parsed = JSON.parse(jsonStr);
+            if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+              const structuredData = toStructuredData(parsed);
+              const dataCount = Object.keys(structuredData).length;
+              return {
+                displayValue: dataCount === 1
+                  ? String(Object.values(structuredData)[0] ?? '')
+                  : `${dataCount} datapoints`,
+                structuredData,
+              };
+            }
+          } catch {
+            // Continue
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // Fallback: wrap as plain text
+  return {
+    displayValue: cleanedResponse,
+    structuredData: { result: cleanedResponse },
+  };
+}

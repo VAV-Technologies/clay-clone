@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2, AlertCircle, RotateCcw, CheckCircle2, ChevronRight } from 'lucide-react';
+import { Loader2, AlertCircle, RotateCcw, CheckCircle2, ChevronRight, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTableStore } from '@/stores/tableStore';
 import type { Row, Column, CellValue } from '@/lib/db/schema';
@@ -169,6 +169,17 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
             <Loader2 className="w-3 h-3 animate-spin" />
             <span className="text-xs font-medium">Processing</span>
           </div>
+        </div>
+      );
+    }
+
+    if (status === 'batch_submitted' || status === 'batch_processing') {
+      return (
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+          <Clock className="w-3 h-3" />
+          <span className="text-xs font-medium">
+            {status === 'batch_submitted' ? 'Request Sent' : 'Processing'}
+          </span>
         </div>
       );
     }

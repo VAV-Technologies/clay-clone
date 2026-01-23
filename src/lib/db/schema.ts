@@ -123,6 +123,47 @@ export const enrichmentJobs = sqliteTable('enrichment_jobs', {
   completedAt: integer('completed_at', { mode: 'timestamp' }),
 });
 
+// Azure Batch enrichment jobs - for bulk processing with 50% cheaper batch API
+export const batchEnrichmentJobs = sqliteTable('batch_enrichment_jobs', {
+  id: text('id').primaryKey(),
+  tableId: text('table_id').notNull(),
+  configId: text('config_id').notNull(),
+  targetColumnId: text('target_column_id').notNull(),
+
+  // Azure IDs
+  azureFileId: text('azure_file_id'),
+  azureBatchId: text('azure_batch_id'),
+  azureOutputFileId: text('azure_output_file_id'),
+  azureErrorFileId: text('azure_error_file_id'),
+
+  // Row mappings: [{rowId, customId}]
+  rowMappings: text('row_mappings', { mode: 'json' }).notNull().$type<Array<{rowId: string; customId: string}>>(),
+
+  // Azure status: validating, in_progress, finalizing, completed, failed, expired, cancelled
+  azureStatus: text('azure_status').notNull().default('pending_upload'),
+
+  // Internal status: pending, uploading, submitted, processing, downloading, complete, error, cancelled
+  status: text('status').notNull().default('pending'),
+
+  // Stats
+  totalRows: integer('total_rows').notNull().default(0),
+  processedCount: integer('processed_count').notNull().default(0),
+  successCount: integer('success_count').notNull().default(0),
+  errorCount: integer('error_count').notNull().default(0),
+  totalCost: real('total_cost').notNull().default(0),
+  totalInputTokens: integer('total_input_tokens').notNull().default(0),
+  totalOutputTokens: integer('total_output_tokens').notNull().default(0),
+
+  // Error tracking
+  lastError: text('last_error'),
+
+  // Timestamps
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  submittedAt: integer('submitted_at', { mode: 'timestamp' }),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+});
+
 // TypeScript types
 export interface EnrichmentDatapoint {
   key: string;
@@ -131,7 +172,9 @@ export interface EnrichmentDatapoint {
 
 export interface CellValue {
   value: string | number | null;
-  status?: 'pending' | 'processing' | 'complete' | 'error';
+  status?: 'pending' | 'processing' | 'complete' | 'error' | 'batch_submitted' | 'batch_processing';
+  // Reference to batch job if this cell is being processed by a batch job
+  batchJobId?: string;
   // Structured data from enrichment (e.g., {city: "Jakarta", country: "Indonesia"})
   enrichmentData?: Record<string, string | number | null>;
   // Raw AI response for debugging
@@ -161,3 +204,5 @@ export type FormulaConfig = typeof formulaConfigs.$inferSelect;
 export type NewFormulaConfig = typeof formulaConfigs.$inferInsert;
 export type EnrichmentJob = typeof enrichmentJobs.$inferSelect;
 export type NewEnrichmentJob = typeof enrichmentJobs.$inferInsert;
+export type BatchEnrichmentJob = typeof batchEnrichmentJobs.$inferSelect;
+export type NewBatchEnrichmentJob = typeof batchEnrichmentJobs.$inferInsert;

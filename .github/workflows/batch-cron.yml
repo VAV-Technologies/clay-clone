@@ -1,0 +1,32 @@
+name: Process Batch Jobs
+
+on:
+  schedule:
+    # Run every 10 minutes - batch jobs take 1-24 hours so no need for frequent polling
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Process batch jobs
+        run: |
+          echo "Checking batch jobs at $(date)"
+
+          response=$(curl -s --max-time 120 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://dataflow-pi.vercel.app/api/cron/process-batch")
+
+          echo "$response"
+
+          # Check if there were any jobs processed
+          if echo "$response" | grep -q '"processed":0'; then
+            echo "No active batch jobs"
+          else
+            echo "Batch jobs processed"
+          fi
+
+          echo ""
+          echo "Finished at $(date)"

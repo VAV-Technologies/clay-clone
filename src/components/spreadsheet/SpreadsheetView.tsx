@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Plus, Sparkles, Code } from 'lucide-react';
+import { Plus, Sparkles, Code, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassButton } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
@@ -10,6 +10,7 @@ import { ColumnHeader } from './ColumnHeader';
 import { Cell } from './Cell';
 import { FilterBar } from './FilterBar';
 import { EnrichmentDataViewer } from './EnrichmentDataViewer';
+import { BatchEnrichmentPanel } from '@/components/enrichment/BatchEnrichmentPanel';
 import { RowDisplayControl } from './RowDisplayControl';
 import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { AddFilterButton } from './AddFilterButton';
@@ -52,6 +53,9 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
     columnId: '',
     data: {},
   });
+
+  // State for batch enrichment panel
+  const [isBatchEnrichmentOpen, setIsBatchEnrichmentOpen] = useState(false);
 
   const {
     currentTable,
@@ -139,11 +143,11 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
 
   // Calculate enrichment status counts for each enrichment column
   const enrichmentStats = useMemo(() => {
-    const stats: Record<string, { completed: number; errors: number; inQueue: number; processing: number; notRun: number }> = {};
+    const stats: Record<string, { completed: number; errors: number; inQueue: number; processing: number; notRun: number; batchPending: number }> = {};
 
     for (const col of visibleColumns) {
       if (col.type === 'enrichment' && col.enrichmentConfigId) {
-        let completed = 0, errors = 0, inQueue = 0, processing = 0, notRun = 0;
+        let completed = 0, errors = 0, inQueue = 0, processing = 0, notRun = 0, batchPending = 0;
 
         for (const row of rows) {
           const cell = row.data[col.id];
@@ -152,9 +156,10 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
           else if (cell.status === 'complete') completed++;
           else if (cell.status === 'error') errors++;
           else if (cell.status === 'processing') processing++;
+          else if (cell.status === 'batch_submitted' || cell.status === 'batch_processing') batchPending++;
         }
 
-        stats[col.id] = { completed, errors, inQueue, processing, notRun };
+        stats[col.id] = { completed, errors, inQueue, processing, notRun, batchPending };
       }
     }
     return stats;
@@ -343,6 +348,16 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
             <Sparkles className="w-4 h-4 mr-1" />
             Enrich
           </GlassButton>
+
+          <GlassButton
+            variant="secondary"
+            size="sm"
+            onClick={() => setIsBatchEnrichmentOpen(true)}
+            className="bg-amber-500/20 border-amber-500/30 hover:bg-amber-500/30"
+          >
+            <Clock className="w-4 h-4 mr-1" />
+            Batch Enrich
+          </GlassButton>
         </div>
       </div>
 
@@ -461,6 +476,9 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                   {stats.inQueue > 0 && (
                     <span className="text-amber-400">{stats.inQueue} queued</span>
                   )}
+                  {stats.batchPending > 0 && (
+                    <span className="text-amber-400">{stats.batchPending} batch</span>
+                  )}
                   {stats.errors > 0 && (
                     <span className="text-red-400">{stats.errors} errors</span>
                   )}
@@ -566,6 +584,12 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
         columnId={enrichmentDataState.columnId}
         tableId={tableId}
         onExtractToColumn={handleExtractToColumn}
+      />
+
+      {/* Batch Enrichment Panel */}
+      <BatchEnrichmentPanel
+        isOpen={isBatchEnrichmentOpen}
+        onClose={() => setIsBatchEnrichmentOpen(false)}
       />
     </div>
   );
