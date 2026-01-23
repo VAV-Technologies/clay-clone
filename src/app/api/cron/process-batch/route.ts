@@ -379,6 +379,44 @@ async function processJobResults(
   console.log(`Batch updating ${rowUpdates.length} rows for job ${job.id}`);
   await batchUpdateRows(rowUpdates);
 
+  // Detect orphaned rows (in rowMappings but not returned by Azure - happens when > 25,000 rows submitted)
+  const processedRowIds = new Set(rowUpdates.map(u => u.id));
+  const allMappedRowIds = rowMappings.map(m => m.rowId);
+  const orphanedRowIds = allMappedRowIds.filter(id => !processedRowIds.has(id));
+
+  if (orphanedRowIds.length > 0) {
+    console.warn(`${orphanedRowIds.length} rows not returned by Azure for job ${job.id} (exceeded 25,000 batch limit)`);
+
+    // Fetch orphaned rows
+    const orphanedRows = await db.select().from(schema.rows).where(inArray(schema.rows.id, orphanedRowIds));
+
+    // Mark them as error
+    const orphanUpdates = orphanedRows.map(row => {
+      const updatedData: Record<string, CellValue> = {
+        ...(row.data as Record<string, CellValue>),
+        [job.targetColumnId]: {
+          value: null,
+          status: 'error' as const,
+          error: 'Row exceeded Azure batch limit (25,000 max). Please resubmit.',
+        },
+      };
+
+      // Also mark output columns as error
+      for (const colId of Object.values(outputColumnIds)) {
+        updatedData[colId] = {
+          value: null,
+          status: 'error' as const,
+          error: 'Row exceeded Azure batch limit (25,000 max). Please resubmit.',
+        };
+      }
+
+      return { id: row.id, data: updatedData };
+    });
+
+    await batchUpdateRows(orphanUpdates);
+    errorCount += orphanedRowIds.length;
+  }
+
   const totalCost = calculateBatchCost(totalInputTokens, totalOutputTokens);
 
   return {
