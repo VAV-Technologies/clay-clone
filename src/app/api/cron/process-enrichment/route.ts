@@ -13,9 +13,10 @@ import {
 // Vercel function config - max duration for hobby is 10s, pro is 60s
 export const maxDuration = 60; // Will use max available for your plan
 
-const BATCH_SIZE = 100; // Process 100 rows per call
-const AI_TIMEOUT_MS = 30000; // 30 second timeout per AI call
-const STALE_JOB_MINUTES = 10; // Auto-complete jobs stuck for 10+ minutes
+const BATCH_SIZE = 50; // Process 50 rows per batch (fits in timeout)
+const AI_TIMEOUT_MS = 25000; // 25 second timeout per AI call
+const STALE_JOB_MINUTES = 30; // Auto-complete jobs stuck for 30+ minutes (increased from 10)
+const MAX_EXECUTION_MS = 55000; // Stop processing 5s before timeout
 
 // Timeout wrapper for promises
 function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> {
@@ -37,26 +38,37 @@ export async function GET(request: NextRequest) {
   // Secret check disabled - endpoint is protected by obscurity
   // To re-enable, set CRON_SECRET env var on both Vercel and GitHub Actions
 
+  const startTime = Date.now();
+
   try {
-    // Find active jobs (pending or running)
-    const activeJobs = await db
-      .select()
-      .from(schema.enrichmentJobs)
-      .where(
-        or(
-          eq(schema.enrichmentJobs.status, 'pending'),
-          eq(schema.enrichmentJobs.status, 'running')
-        )
-      );
-
-    if (activeJobs.length === 0) {
-      return NextResponse.json({ message: 'No active jobs', processed: 0 });
-    }
-
     let totalProcessed = 0;
+    let batchesProcessed = 0;
 
-    // Process one batch for each active job
-    for (const job of activeJobs) {
+    // Keep processing until we're close to timeout
+    while (Date.now() - startTime < MAX_EXECUTION_MS) {
+      // Find active jobs (pending or running)
+      const activeJobs = await db
+        .select()
+        .from(schema.enrichmentJobs)
+        .where(
+          or(
+            eq(schema.enrichmentJobs.status, 'pending'),
+            eq(schema.enrichmentJobs.status, 'running')
+          )
+        )
+        .limit(1); // Process one job at a time for simplicity
+
+      if (activeJobs.length === 0) {
+        return NextResponse.json({
+          message: 'No active jobs',
+          processed: totalProcessed,
+          batches: batchesProcessed,
+          timeMs: Date.now() - startTime
+        });
+      }
+
+      const job = activeJobs[0];
+
       // Check for stale jobs (stuck for too long)
       const updatedAt = job.updatedAt ? new Date(job.updatedAt).getTime() : 0;
       const minutesSinceUpdate = (Date.now() - updatedAt) / 1000 / 60;
@@ -95,14 +107,26 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
+      // Check if we have enough time for another batch
+      if (Date.now() - startTime > MAX_EXECUTION_MS - 10000) {
+        break; // Not enough time for another batch
+      }
+
       const processed = await processJobBatch(job);
       totalProcessed += processed;
+      batchesProcessed++;
+
+      // If no rows processed, job might be complete
+      if (processed === 0) {
+        break;
+      }
     }
 
     return NextResponse.json({
-      message: `Processed ${totalProcessed} rows across ${activeJobs.length} jobs`,
+      message: `Processed ${totalProcessed} rows in ${batchesProcessed} batches`,
       processed: totalProcessed,
-      activeJobs: activeJobs.length,
+      batches: batchesProcessed,
+      timeMs: Date.now() - startTime
     });
   } catch (error) {
     console.error('Cron error:', error);
