@@ -184,6 +184,10 @@ export async function POST(request: NextRequest) {
         totalRows: rows.length,
         status: 'submitted',
         message: `Batch job submitted with ${rows.length} rows. Processing may take 1-24 hours.`,
+        createdColumns: Object.keys(outputColumnIds).length > 0
+          ? Object.entries(outputColumnIds).map(([name, id]) => ({ name, id }))
+          : [],
+        targetColumnId,
       });
 
     } catch (uploadError) {

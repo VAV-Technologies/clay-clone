@@ -49,6 +49,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null);
+  const [createdColumns, setCreatedColumns] = useState<Array<{name: string, id: string}>>([]);
 
   // Active batch jobs for this table
   const [activeJobs, setActiveJobs] = useState<BatchJob[]>([]);
@@ -67,6 +68,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
   useEffect(() => {
     if (isOpen) {
       setSubmittedJobId(null);
+      setCreatedColumns([]);
       setError(null);
     }
   }, [isOpen]);
@@ -322,6 +324,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
 
       const batchResult = await batchResponse.json();
       setSubmittedJobId(batchResult.jobId);
+      setCreatedColumns(batchResult.createdColumns || []);
 
       // Refresh table to show new column and pending statuses
       await fetchTable(currentTable.id, true);
@@ -612,11 +615,33 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
               <div className="text-sm flex-1">
                 <p className="font-medium text-emerald-400">Batch job submitted!</p>
                 <p className="text-white/60 text-xs mt-1">
+                  Job ID: <code className="text-white/80 bg-white/5 px-1 rounded">{submittedJobId}</code>
+                </p>
+                <p className="text-white/60 text-xs mt-1">
                   Processing {getRowCountText()}. Results will appear in 1-24 hours.
                 </p>
+
+                {/* Show created columns */}
+                {(outputColumnName || createdColumns.length > 0) && (
+                  <div className="mt-2 p-2 bg-white/5 rounded">
+                    <p className="text-xs text-white/50 mb-1">Data will populate these columns:</p>
+                    <div className="flex flex-wrap gap-1">
+                      <span className="px-2 py-0.5 text-xs bg-amber-500/20 text-amber-300 rounded">
+                        {outputColumnName}
+                      </span>
+                      {createdColumns.map(col => (
+                        <span key={col.id} className="px-2 py-0.5 text-xs bg-emerald-500/20 text-emerald-300 rounded">
+                          {col.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <button
                   onClick={() => {
                     setSubmittedJobId(null);
+                    setCreatedColumns([]);
                     setPrompt('');
                     setOutputColumnName('Batch Output');
                     setOutputColumns([]);
