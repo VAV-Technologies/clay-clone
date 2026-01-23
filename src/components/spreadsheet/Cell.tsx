@@ -342,7 +342,7 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
             {renderContent()}
           </div>
           {/* Retry button for enrichment columns */}
-          {isEnrichmentColumn && status !== 'processing' && !isRetrying && (
+          {isEnrichmentColumn && status !== 'processing' && status !== 'batch_submitted' && status !== 'batch_processing' && !isRetrying && (
             <button
               onClick={handleRetryCell}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded bg-white/10 hover:bg-lavender/20
