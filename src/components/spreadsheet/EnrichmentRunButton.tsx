@@ -221,7 +221,7 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
         clearInterval(pollIntervalRef.current);
         pollIntervalRef.current = null;
       }
-      fetchTable(tableId);
+      fetchTable(tableId, true);
     } catch (error) {
       console.error('Error cancelling job:', error);
     }
@@ -241,7 +241,7 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
         clearInterval(pollIntervalRef.current);
         pollIntervalRef.current = null;
       }
-      fetchTable(tableId);
+      fetchTable(tableId, true);
     } catch (error) {
       console.error('Error cancelling all jobs:', error);
     }

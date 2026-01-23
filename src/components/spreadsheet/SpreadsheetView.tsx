@@ -115,7 +115,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
 
       if (hasActiveJobs) {
         // Refresh table data silently
-        fetchTable(tableId);
+        fetchTable(tableId, true);
 
         // Continue polling every 5 seconds when jobs are active
         pollInterval = setTimeout(startPolling, 5000);
