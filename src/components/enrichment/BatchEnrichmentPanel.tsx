@@ -11,6 +11,9 @@ import {
   Database,
   RefreshCw,
   Zap,
+  Wand2,
+  Sparkles,
+  RotateCcw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassButton, GlassCard } from '@/components/ui';
@@ -50,6 +53,15 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
   // Active batch jobs for this table
   const [activeJobs, setActiveJobs] = useState<BatchJob[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
+
+  // Prompt optimizer state
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [optimizedPrompt, setOptimizedPrompt] = useState<string | null>(null);
+  const [showOptimizerModal, setShowOptimizerModal] = useState(false);
+  const [optimizerError, setOptimizerError] = useState<string | null>(null);
+  const [recommendedDataGuide, setRecommendedDataGuide] = useState<
+    Array<{ name: string; description: string }>
+  >([]);
 
   // Load active batch jobs
   useEffect(() => {
@@ -136,6 +148,77 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
   // Remove output column
   const removeOutputColumn = (index: number) => {
     setOutputColumns(outputColumns.filter((_, i) => i !== index));
+  };
+
+  // Handle prompt optimization
+  const handleOptimizePrompt = async () => {
+    if (!prompt.trim()) return;
+
+    setIsOptimizing(true);
+    setOptimizerError(null);
+    setRecommendedDataGuide([]);
+
+    try {
+      // Send columns with the request so AI can understand available data
+      const columnContext = columns.map(col => ({
+        name: col.name,
+        type: col.type,
+      }));
+
+      const response = await fetch('/api/enrichment/optimize-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, columns: columnContext }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to optimize prompt');
+      }
+
+      const data = await response.json();
+      setOptimizedPrompt(data.optimizedPrompt);
+      setRecommendedDataGuide(data.recommendedDataGuide || []);
+      setShowOptimizerModal(true);
+    } catch (err) {
+      setOptimizerError((err as Error).message);
+      setShowOptimizerModal(true);
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
+  const handleAcceptOptimizedPrompt = () => {
+    // Accept both prompt and Data Guide together
+    if (optimizedPrompt) {
+      setPrompt(optimizedPrompt);
+    }
+    if (recommendedDataGuide.length > 0) {
+      // Merge with existing output columns, avoiding duplicates
+      const existingLower = outputColumns.map(c => c.toLowerCase());
+      const newColumns = recommendedDataGuide
+        .map(f => f.name)
+        .filter(name => !existingLower.includes(name.toLowerCase()));
+      setOutputColumns([...outputColumns, ...newColumns]);
+    }
+    setShowOptimizerModal(false);
+    setOptimizedPrompt(null);
+    setRecommendedDataGuide([]);
+    setOptimizerError(null);
+  };
+
+  const handleDeclineOptimizedPrompt = () => {
+    setShowOptimizerModal(false);
+    setOptimizedPrompt(null);
+    setRecommendedDataGuide([]);
+    setOptimizerError(null);
+  };
+
+  const handleRetryOptimize = () => {
+    setOptimizedPrompt(null);
+    setRecommendedDataGuide([]);
+    setOptimizerError(null);
+    handleOptimizePrompt();
   };
 
   // Build preview prompt
@@ -341,6 +424,30 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
             placeholder="e.g., Research the company {{Company}} and provide a brief summary..."
             className="w-full h-32 p-3 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 resize-none focus:outline-none focus:border-amber-500/50"
           />
+          {/* Optimize Prompt Button */}
+          <button
+            onClick={handleOptimizePrompt}
+            disabled={!prompt.trim() || isOptimizing}
+            className={cn(
+              'flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-all',
+              'bg-gradient-to-r from-purple-500/20 to-pink-500/20',
+              'border border-purple-500/30 hover:border-purple-500/50',
+              'text-purple-300 hover:text-purple-200',
+              'disabled:opacity-50 disabled:cursor-not-allowed'
+            )}
+          >
+            {isOptimizing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Optimizing...
+              </>
+            ) : (
+              <>
+                <Wand2 className="w-4 h-4" />
+                Optimize Prompt
+              </>
+            )}
+          </button>
         </div>
 
         {/* Available Columns */}
@@ -530,6 +637,130 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
           Jobs process in background. Close this panel anytime.
         </p>
       </div>
+
+      {/* Prompt Optimizer Modal */}
+      {showOptimizerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Wand2 className="w-5 h-5 text-purple-400" />
+                <h3 className="font-semibold text-white">AI Recommendations</h3>
+              </div>
+              <button
+                onClick={handleDeclineOptimizedPrompt}
+                className="p-1 hover:bg-white/10 rounded transition-colors"
+              >
+                <X className="w-5 h-5 text-white/60" />
+              </button>
+            </div>
+
+            {/* Modal Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              {isOptimizing ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-4">
+                  <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+                  <p className="text-white/70">Analyzing prompt and columns with Gemini 2.5 Pro...</p>
+                </div>
+              ) : optimizerError ? (
+                <div className="flex flex-col items-center gap-4 py-8">
+                  <AlertCircle className="w-8 h-8 text-red-400" />
+                  <p className="text-red-400 text-center">{optimizerError}</p>
+                </div>
+              ) : (
+                <>
+                  {/* Optimized Prompt Section */}
+                  {optimizedPrompt && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-medium text-white/70 flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-purple-400" />
+                        Optimized Prompt
+                      </h4>
+                      <div className="p-4 bg-white/5 border border-white/10 rounded-lg max-h-64 overflow-y-auto">
+                        <pre className="text-sm text-white/80 whitespace-pre-wrap font-mono">
+                          {optimizedPrompt}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recommended Data Guide Section */}
+                  {recommendedDataGuide.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-medium text-white/70 flex items-center gap-2">
+                        <Database className="w-4 h-4 text-emerald-400" />
+                        Recommended Data Guide ({recommendedDataGuide.length} field{recommendedDataGuide.length !== 1 ? 's' : ''})
+                      </h4>
+                      <div className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-white/5 border-b border-white/10">
+                            <tr>
+                              <th className="text-left p-3 text-white/70 font-medium">Field Name</th>
+                              <th className="text-left p-3 text-white/70 font-medium">Description</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {recommendedDataGuide.map((field, index) => (
+                              <tr key={index} className="border-b border-white/5 last:border-0">
+                                <td className="p-3 font-medium text-emerald-300">{field.name}</td>
+                                <td className="p-3 text-white/70">{field.description}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* No recommendations case */}
+                  {!optimizedPrompt && recommendedDataGuide.length === 0 && (
+                    <div className="flex flex-col items-center gap-4 py-8">
+                      <AlertCircle className="w-8 h-8 text-yellow-400" />
+                      <p className="text-yellow-400 text-center">No recommendations generated. Try a different prompt.</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 p-4 border-t border-white/10">
+              <button
+                onClick={handleRetryOptimize}
+                disabled={isOptimizing}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors',
+                  'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                <RotateCcw className="w-4 h-4" />
+                Retry
+              </button>
+              <button
+                onClick={handleDeclineOptimizedPrompt}
+                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+              >
+                Decline
+              </button>
+              <button
+                onClick={handleAcceptOptimizedPrompt}
+                disabled={(!optimizedPrompt && recommendedDataGuide.length === 0) || isOptimizing}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors',
+                  'bg-gradient-to-r from-purple-500 to-emerald-500 text-white',
+                  'hover:from-purple-600 hover:to-emerald-600',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                <Check className="w-4 h-4" />
+                Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
