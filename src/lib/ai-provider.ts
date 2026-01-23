@@ -79,11 +79,11 @@ export function getProviderRateLimits(provider: AIProvider): {
   delayBetweenChunks: number;
 } {
   if (provider === 'azure') {
-    // Azure OpenAI: Standard deployments support 60K-300K+ TPM
-    // Increased limits for better throughput (~600 RPM, still conservative)
+    // Azure OpenAI: 150K TPM / 150 RPM limits
+    // 75 concurrent = safe burst under 150 RPM limit
     return {
-      concurrentRequests: 30,
-      delayBetweenChunks: 50, // ms
+      concurrentRequests: 75,
+      delayBetweenChunks: 0,
     };
   }
   // Google Vertex AI
