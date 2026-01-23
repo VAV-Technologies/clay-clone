@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, schema } from '@/lib/db';
+import { db, schema, libsqlClient } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
 import {
@@ -12,6 +12,51 @@ import {
 
 // Vercel function config - extend timeout for downloading results
 export const maxDuration = 120;
+
+// Batch size for chunked updates (Turso supports up to 1000 statements per batch)
+const UPDATE_BATCH_SIZE = 1000;
+// Number of parallel batch operations
+const PARALLEL_BATCHES = 5;
+
+// Helper to batch update rows efficiently using Turso's batch API
+async function batchUpdateRows(
+  updates: Array<{ id: string; data: Record<string, CellValue> }>
+): Promise<void> {
+  if (updates.length === 0) return;
+
+  // Use libsqlClient batch for Turso (production) - much faster than individual queries
+  if (libsqlClient) {
+    // Split updates into chunks
+    const chunks: Array<Array<{ id: string; data: Record<string, CellValue> }>> = [];
+    for (let i = 0; i < updates.length; i += UPDATE_BATCH_SIZE) {
+      chunks.push(updates.slice(i, i + UPDATE_BATCH_SIZE));
+    }
+
+    // Process chunks in parallel groups for maximum throughput
+    for (let i = 0; i < chunks.length; i += PARALLEL_BATCHES) {
+      const parallelChunks = chunks.slice(i, i + PARALLEL_BATCHES);
+      await Promise.all(
+        parallelChunks.map(chunk => {
+          const statements = chunk.map(({ id, data }) => ({
+            sql: 'UPDATE rows SET data = ? WHERE id = ?',
+            args: [JSON.stringify(data), id],
+          }));
+          return libsqlClient!.batch(statements, 'write');
+        })
+      );
+    }
+  } else {
+    // Fallback for local SQLite - use parallel chunks
+    for (let i = 0; i < updates.length; i += UPDATE_BATCH_SIZE) {
+      const chunk = updates.slice(i, i + UPDATE_BATCH_SIZE);
+      await Promise.all(
+        chunk.map(({ id, data }) =>
+          db.update(schema.rows).set({ data }).where(eq(schema.rows.id, id))
+        )
+      );
+    }
+  }
+}
 
 // POST /api/enrichment/batch/process-results - Process completed batch results
 export async function POST(request: NextRequest) {
@@ -88,11 +133,12 @@ export async function POST(request: NextRequest) {
     const rows = await db.select().from(schema.rows).where(inArray(schema.rows.id, rowIds));
     const rowMap = new Map(rows.map(r => [r.id, r]));
 
-    // Process each result
+    // Process each result - collect updates in memory first
     let successCount = 0;
     let errorCount = 0;
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    const rowUpdates: Array<{ id: string; data: Record<string, CellValue> }> = [];
 
     for (const result of results) {
       const rowId = customIdToRowId.get(result.custom_id);
@@ -174,9 +220,13 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Update row
-      await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, rowId));
+      // Collect update for batching
+      rowUpdates.push({ id: rowId, data: updatedData });
     }
+
+    // Execute all updates in batches (much faster than sequential)
+    console.log(`Batch updating ${rowUpdates.length} rows for job ${jobId}`);
+    await batchUpdateRows(rowUpdates);
 
     // Calculate total cost
     const totalCost = calculateBatchCost(totalInputTokens, totalOutputTokens);
