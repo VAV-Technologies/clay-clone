@@ -9,19 +9,32 @@ on:
 jobs:
   process-enrichment:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Process enrichment batches
         run: |
-          # Call the endpoint multiple times to process more rows per run
-          # 10 calls x 50 rows = 500 rows per 5-minute run = 6,000 rows/hour
-          for i in {1..10}; do
-            echo "Batch $i..."
-            response=$(curl -s "https://dataflow-pi.vercel.app/api/cron/process-enrichment?secret=${{ secrets.CRON_SECRET }}")
+          # Each call now processes continuously for ~55 seconds
+          # With 5-min intervals, we do 5 calls = ~4.5 minutes of processing
+          # At ~50 rows per batch, ~1 batch per call = 50 rows per call
+          # 5 calls x 50 rows = 250 rows per 5-min run = 3,000 rows/hour
+
+          echo "Starting enrichment processing at $(date)"
+
+          for i in {1..5}; do
+            echo ""
+            echo "=== Call $i at $(date) ==="
+            response=$(curl -s --max-time 65 "https://dataflow-pi.vercel.app/api/cron/process-enrichment?secret=${{ secrets.CRON_SECRET }}")
             echo "$response"
+
             # If no active jobs, stop early
-            if echo "$response" | grep -q '"processed":0'; then
-              echo "No more rows to process, stopping early"
+            if echo "$response" | grep -q '"message":"No active jobs"'; then
+              echo "No active jobs, stopping"
               break
             fi
-            sleep 20
+
+            # Small delay between calls
+            sleep 5
           done
+
+          echo ""
+          echo "Finished at $(date)"
