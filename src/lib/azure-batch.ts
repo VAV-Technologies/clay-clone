@@ -2,10 +2,18 @@
 // For bulk processing with 50% cheaper batch pricing
 // Jobs may take 1-24 hours to complete
 
-import { getAzureConfig } from './azure-openai';
-
 const API_VERSION = '2024-10-21';
-const BATCH_DEPLOYMENT = process.env.AZURE_BATCH_DEPLOYMENT || 'gpt-5-mini';
+
+// Hardcoded Azure Batch API config (dedicated for batch processing)
+const BATCH_CONFIG = {
+  endpoint: 'https://mama-mkof4van-eastus2.services.ai.azure.com/api/projects/mama-mkof4van-eastus2_project',
+  apiKey: 'EAUz04QAIN1DxUG2MijyS0k1ZuPgDbLIIQhk1irZooGRBp3LJCQmJQQJ99CAACHYHv6XJ3w3AAAAACOGzQm5',
+  deployment: 'gpt-5-mini-2',
+};
+
+function getBatchConfig() {
+  return BATCH_CONFIG;
+}
 
 export interface BatchRequestLine {
   custom_id: string;
@@ -115,7 +123,7 @@ export function generateBatchJSONL(
       method: 'POST',
       url: '/v1/chat/completions',
       body: {
-        model: BATCH_DEPLOYMENT,
+        model: BATCH_CONFIG.deployment,
         messages: [{ role: 'user', content: row.prompt }],
         max_completion_tokens: maxCompletionTokens,
       },
@@ -137,7 +145,7 @@ export async function uploadBatchFile(
   jsonlContent: string,
   filename: string = 'batch_input.jsonl'
 ): Promise<FileUploadResponse> {
-  const config = getAzureConfig();
+  const config = getBatchConfig();
   const url = `${config.endpoint}/openai/files?api-version=${API_VERSION}`;
 
   // Create form data with the file
@@ -169,7 +177,7 @@ export async function createBatchJob(
   inputFileId: string,
   metadata?: Record<string, string>
 ): Promise<BatchJobResponse> {
-  const config = getAzureConfig();
+  const config = getBatchConfig();
   const url = `${config.endpoint}/openai/batches?api-version=${API_VERSION}`;
 
   const body: Record<string, unknown> = {
@@ -203,7 +211,7 @@ export async function createBatchJob(
  * Get batch job status
  */
 export async function getBatchStatus(batchId: string): Promise<BatchJobResponse> {
-  const config = getAzureConfig();
+  const config = getBatchConfig();
   const url = `${config.endpoint}/openai/batches/${batchId}?api-version=${API_VERSION}`;
 
   const response = await fetch(url, {
@@ -225,7 +233,7 @@ export async function getBatchStatus(batchId: string): Promise<BatchJobResponse>
  * Download batch results (JSONL file)
  */
 export async function downloadBatchResults(fileId: string): Promise<string> {
-  const config = getAzureConfig();
+  const config = getBatchConfig();
   const url = `${config.endpoint}/openai/files/${fileId}/content?api-version=${API_VERSION}`;
 
   const response = await fetch(url, {
@@ -267,7 +275,7 @@ export function parseBatchResults(jsonlContent: string): BatchResultLine[] {
  * Cancel a running batch job
  */
 export async function cancelBatchJob(batchId: string): Promise<BatchJobResponse> {
-  const config = getAzureConfig();
+  const config = getBatchConfig();
   const url = `${config.endpoint}/openai/batches/${batchId}/cancel?api-version=${API_VERSION}`;
 
   const response = await fetch(url, {
@@ -289,7 +297,7 @@ export async function cancelBatchJob(batchId: string): Promise<BatchJobResponse>
  * Delete a file from Azure
  */
 export async function deleteFile(fileId: string): Promise<void> {
-  const config = getAzureConfig();
+  const config = getBatchConfig();
   const url = `${config.endpoint}/openai/files/${fileId}?api-version=${API_VERSION}`;
 
   const response = await fetch(url, {
@@ -316,7 +324,7 @@ export async function listBatchJobs(limit: number = 20): Promise<{
   last_id?: string;
   has_more: boolean;
 }> {
-  const config = getAzureConfig();
+  const config = getBatchConfig();
   const url = `${config.endpoint}/openai/batches?api-version=${API_VERSION}&limit=${limit}`;
 
   const response = await fetch(url, {
@@ -354,13 +362,8 @@ export function calculateBatchCost(inputTokens: number, outputTokens: number): n
 }
 
 /**
- * Check if batch API is available (Azure configured)
+ * Check if batch API is available (always true with hardcoded config)
  */
 export function isBatchAvailable(): boolean {
-  try {
-    getAzureConfig();
-    return true;
-  } catch {
-    return false;
-  }
+  return true;
 }
