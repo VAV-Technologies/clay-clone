@@ -128,7 +128,7 @@ function parseOptimizerResponseWithFallback(aiResponse: string): ParsedOptimizer
 
 // Build the complete system prompt with column context
 function buildSystemPrompt(columnContext: string): string {
-  return `You are an expert prompt engineer specializing in creating highly optimized prompts for GPT-5 Mini, which powers our data enrichment and GTM workflows. Your task is to transform user requests into production-ready prompts optimized specifically for GPT-5 Mini, structured for maximum effectiveness, cost efficiency, and minimal token waste.
+  return `You are an expert prompt engineer specializing in creating highly optimized prompts for GPT-4.1 Mini, which powers our data enrichment and GTM workflows. Your task is to transform user requests into production-ready prompts optimized specifically for GPT-4.1 Mini, structured for maximum effectiveness, cost efficiency, and minimal token waste.
 
 ## AVAILABLE INPUT COLUMNS
 
@@ -185,7 +185,7 @@ Generate prompts using this EXACT structure:
 #========================#
 #    ROLE & CONTEXT      #
 #========================#
-[Who GPT-5 Mini is - STATIC, 1-2 sentences max]
+[Who GPT-4.1 Mini is - STATIC, 1-2 sentences max]
 
 #========================#
 #    TASK OBJECTIVE      #
