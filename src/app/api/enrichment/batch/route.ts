@@ -197,10 +197,8 @@ export async function POST(request: NextRequest) {
       const jobId = generateId();
       const now = new Date();
 
-      // Store only row IDs, not full mappings (customId is derivable as `row-${rowId}`)
-      // This prevents hitting database size limits with large batches
-      const rowIdList = mappings.map(m => m.rowId);
-
+      // Don't store row mappings - they're stored in cells as batchJobId
+      // customId is derivable as `row-${rowId}`, and we query rows by batchJobId
       await db.insert(schema.batchEnrichmentJobs).values({
         id: jobId,
         tableId,
@@ -209,7 +207,7 @@ export async function POST(request: NextRequest) {
         batchGroupId,
         batchNumber,
         totalBatches,
-        rowMappings: rowIdList as unknown as Array<{rowId: string; customId: string}>, // Store as simple string array
+        rowMappings: [], // Empty - rows are tracked via batchJobId in cells
         azureStatus: 'pending_upload',
         status: 'uploading',
         totalRows: batchRows.length,

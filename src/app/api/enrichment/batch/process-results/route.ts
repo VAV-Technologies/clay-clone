@@ -124,27 +124,16 @@ export async function POST(request: NextRequest) {
     const resultsContent = await downloadBatchResults(job.azureOutputFileId);
     const results = parseBatchResults(resultsContent);
 
-    // Get row mappings - supports both old format (objects) and new format (string array)
-    const rawMappings = job.rowMappings as Array<{ rowId: string; customId: string }> | string[];
+    // Extract rowIds directly from Azure results (custom_id format is `row-${rowId}`)
+    // This eliminates need to store row mappings in database
+    const rowIds = results.map(r => r.custom_id.replace(/^row-/, '')).filter(Boolean);
 
-    // Build customId to rowId map
-    // New format: rowMappings is string[] of rowIds, customId is `row-${rowId}`
-    // Old format: rowMappings is {rowId, customId}[]
-    let rowIds: string[];
+    // Build customId to rowId map from results
     const customIdToRowId = new Map<string, string>();
-
-    if (rawMappings.length > 0 && typeof rawMappings[0] === 'string') {
-      // New format: array of rowIds
-      rowIds = rawMappings as string[];
-      for (const rowId of rowIds) {
-        customIdToRowId.set(`row-${rowId}`, rowId);
-      }
-    } else {
-      // Old format: array of {rowId, customId} objects
-      const mappings = rawMappings as Array<{ rowId: string; customId: string }>;
-      rowIds = mappings.map(m => m.rowId);
-      for (const m of mappings) {
-        customIdToRowId.set(m.customId, m.rowId);
+    for (const result of results) {
+      const rowId = result.custom_id.replace(/^row-/, '');
+      if (rowId) {
+        customIdToRowId.set(result.custom_id, rowId);
       }
     }
 
@@ -247,41 +236,52 @@ export async function POST(request: NextRequest) {
     console.log(`Batch updating ${rowUpdates.length} rows for job ${jobId}`);
     await batchUpdateRows(rowUpdates);
 
-    // Detect orphaned rows (in rowMappings but not returned by Azure - happens when > 25,000 rows submitted)
+    // Detect orphaned rows (submitted but not returned by Azure)
+    // This can happen if there's a mismatch between totalRows and results returned
     const processedRowIds = new Set(rowUpdates.map(u => u.id));
-    const orphanedRowIds = rowIds.filter(id => !processedRowIds.has(id));
+    const expectedCount = job.totalRows;
+    const actualCount = results.length;
 
-    if (orphanedRowIds.length > 0) {
-      console.warn(`${orphanedRowIds.length} rows not returned by Azure for job ${jobId} (exceeded 25,000 batch limit)`);
+    if (actualCount < expectedCount) {
+      console.warn(`${expectedCount - actualCount} rows not returned by Azure for job ${jobId}`);
 
-      // Fetch orphaned rows
-      const orphanedRows = await db.select().from(schema.rows).where(inArray(schema.rows.id, orphanedRowIds));
-
-      // Mark them as error
-      const orphanUpdates = orphanedRows.map(row => {
-        const updatedData: Record<string, CellValue> = {
-          ...(row.data as Record<string, CellValue>),
-          [job.targetColumnId]: {
-            value: null,
-            status: 'error' as const,
-            error: 'Row exceeded Azure batch limit (25,000 max). Please resubmit.',
-          },
-        };
-
-        // Also mark output columns as error
-        for (const colId of Object.values(outputColumnIds)) {
-          updatedData[colId] = {
-            value: null,
-            status: 'error' as const,
-            error: 'Row exceeded Azure batch limit (25,000 max). Please resubmit.',
-          };
-        }
-
-        return { id: row.id, data: updatedData };
+      // Query all rows for this table and find ones still marked as batch_submitted for this job
+      const allTableRows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, job.tableId));
+      const orphanedRows = allTableRows.filter(row => {
+        const cellData = row.data as Record<string, CellValue>;
+        const targetCell = cellData[job.targetColumnId];
+        return targetCell?.batchJobId === jobId &&
+               (targetCell?.status === 'batch_submitted' || targetCell?.status === 'batch_processing') &&
+               !processedRowIds.has(row.id);
       });
 
-      await batchUpdateRows(orphanUpdates);
-      errorCount += orphanedRowIds.length;
+      if (orphanedRows.length > 0) {
+        // Mark them as error
+        const orphanUpdates = orphanedRows.map(row => {
+          const updatedData: Record<string, CellValue> = {
+            ...(row.data as Record<string, CellValue>),
+            [job.targetColumnId]: {
+              value: null,
+              status: 'error' as const,
+              error: 'Row not processed by Azure. Please resubmit.',
+            },
+          };
+
+          // Also mark output columns as error
+          for (const colId of Object.values(outputColumnIds)) {
+            updatedData[colId] = {
+              value: null,
+              status: 'error' as const,
+              error: 'Row not processed by Azure. Please resubmit.',
+            };
+          }
+
+          return { id: row.id, data: updatedData };
+        });
+
+        await batchUpdateRows(orphanUpdates);
+        errorCount += orphanedRows.length;
+      }
     }
 
     // Calculate total cost
