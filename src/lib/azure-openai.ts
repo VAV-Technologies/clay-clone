@@ -61,10 +61,30 @@ function getApiVersionForModel(modelId: string, defaultVersion: string): string 
   if (modelId === 'gpt-5-mini') {
     return '2025-04-01-preview';
   }
+  // gpt-5-nano uses a specific API version
+  if (modelId === 'gpt-5-nano') {
+    return '2025-01-01-preview';
+  }
   if (isGpt5Model(modelId)) {
     return '2024-12-01-preview';
   }
   return defaultVersion;
+}
+
+// Get endpoint and API key for specific model (some models use different Azure resources)
+function getModelEndpoint(modelId: string, defaultConfig: AzureConfig): { endpoint: string; apiKey: string } {
+  // gpt-5-nano uses a separate Azure resource
+  if (modelId === 'gpt-5-nano') {
+    const nanoEndpoint = process.env.AZURE_GPT5_NANO_ENDPOINT;
+    const nanoApiKey = process.env.AZURE_GPT5_NANO_API_KEY;
+    if (nanoEndpoint && nanoApiKey) {
+      return {
+        endpoint: nanoEndpoint.replace(/\/$/, '').trim(),
+        apiKey: nanoApiKey.trim(),
+      };
+    }
+  }
+  return { endpoint: defaultConfig.endpoint, apiKey: defaultConfig.apiKey };
 }
 
 export function getDeploymentName(modelId: string): string {
@@ -100,6 +120,9 @@ export async function generateContent(
   const deploymentName = getDeploymentName(modelId);
   const apiVersion = getApiVersionForModel(modelId, azureConf.apiVersion);
 
+  // Get model-specific endpoint (some models like gpt-5-nano use different Azure resources)
+  const { endpoint, apiKey } = getModelEndpoint(modelId, azureConf);
+
   // GPT-5-mini uses the Responses API with a different endpoint format
   const useResponsesApi = isResponsesApiModel(modelId);
 
@@ -108,7 +131,7 @@ export async function generateContent(
 
   if (useResponsesApi) {
     // Responses API endpoint format for gpt-5-mini
-    url = `${azureConf.endpoint}/openai/responses?api-version=${apiVersion}`;
+    url = `${endpoint}/openai/responses?api-version=${apiVersion}`;
 
     requestBody = {
       model: deploymentName,
@@ -117,7 +140,7 @@ export async function generateContent(
     };
   } else {
     // Standard Chat Completions API
-    url = `${azureConf.endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+    url = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
 
     // GPT-5 models use max_completion_tokens and don't support temperature
     const isGpt5 = isGpt5Model(modelId);
@@ -141,7 +164,7 @@ export async function generateContent(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'api-key': azureConf.apiKey,
+      'api-key': apiKey,
     },
     body: JSON.stringify(requestBody),
   });
