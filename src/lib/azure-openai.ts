@@ -38,6 +38,7 @@ const DEFAULT_DEPLOYMENT_MAP: Record<string, string> = {
   'gpt-5': 'gpt-5',
   'gpt-4.1-mini': 'gpt-4.1-mini',
   'gpt-5-mini': 'gpt-5-mini',
+  'gpt-5-nano': 'gpt-5-nano',
   'gpt-5-turbo': 'gpt-5-turbo',
   // DeepSeek models (deployed on Azure AI Foundry)
   'deepseek-chat': 'deepseek-chat',

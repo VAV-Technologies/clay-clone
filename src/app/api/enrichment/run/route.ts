@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
     const modelId = config.model || 'gemini-2.5-flash';
     const pricing = getModelPricing(modelId);
     const provider = getProviderFromModel(modelId);
-    const rateLimits = getProviderRateLimits(provider);
+    const rateLimits = getProviderRateLimits(provider, modelId);
     let totalCost = 0;
 
     const results: RowResult[] = [];

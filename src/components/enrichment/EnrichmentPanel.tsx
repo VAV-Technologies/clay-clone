@@ -50,6 +50,7 @@ const MODELS: ModelOption[] = [
   { id: 'gpt-5', name: 'GPT-5', description: 'Next-gen flagship model', provider: 'azure' },
   { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Fast and affordable batch model', provider: 'azure', enabled: true },
   { id: 'gpt-5-mini', name: 'GPT-5 Mini', description: 'Fast and affordable', provider: 'azure', enabled: true },
+  { id: 'gpt-5-nano', name: 'GPT-5 Nano', description: 'Ultra-fast and lightweight', provider: 'azure', enabled: true },
   { id: 'gpt-5-turbo', name: 'GPT-5 Turbo', description: 'Fast GPT-5 variant', provider: 'azure' },
   // DeepSeek Models (deployed on Azure AI Foundry)
   { id: 'deepseek-chat', name: 'DeepSeek V3', description: 'Fast, cost-effective', provider: 'azure' },

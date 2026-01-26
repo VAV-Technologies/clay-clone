@@ -32,6 +32,7 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
   'gpt-5': { input: 5.00, output: 15.00 },       // Estimated pricing
   'gpt-4.1-mini': { input: 0.15, output: 0.60 },  // GPT-4.1 Mini pricing
   'gpt-5-mini': { input: 0.30, output: 1.20 },   // Estimated pricing
+  'gpt-5-nano': { input: 0.10, output: 0.40 },   // Estimated pricing for nano model
   'gpt-5-turbo': { input: 3.00, output: 10.00 }, // Estimated pricing
   // DeepSeek models
   'deepseek-chat': { input: 0.56, output: 1.68 },
@@ -75,13 +76,21 @@ export function calculateCost(
 }
 
 // Rate limiting settings per provider
-export function getProviderRateLimits(provider: AIProvider): {
+export function getProviderRateLimits(provider: AIProvider, modelId?: string): {
   concurrentRequests: number;
   delayBetweenChunks: number;
 } {
   if (provider === 'azure') {
-    // Azure OpenAI: 150K TPM / 150 RPM limits
-    // 75 concurrent = safe burst under 150 RPM limit
+    // Model-specific rate limits for Azure
+    if (modelId === 'gpt-5-nano') {
+      // 5M TPM, 5K RPM - can handle high concurrency
+      return { concurrentRequests: 200, delayBetweenChunks: 0 };
+    }
+    if (modelId === 'gpt-5-mini') {
+      // 1M TPM, 1K RPM - moderate concurrency
+      return { concurrentRequests: 50, delayBetweenChunks: 0 };
+    }
+    // Default Azure limits (150K TPM / 150 RPM)
     return {
       concurrentRequests: 75,
       delayBetweenChunks: 0,
