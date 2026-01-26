@@ -6,7 +6,7 @@ const API_VERSION = '2024-10-21';
 
 // Hardcoded Azure Batch API config (dedicated for batch processing)
 const BATCH_CONFIG = {
-  endpoint: 'https://mama-mkof4van-eastus2.services.ai.azure.com/api/projects/mama-mkof4van-eastus2_project',
+  endpoint: 'https://mama-mkof4van-eastus2.services.ai.azure.com',
   apiKey: 'EAUz04QAIN1DxUG2MijyS0k1ZuPgDbLIIQhk1irZooGRBp3LJCQmJQQJ99CAACHYHv6XJ3w3AAAAACOGzQm5',
   deployment: 'gpt-5-mini-2',
 };
