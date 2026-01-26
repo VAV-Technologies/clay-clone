@@ -23,15 +23,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
 
-    // Get row mappings
-    const rowMappings = job.rowMappings as Array<{ rowId: string; customId: string }>;
-    const sampleRowIds = rowMappings.slice(0, 5).map(m => m.rowId);
-
-    // Get sample rows to check their cell status
+    // Get sample rows directly from the table (rowMappings may be empty)
     const sampleRows = await db
       .select()
       .from(schema.rows)
-      .where(inArray(schema.rows.id, sampleRowIds));
+      .where(eq(schema.rows.tableId, job.tableId))
+      .limit(10);
 
     // Extract cell status for target column
     const cellStatuses = sampleRows.map(row => {
@@ -45,13 +42,26 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Count cell statuses in sample
+    const statusCounts: Record<string, number> = {};
+    for (const cell of cellStatuses) {
+      const status = cell.cellStatus || 'no_data';
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
+    }
+
     return NextResponse.json({
       jobId: job.id,
       jobStatus: job.status,
       jobLastError: job.lastError,
       jobErrorCount: job.errorCount,
+      jobSuccessCount: job.successCount,
+      jobProcessedCount: job.processedCount,
+      jobRowCount: job.rowCount,
       jobUpdatedAt: job.updatedAt?.toISOString(),
-      totalRowMappings: rowMappings.length,
+      tableId: job.tableId,
+      targetColumnId: job.targetColumnId,
+      sampleSize: sampleRows.length,
+      sampleStatusCounts: statusCounts,
       sampleCellStatuses: cellStatuses,
     });
 
