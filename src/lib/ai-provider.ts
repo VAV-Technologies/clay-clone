@@ -83,12 +83,12 @@ export function getProviderRateLimits(provider: AIProvider, modelId?: string): {
   if (provider === 'azure') {
     // Model-specific rate limits for Azure
     if (modelId === 'gpt-5-nano') {
-      // 5M TPM, 5K RPM - can handle high concurrency
-      return { concurrentRequests: 200, delayBetweenChunks: 0 };
+      // 5M TPM, 5K RPM - maximum throughput
+      return { concurrentRequests: 500, delayBetweenChunks: 0 };
     }
     if (modelId === 'gpt-5-mini') {
-      // 1M TPM, 1K RPM - moderate concurrency
-      return { concurrentRequests: 50, delayBetweenChunks: 0 };
+      // 1M TPM, 1K RPM - high throughput
+      return { concurrentRequests: 150, delayBetweenChunks: 0 };
     }
     // Default Azure limits (150K TPM / 150 RPM)
     return {

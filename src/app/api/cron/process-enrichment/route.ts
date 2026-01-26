@@ -13,7 +13,7 @@ import {
 // Vercel function config - max duration for hobby is 10s, pro is 60s
 export const maxDuration = 60; // Will use max available for your plan
 
-const BATCH_SIZE = 100; // Process 100 rows per batch for higher throughput
+const BATCH_SIZE = 250; // Increased for better throughput with GPT-5 models
 const AI_TIMEOUT_MS = 25000; // 25 second timeout per AI call
 const STALE_JOB_MINUTES = 30; // Auto-complete jobs stuck for 30+ minutes (increased from 10)
 const MAX_EXECUTION_MS = 55000; // Stop processing 5s before timeout
