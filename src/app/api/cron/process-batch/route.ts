@@ -329,13 +329,15 @@ async function processJobResults(
       }
     } else if (result.response) {
       successCount++;
-      const usage = result.response.body.usage;
-      totalInputTokens += usage.prompt_tokens;
-      totalOutputTokens += usage.completion_tokens;
+      const usage = result.response.body?.usage;
+      totalInputTokens += usage?.prompt_tokens || 0;
+      totalOutputTokens += usage?.completion_tokens || 0;
 
-      const responseText = result.response.body.choices[0]?.message?.content || '';
+      const responseText = result.response.body?.choices?.[0]?.message?.content || '';
       const parsed = parseAIResponse(responseText);
-      const rowCost = calculateBatchCost(usage.prompt_tokens, usage.completion_tokens);
+      const inputTokens = usage?.prompt_tokens || 0;
+      const outputTokens = usage?.completion_tokens || 0;
+      const rowCost = calculateBatchCost(inputTokens, outputTokens);
 
       updatedData[job.targetColumnId] = {
         value: parsed.displayValue,
@@ -343,8 +345,8 @@ async function processJobResults(
         enrichmentData: parsed.structuredData,
         rawResponse: responseText,
         metadata: {
-          inputTokens: usage.prompt_tokens,
-          outputTokens: usage.completion_tokens,
+          inputTokens,
+          outputTokens,
           timeTakenMs: 0,
           totalCost: rowCost,
         },
