@@ -48,7 +48,7 @@ const MODELS: ModelOption[] = [
   { id: 'gpt-4o', name: 'GPT-4o', description: 'Latest GPT-4 multimodal', provider: 'azure' },
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and cost-effective', provider: 'azure' },
   { id: 'gpt-5', name: 'GPT-5', description: 'Next-gen flagship model', provider: 'azure' },
-  { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Fast and affordable batch model', provider: 'azure', enabled: true },
+  { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Batch API only', provider: 'azure' },
   { id: 'gpt-5-mini', name: 'GPT-5 Mini', description: 'Fast and affordable', provider: 'azure', enabled: true },
   { id: 'gpt-5-nano', name: 'GPT-5 Nano', description: 'Ultra-fast and lightweight', provider: 'azure', enabled: true },
   { id: 'gpt-5-turbo', name: 'GPT-5 Turbo', description: 'Fast GPT-5 variant', provider: 'azure' },
