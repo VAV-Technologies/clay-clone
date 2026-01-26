@@ -10,8 +10,8 @@ import {
   isBatchAvailable,
 } from '@/lib/azure-batch';
 
-// Vercel function config - extend timeout for file upload
-export const maxDuration = 60;
+// Vercel function config - extend timeout for large batch processing
+export const maxDuration = 300; // 5 minutes for large batches
 
 // Batch size for chunked updates (Turso supports up to 1000 statements per batch)
 const UPDATE_BATCH_SIZE = 1000;
@@ -199,21 +199,26 @@ export async function POST(request: NextRequest) {
 
       // Don't store row mappings - they're stored in cells as batchJobId
       // customId is derivable as `row-${rowId}`, and we query rows by batchJobId
-      await db.insert(schema.batchEnrichmentJobs).values({
-        id: jobId,
-        tableId,
-        configId,
-        targetColumnId,
-        batchGroupId,
-        batchNumber,
-        totalBatches,
-        rowMappings: [], // Empty - rows are tracked via batchJobId in cells
-        azureStatus: 'pending_upload',
-        status: 'uploading',
-        totalRows: batchRows.length,
-        createdAt: now,
-        updatedAt: now,
-      });
+      try {
+        await db.insert(schema.batchEnrichmentJobs).values({
+          id: jobId,
+          tableId,
+          configId,
+          targetColumnId,
+          batchGroupId,
+          batchNumber,
+          totalBatches,
+          rowMappings: [], // Empty - rows are tracked via batchJobId in cells
+          azureStatus: 'pending_upload',
+          status: 'uploading',
+          totalRows: batchRows.length,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } catch (insertError) {
+        console.error(`Failed to insert batch job record for batch ${batchNumber}:`, insertError);
+        throw new Error(`Failed to create batch job record: ${(insertError as Error).message}`);
+      }
 
       // Mark cells for this batch as batch_submitted
       const rowUpdates = batchRows.map(row => {
@@ -238,7 +243,20 @@ export async function POST(request: NextRequest) {
         return { id: row.id, data: updatedData };
       });
 
-      await batchUpdateRows(rowUpdates);
+      try {
+        console.log(`Marking ${rowUpdates.length} cells as batch_submitted for batch ${batchNumber}`);
+        await batchUpdateRows(rowUpdates);
+        console.log(`Successfully marked cells for batch ${batchNumber}`);
+      } catch (updateError) {
+        console.error(`Failed to mark cells as batch_submitted for batch ${batchNumber}:`, updateError);
+        // Update job as error
+        await db.update(schema.batchEnrichmentJobs).set({
+          status: 'error',
+          lastError: `Failed to mark cells: ${(updateError as Error).message}`,
+          updatedAt: new Date(),
+        }).where(eq(schema.batchEnrichmentJobs.id, jobId));
+        throw new Error(`Failed to mark cells for batch ${batchNumber}: ${(updateError as Error).message}`);
+      }
 
       try {
         // Upload file to Azure
