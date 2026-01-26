@@ -72,6 +72,7 @@ function buildColumnContext(columns: Array<{ name: string; type: string }>): str
 interface ParsedOptimizerResponse {
   optimizedPrompt: string;
   recommendedDataGuide: Array<{ name: string; description: string }>;
+  recommendedInputColumns: Array<{ column: string; reason: string }>;
 }
 
 function parseOptimizerResponse(aiResponse: string): ParsedOptimizerResponse {
@@ -111,7 +112,37 @@ function parseOptimizerResponse(aiResponse: string): ParsedOptimizerResponse {
     }
   }
 
-  return { optimizedPrompt, recommendedDataGuide };
+  // Extract Input Columns table between markers
+  const inputColumnsMatch = aiResponse.match(
+    /---INPUT_COLUMNS_START---\s*([\s\S]*?)\s*---INPUT_COLUMNS_END---/
+  );
+
+  const recommendedInputColumns: Array<{ column: string; reason: string }> = [];
+
+  if (inputColumnsMatch) {
+    const tableContent = inputColumnsMatch[1];
+    // Parse markdown table rows (skip header and separator lines)
+    const rows = tableContent.split('\n').filter(row => {
+      const trimmed = row.trim();
+      return trimmed.startsWith('|') &&
+             !trimmed.includes('---') &&
+             !trimmed.toLowerCase().includes('column name') &&
+             !trimmed.toLowerCase().includes('| column |');
+    });
+
+    for (const row of rows) {
+      const cells = row.split('|').map(c => c.trim()).filter(Boolean);
+      if (cells.length >= 2) {
+        const column = cells[0].replace(/`/g, '').trim();
+        const reason = cells[1].trim();
+        if (column && reason && !column.toLowerCase().includes('column')) {
+          recommendedInputColumns.push({ column, reason });
+        }
+      }
+    }
+  }
+
+  return { optimizedPrompt, recommendedDataGuide, recommendedInputColumns };
 }
 
 // Fallback: If markers not found, try to use entire response as prompt
@@ -176,6 +207,43 @@ Never include fields that duplicate input data or can be derived elsewhere. The 
 ### RULE 6: PREFER STRUCTURED OVER PROSE
 - ✅ Separate fields: \`name\`, \`rating\`, \`cuisine\`
 - ❌ Combined prose: \`summary\` containing all info in paragraph form
+
+## INPUT COLUMN SELECTION PRINCIPLES
+
+When selecting which {{variables}} to include in the DYNAMIC INPUTS section, apply these rules strictly:
+
+### RULE 1: MINIMUM NECESSARY INPUTS
+Only include columns that are DIRECTLY required to answer the prompt. Ask: "Can I answer this question WITHOUT this column?" If yes, exclude it.
+
+### RULE 2: RELEVANCE TEST
+For each column, ask: "Does this data DIRECTLY help determine the answer?"
+- ✅ Company Name → needed to identify the company
+- ✅ Headquarters Location → directly relevant for "foreign-owned" determination
+- ❌ Annual Revenue → revenue doesn't indicate ownership origin
+- ❌ Employee Count → headcount doesn't indicate ownership origin
+
+### RULE 3: NO "NICE TO HAVE" INPUTS
+Do not include columns that are:
+- Tangentially related but not essential
+- Potentially useful for "context" but not required
+- Already implied by other included columns
+
+### RULE 4: EXPLICIT INPUT RECOMMENDATIONS
+In your response, after the Data Guide, list which input columns should be used and briefly explain why each is necessary.
+
+### EXAMPLE INPUT SELECTION
+
+**Task**: "Determine if company is foreign-owned"
+**Available columns**: Company Name, HQ Location, Annual Revenue, Employee Count, Industry, Founded Year
+
+**WRONG** (bloated inputs):
+- Company Name, HQ Location, Annual Revenue, Employee Count, Industry
+- (5 inputs - most are irrelevant)
+
+**CORRECT** (minimal inputs):
+- Company Name (to identify the company)
+- HQ Location (directly indicates geographic origin)
+- (2 inputs - only what's needed)
 
 ## PROMPT STRUCTURE (CACHE-OPTIMIZED ORDER)
 
@@ -260,6 +328,12 @@ You MUST respond with EXACTLY this format, using the markers shown:
 | Another Field | Another description |
 ---DATA_GUIDE_END---
 
+---INPUT_COLUMNS_START---
+| Column | Reason |
+|--------|--------|
+| Column Name | Why this column is necessary |
+---INPUT_COLUMNS_END---
+
 ## FINAL CHECK BEFORE RESPONDING
 
 Ask yourself:
@@ -268,6 +342,7 @@ Ask yourself:
 3. Is reasoning split across multiple fields? → Combine it
 4. Are examples showing minimal output? → If not, trim them
 5. Are all variables at the bottom? → Must be yes
+6. Is each input column DIRECTLY required to answer the prompt? → If not, remove it
 
 Transform the user's request into an optimized prompt with minimal Data Guide now.`;
 }
@@ -303,6 +378,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       optimizedPrompt: parsed.optimizedPrompt,
       recommendedDataGuide: parsed.recommendedDataGuide,
+      recommendedInputColumns: parsed.recommendedInputColumns,
     });
   } catch (error) {
     console.error('Error optimizing prompt:', error);
