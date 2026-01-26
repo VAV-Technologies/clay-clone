@@ -30,6 +30,7 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
   'gpt-4o': { input: 2.50, output: 10.00 },
   'gpt-4o-mini': { input: 0.15, output: 0.60 },
   'gpt-5': { input: 5.00, output: 15.00 },       // Estimated pricing
+  'gpt-4.1-mini': { input: 0.15, output: 0.60 },  // GPT-4.1 Mini pricing
   'gpt-5-mini': { input: 0.30, output: 1.20 },   // Estimated pricing
   'gpt-5-turbo': { input: 3.00, output: 10.00 }, // Estimated pricing
   // DeepSeek models

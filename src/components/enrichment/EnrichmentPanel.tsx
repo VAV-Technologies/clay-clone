@@ -48,7 +48,7 @@ const MODELS: ModelOption[] = [
   { id: 'gpt-4o', name: 'GPT-4o', description: 'Latest GPT-4 multimodal', provider: 'azure' },
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and cost-effective', provider: 'azure' },
   { id: 'gpt-5', name: 'GPT-5', description: 'Next-gen flagship model', provider: 'azure' },
-  { id: 'gpt-5-mini', name: 'GPT-5 Mini', description: 'Fast and affordable GPT-5', provider: 'azure', enabled: true },
+  { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Fast and affordable batch model', provider: 'azure', enabled: true },
   { id: 'gpt-5-turbo', name: 'GPT-5 Turbo', description: 'Fast GPT-5 variant', provider: 'azure' },
   // DeepSeek Models (deployed on Azure AI Foundry)
   { id: 'deepseek-chat', name: 'DeepSeek V3', description: 'Fast, cost-effective', provider: 'azure' },
@@ -65,7 +65,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
   const { currentTable, columns, rows, selectedRows, updateCell, addColumn, fetchTable } = useTableStore();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const [model, setModel] = useState('gpt-5-mini');
+  const [model, setModel] = useState('gpt-4.1-mini');
   const [prompt, setPrompt] = useState('');
   const [outputColumnName, setOutputColumnName] = useState('AI Output');
   const [temperature, setTemperature] = useState(0.7);
@@ -121,7 +121,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           .then(res => res.json())
           .then(config => {
             console.log('Loaded enrichment config:', config);
-            setModel(config.model || 'gpt-5-mini');
+            setModel(config.model || 'gpt-4.1-mini');
             setPrompt(config.prompt || '');
             setTemperature(config.temperature ?? 0.7);
             setCostLimitEnabled(config.costLimitEnabled ?? false);
@@ -153,7 +153,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
 
             if (matchingConfig) {
               console.log('Found matching config by name:', matchingConfig);
-              setModel(matchingConfig.model || 'gpt-5-mini');
+              setModel(matchingConfig.model || 'gpt-4.1-mini');
               setPrompt(matchingConfig.prompt || '');
               setTemperature(matchingConfig.temperature ?? 0.7);
               setCostLimitEnabled(matchingConfig.costLimitEnabled ?? false);
@@ -206,7 +206,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
     }
     if (isOpen && !editColumnId) {
       // Reset to defaults for new enrichment
-      setModel('gpt-5-mini');
+      setModel('gpt-4.1-mini');
       setPrompt('');
       setOutputColumnName('AI Output');
       setTemperature(0.7);

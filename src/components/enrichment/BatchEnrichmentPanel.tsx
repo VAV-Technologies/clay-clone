@@ -264,7 +264,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: outputColumnName.trim(),
-          model: 'gpt-5-mini', // Fixed model for batch
+          model: 'gpt-4.1-mini', // Fixed model for batch
           prompt,
           inputColumns: usedVariables.map(v => {
             const col = columns.find(c => c.name.toLowerCase() === v.toLowerCase());
@@ -403,8 +403,8 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
           <label className="text-sm font-medium text-white/70">Model</label>
           <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/30">
             <div className="text-left">
-              <p className="text-sm font-medium text-white">GPT-5 Mini</p>
-              <p className="text-xs text-white/50">Fast and affordable GPT-5</p>
+              <p className="text-sm font-medium text-white">GPT-4.1 Mini</p>
+              <p className="text-xs text-white/50">Fast and affordable batch model</p>
             </div>
             <Check className="w-4 h-4 text-blue-400" />
           </div>
