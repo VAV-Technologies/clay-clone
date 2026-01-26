@@ -49,8 +49,17 @@ function isGpt5Model(modelId: string): boolean {
   return modelId.startsWith('gpt-5');
 }
 
+// GPT-5-mini uses the Responses API (different endpoint format)
+function isResponsesApiModel(modelId: string): boolean {
+  return modelId === 'gpt-5-mini';
+}
+
 // GPT-5 models require a newer API version
 function getApiVersionForModel(modelId: string, defaultVersion: string): string {
+  // gpt-5-mini uses Responses API
+  if (modelId === 'gpt-5-mini') {
+    return '2025-04-01-preview';
+  }
   if (isGpt5Model(modelId)) {
     return '2024-12-01-preview';
   }
@@ -90,23 +99,41 @@ export async function generateContent(
   const deploymentName = getDeploymentName(modelId);
   const apiVersion = getApiVersionForModel(modelId, azureConf.apiVersion);
 
-  const url = `${azureConf.endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+  // GPT-5-mini uses the Responses API with a different endpoint format
+  const useResponsesApi = isResponsesApiModel(modelId);
 
-  // GPT-5 models use max_completion_tokens and don't support temperature
-  const isGpt5 = isGpt5Model(modelId);
-  const tokenParam = isGpt5
-    ? { max_completion_tokens: config.maxTokens ?? 8192 }
-    : { max_tokens: config.maxTokens ?? 8192 };
+  let url: string;
+  let requestBody: Record<string, unknown>;
 
-  // Build request body - GPT-5 models don't support temperature parameter
-  const requestBody: Record<string, unknown> = {
-    messages: [{ role: 'user', content: prompt }],
-    ...tokenParam,
-  };
+  if (useResponsesApi) {
+    // Responses API endpoint format for gpt-5-mini
+    url = `${azureConf.endpoint}/openai/responses?api-version=${apiVersion}`;
 
-  // Only add temperature for non-GPT-5 models
-  if (!isGpt5) {
-    requestBody.temperature = config.temperature ?? 0.7;
+    requestBody = {
+      model: deploymentName,
+      input: prompt,
+      max_output_tokens: config.maxTokens ?? 8192,
+    };
+  } else {
+    // Standard Chat Completions API
+    url = `${azureConf.endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+
+    // GPT-5 models use max_completion_tokens and don't support temperature
+    const isGpt5 = isGpt5Model(modelId);
+    const tokenParam = isGpt5
+      ? { max_completion_tokens: config.maxTokens ?? 8192 }
+      : { max_tokens: config.maxTokens ?? 8192 };
+
+    // Build request body - GPT-5 models don't support temperature parameter
+    requestBody = {
+      messages: [{ role: 'user', content: prompt }],
+      ...tokenParam,
+    };
+
+    // Only add temperature for non-GPT-5 models
+    if (!isGpt5) {
+      requestBody.temperature = config.temperature ?? 0.7;
+    }
   }
 
   const response = await fetch(url, {
@@ -128,6 +155,21 @@ export async function generateContent(
 
   const data = await response.json();
 
+  // Parse response based on API type
+  if (useResponsesApi) {
+    // Responses API format
+    const outputText = data.output_text ||
+      data.output?.[0]?.content?.[0]?.text ||
+      '';
+    return {
+      text: outputText,
+      inputTokens: data.usage?.input_tokens ?? 0,
+      outputTokens: data.usage?.output_tokens ?? 0,
+      timeTakenMs,
+    };
+  }
+
+  // Standard Chat Completions format
   return {
     text: data.choices?.[0]?.message?.content || '',
     inputTokens: data.usage?.prompt_tokens ?? 0,
