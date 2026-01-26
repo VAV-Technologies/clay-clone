@@ -18,6 +18,7 @@ import {
 import { cn } from '@/lib/utils';
 import { GlassButton, GlassCard } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
+import { getBatchModels } from '@/lib/azure-batch';
 
 interface BatchEnrichmentPanelProps {
   isOpen: boolean;
@@ -58,6 +59,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
   const [outputColumnName, setOutputColumnName] = useState('Batch Output');
   const [outputColumns, setOutputColumns] = useState<string[]>([]);
   const [newOutputColumn, setNewOutputColumn] = useState('');
+  const [model, setModel] = useState('gpt-4.1-mini');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -283,7 +285,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: outputColumnName.trim(),
-          model: 'gpt-4.1-mini', // Fixed model for batch
+          model: model,
           prompt,
           inputColumns: usedVariables.map(v => {
             const col = columns.find(c => c.name.toLowerCase() === v.toLowerCase());
@@ -333,6 +335,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
           tableId: currentTable.id,
           targetColumnId: newColumn.id,
           rowIds: rowIdsToProcess,
+          model: model,
         }),
       });
 
@@ -422,15 +425,29 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
           </div>
         </GlassCard>
 
-        {/* Model Display (Fixed) */}
+        {/* Model Selection */}
         <div className="space-y-2 pb-4 border-b border-white/10">
           <label className="text-sm font-medium text-white/70">Model</label>
-          <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/30">
-            <div className="text-left">
-              <p className="text-sm font-medium text-white">GPT-4.1 Mini</p>
-              <p className="text-xs text-white/50">Fast and affordable batch model</p>
-            </div>
-            <Check className="w-4 h-4 text-blue-400" />
+          <div className="space-y-1.5">
+            {getBatchModels().map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setModel(m.id)}
+                className={cn(
+                  'w-full flex items-center justify-between p-2.5 rounded-lg',
+                  'border transition-all',
+                  model === m.id
+                    ? 'bg-blue-500/10 border-blue-500/30'
+                    : 'bg-white/5 border-white/10 hover:border-white/20'
+                )}
+              >
+                <div className="text-left">
+                  <p className="text-sm font-medium text-white">{m.name}</p>
+                  <p className="text-xs text-white/50">{m.description}</p>
+                </div>
+                {model === m.id && <Check className="w-4 h-4 text-blue-400" />}
+              </button>
+            ))}
           </div>
         </div>
 

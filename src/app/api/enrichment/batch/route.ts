@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { configId, tableId, targetColumnId, rowIds } = body;
+    const { configId, tableId, targetColumnId, rowIds, model = 'gpt-4.1-mini' } = body;
 
     if (!configId || !tableId || !targetColumnId) {
       return NextResponse.json(
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
       console.log(`Creating batch ${batchNumber}/${totalBatches}: rows ${startIdx + 1}-${endIdx} (${batchRows.length} rows)`);
 
       // Generate JSONL content for this batch
-      const { content: jsonlContent, mappings } = generateBatchJSONL(batchPrompts);
+      const { content: jsonlContent, mappings } = generateBatchJSONL(batchPrompts, 8192, model);
 
       // Create job record in DB first
       const jobId = generateId();

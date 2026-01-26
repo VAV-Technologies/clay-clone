@@ -11,6 +11,20 @@ const BATCH_CONFIG = {
   deployment: 'gpt-4.1-mini',
 };
 
+// Model mapping for batch processing
+const BATCH_MODELS: Record<string, string> = {
+  'gpt-4.1-mini': 'gpt-4.1-mini',
+  'o4-mini': 'o4-mini',
+};
+
+// Export available batch models for UI
+export function getBatchModels() {
+  return [
+    { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Fast and affordable' },
+    { id: 'o4-mini', name: 'O4 Mini', description: 'Latest reasoning model' },
+  ];
+}
+
 function getBatchConfig() {
   return BATCH_CONFIG;
 }
@@ -109,7 +123,8 @@ export interface FileUploadResponse {
  */
 export function generateBatchJSONL(
   rows: Array<{ rowId: string; prompt: string }>,
-  maxCompletionTokens: number = 8192
+  maxCompletionTokens: number = 8192,
+  model: string = 'gpt-4.1-mini'
 ): { content: string; mappings: Array<{ rowId: string; customId: string }> } {
   const mappings: Array<{ rowId: string; customId: string }> = [];
   const lines: string[] = [];
@@ -123,7 +138,7 @@ export function generateBatchJSONL(
       method: 'POST',
       url: '/v1/chat/completions',
       body: {
-        model: BATCH_CONFIG.deployment,
+        model: BATCH_MODELS[model] || model,
         messages: [{ role: 'user', content: row.prompt }],
         max_completion_tokens: maxCompletionTokens,
       },
