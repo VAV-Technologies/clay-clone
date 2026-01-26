@@ -284,12 +284,12 @@ async function processJobResults(
   const resultsContent = await downloadBatchResults(outputFileId);
   const results = parseBatchResults(resultsContent);
 
-  // Get row mappings
-  const rowMappings = job.rowMappings as Array<{ rowId: string; customId: string }>;
-  const customIdToRowId = new Map(rowMappings.map(m => [m.customId, m.rowId]));
+  // Derive row IDs from Azure results - custom_id format is "row-{rowId}"
+  const rowIds = results
+    .map(r => r.custom_id.startsWith('row-') ? r.custom_id.slice(4) : null)
+    .filter((id): id is string => id !== null);
 
   // Get all rows for this job
-  const rowIds = rowMappings.map(m => m.rowId);
   const rows = await db.select().from(schema.rows).where(inArray(schema.rows.id, rowIds));
   const rowMap = new Map(rows.map(r => [r.id, r]));
 
@@ -301,7 +301,8 @@ async function processJobResults(
   const rowUpdates: Array<{ id: string; data: Record<string, CellValue> }> = [];
 
   for (const result of results) {
-    const rowId = customIdToRowId.get(result.custom_id);
+    // Extract rowId from custom_id (format: "row-{rowId}")
+    const rowId = result.custom_id.startsWith('row-') ? result.custom_id.slice(4) : null;
     if (!rowId) continue;
 
     const row = rowMap.get(rowId);
@@ -426,12 +427,17 @@ async function markJobCellsAsError(
     }
   }
 
-  // Get row mappings
-  const rowMappings = job.rowMappings as Array<{ rowId: string; customId: string }>;
-  const rowIds = rowMappings.map(m => m.rowId);
+  // Get all rows for this table that have "request sent" status for the target column
+  // (rowMappings is stored empty - we must query and filter instead)
+  const allTableRows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, job.tableId));
 
-  // Get all rows
-  const rows = await db.select().from(schema.rows).where(inArray(schema.rows.id, rowIds));
+  // Filter to only rows with "request sent" status for this enrichment column
+  const rows = allTableRows.filter(row => {
+    const data = row.data as Record<string, CellValue> | null;
+    if (!data) return false;
+    const cellData = data[job.targetColumnId];
+    return cellData && cellData.status === 'request sent';
+  });
 
   // Collect all updates in memory first
   const rowUpdates = rows.map(row => {
