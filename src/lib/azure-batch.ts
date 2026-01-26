@@ -2,13 +2,13 @@
 // For bulk processing with 50% cheaper batch pricing
 // Jobs may take 1-24 hours to complete
 
-const API_VERSION = '2024-10-21';
+const API_VERSION = '2025-01-01-preview';
 
 // Hardcoded Azure Batch API config (dedicated for batch processing)
 const BATCH_CONFIG = {
-  endpoint: 'https://mama-mkof4van-eastus2.services.ai.azure.com',
+  endpoint: 'https://mama-mkof4van-eastus2.cognitiveservices.azure.com',
   apiKey: 'EAUz04QAIN1DxUG2MijyS0k1ZuPgDbLIIQhk1irZooGRBp3LJCQmJQQJ99CAACHYHv6XJ3w3AAAAACOGzQm5',
-  deployment: 'gpt-5-mini-2',
+  deployment: 'gpt-4.1-mini',
 };
 
 function getBatchConfig() {
@@ -344,7 +344,7 @@ export async function listBatchJobs(limit: number = 20): Promise<{
 
 /**
  * Get pricing for batch processing (50% of standard pricing)
- * GPT-5-mini batch pricing
+ * GPT-4.1-mini batch pricing
  */
 export function getBatchPricing() {
   return {
