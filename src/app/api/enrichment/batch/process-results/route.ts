@@ -124,12 +124,31 @@ export async function POST(request: NextRequest) {
     const resultsContent = await downloadBatchResults(job.azureOutputFileId);
     const results = parseBatchResults(resultsContent);
 
-    // Get row mappings
-    const rowMappings = job.rowMappings as Array<{ rowId: string; customId: string }>;
-    const customIdToRowId = new Map(rowMappings.map(m => [m.customId, m.rowId]));
+    // Get row mappings - supports both old format (objects) and new format (string array)
+    const rawMappings = job.rowMappings as Array<{ rowId: string; customId: string }> | string[];
+
+    // Build customId to rowId map
+    // New format: rowMappings is string[] of rowIds, customId is `row-${rowId}`
+    // Old format: rowMappings is {rowId, customId}[]
+    let rowIds: string[];
+    const customIdToRowId = new Map<string, string>();
+
+    if (rawMappings.length > 0 && typeof rawMappings[0] === 'string') {
+      // New format: array of rowIds
+      rowIds = rawMappings as string[];
+      for (const rowId of rowIds) {
+        customIdToRowId.set(`row-${rowId}`, rowId);
+      }
+    } else {
+      // Old format: array of {rowId, customId} objects
+      const mappings = rawMappings as Array<{ rowId: string; customId: string }>;
+      rowIds = mappings.map(m => m.rowId);
+      for (const m of mappings) {
+        customIdToRowId.set(m.customId, m.rowId);
+      }
+    }
 
     // Get all rows for this job
-    const rowIds = rowMappings.map(m => m.rowId);
     const rows = await db.select().from(schema.rows).where(inArray(schema.rows.id, rowIds));
     const rowMap = new Map(rows.map(r => [r.id, r]));
 
@@ -230,8 +249,7 @@ export async function POST(request: NextRequest) {
 
     // Detect orphaned rows (in rowMappings but not returned by Azure - happens when > 25,000 rows submitted)
     const processedRowIds = new Set(rowUpdates.map(u => u.id));
-    const allMappedRowIds = rowMappings.map(m => m.rowId);
-    const orphanedRowIds = allMappedRowIds.filter(id => !processedRowIds.has(id));
+    const orphanedRowIds = rowIds.filter(id => !processedRowIds.has(id));
 
     if (orphanedRowIds.length > 0) {
       console.warn(`${orphanedRowIds.length} rows not returned by Azure for job ${jobId} (exceeded 25,000 batch limit)`);

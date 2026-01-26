@@ -197,6 +197,10 @@ export async function POST(request: NextRequest) {
       const jobId = generateId();
       const now = new Date();
 
+      // Store only row IDs, not full mappings (customId is derivable as `row-${rowId}`)
+      // This prevents hitting database size limits with large batches
+      const rowIdList = mappings.map(m => m.rowId);
+
       await db.insert(schema.batchEnrichmentJobs).values({
         id: jobId,
         tableId,
@@ -205,7 +209,7 @@ export async function POST(request: NextRequest) {
         batchGroupId,
         batchNumber,
         totalBatches,
-        rowMappings: mappings,
+        rowMappings: rowIdList as unknown as Array<{rowId: string; customId: string}>, // Store as simple string array
         azureStatus: 'pending_upload',
         status: 'uploading',
         totalRows: batchRows.length,
