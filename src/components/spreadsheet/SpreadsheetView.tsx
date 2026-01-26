@@ -346,7 +346,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
 
           <GlassButton variant="primary" size="sm" onClick={() => onEnrich?.()}>
             <Sparkles className="w-4 h-4 mr-1" />
-            Enrich
+            Real-Time Enrich
           </GlassButton>
 
           <GlassButton
