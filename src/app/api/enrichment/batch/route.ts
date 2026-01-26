@@ -18,6 +18,10 @@ const UPDATE_BATCH_SIZE = 1000;
 // Number of parallel batch operations
 const PARALLEL_BATCHES = 5;
 
+// Azure Batch API limits
+const MAX_ROWS_PER_BATCH = 24999;  // Azure limit is 25,000, use safety margin
+const MAX_TOTAL_ROWS = 100000;     // Support up to 100K rows (5 batches max)
+
 function generateId() {
   return nanoid(12);
 }
@@ -113,6 +117,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No rows to process' }, { status: 400 });
     }
 
+    // Check if exceeds maximum total rows
+    if (rows.length > MAX_TOTAL_ROWS) {
+      return NextResponse.json(
+        { error: `Too many rows (${rows.length.toLocaleString()}). Maximum allowed is ${MAX_TOTAL_ROWS.toLocaleString()} rows.` },
+        { status: 400 }
+      );
+    }
+
     // Create output columns if they don't exist (from Data Guide)
     const outputColumnIds: Record<string, string> = {};
     const definedOutputColumns = config.outputColumns as string[] | null;
@@ -153,126 +165,193 @@ export async function POST(request: NextRequest) {
       rowPrompts.push({ rowId: row.id, prompt });
     }
 
-    // Generate JSONL content
-    const { content: jsonlContent, mappings } = generateBatchJSONL(rowPrompts);
+    // Calculate number of batches needed
+    const totalBatches = Math.ceil(rows.length / MAX_ROWS_PER_BATCH);
+    const batchGroupId = totalBatches > 1 ? generateId() : null;
 
-    // Create job record in DB first
-    const jobId = generateId();
-    const now = new Date();
+    console.log(`Processing ${rows.length} rows in ${totalBatches} batch(es)${batchGroupId ? ` (group ${batchGroupId})` : ''}`);
 
-    await db.insert(schema.batchEnrichmentJobs).values({
-      id: jobId,
-      tableId,
-      configId,
-      targetColumnId,
-      rowMappings: mappings,
-      azureStatus: 'pending_upload',
-      status: 'uploading',
-      totalRows: rows.length,
-      createdAt: now,
-      updatedAt: now,
-    });
+    // Track all created jobs
+    const createdJobs: Array<{
+      jobId: string;
+      batchNumber: number;
+      rowCount: number;
+      status: string;
+      azureBatchId?: string;
+    }> = [];
 
-    // Mark all cells as batch_submitted - prepare updates in memory first
-    const rowUpdates = rows.map(row => {
-      const updatedData: Record<string, CellValue> = {
-        ...(row.data as Record<string, CellValue>),
-        [targetColumnId]: {
-          value: null,
-          status: 'batch_submitted' as const,
-          batchJobId: jobId,
-        },
-      };
+    // Process each batch chunk
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const batchNumber = batchIndex + 1;
+      const startIdx = batchIndex * MAX_ROWS_PER_BATCH;
+      const endIdx = Math.min(startIdx + MAX_ROWS_PER_BATCH, rows.length);
+      const batchRows = rows.slice(startIdx, endIdx);
+      const batchPrompts = rowPrompts.slice(startIdx, endIdx);
 
-      // Also mark output columns
-      for (const colId of Object.values(outputColumnIds)) {
-        updatedData[colId] = {
-          value: null,
-          status: 'batch_submitted' as const,
-          batchJobId: jobId,
-        };
-      }
+      console.log(`Creating batch ${batchNumber}/${totalBatches}: rows ${startIdx + 1}-${endIdx} (${batchRows.length} rows)`);
 
-      return { id: row.id, data: updatedData };
-    });
+      // Generate JSONL content for this batch
+      const { content: jsonlContent, mappings } = generateBatchJSONL(batchPrompts);
 
-    // Execute all updates in batches (much faster than sequential)
-    await batchUpdateRows(rowUpdates);
+      // Create job record in DB first
+      const jobId = generateId();
+      const now = new Date();
 
-    try {
-      // Upload file to Azure
-      const filename = `batch_${jobId}_${Date.now()}.jsonl`;
-      const fileResponse = await uploadBatchFile(jsonlContent, filename);
-
-      // Update job with file ID
-      await db.update(schema.batchEnrichmentJobs).set({
-        azureFileId: fileResponse.id,
-        status: 'submitted',
-        updatedAt: new Date(),
-      }).where(eq(schema.batchEnrichmentJobs.id, jobId));
-
-      // Create batch job
-      const batchResponse = await createBatchJob(fileResponse.id, {
-        jobId,
+      await db.insert(schema.batchEnrichmentJobs).values({
+        id: jobId,
         tableId,
-      });
-
-      // Update job with batch ID
-      await db.update(schema.batchEnrichmentJobs).set({
-        azureBatchId: batchResponse.id,
-        azureStatus: batchResponse.status,
-        status: 'submitted',
-        submittedAt: new Date(),
-        updatedAt: new Date(),
-      }).where(eq(schema.batchEnrichmentJobs.id, jobId));
-
-      return NextResponse.json({
-        jobId,
-        azureBatchId: batchResponse.id,
-        totalRows: rows.length,
-        status: 'submitted',
-        message: `Batch job submitted with ${rows.length} rows. Processing may take 1-24 hours.`,
-        createdColumns: Object.keys(outputColumnIds).length > 0
-          ? Object.entries(outputColumnIds).map(([name, id]) => ({ name, id }))
-          : [],
+        configId,
         targetColumnId,
+        batchGroupId,
+        batchNumber,
+        totalBatches,
+        rowMappings: mappings,
+        azureStatus: 'pending_upload',
+        status: 'uploading',
+        totalRows: batchRows.length,
+        createdAt: now,
+        updatedAt: now,
       });
 
-    } catch (uploadError) {
-      // Update job as error
-      await db.update(schema.batchEnrichmentJobs).set({
-        status: 'error',
-        lastError: (uploadError as Error).message,
-        updatedAt: new Date(),
-      }).where(eq(schema.batchEnrichmentJobs.id, jobId));
-
-      // Mark cells as error - prepare updates in memory first
-      const errorUpdates = rows.map(row => {
+      // Mark cells for this batch as batch_submitted
+      const rowUpdates = batchRows.map(row => {
         const updatedData: Record<string, CellValue> = {
           ...(row.data as Record<string, CellValue>),
           [targetColumnId]: {
             value: null,
-            status: 'error' as const,
-            error: `Batch submission failed: ${(uploadError as Error).message}`,
+            status: 'batch_submitted' as const,
+            batchJobId: jobId,
           },
         };
 
+        // Also mark output columns
         for (const colId of Object.values(outputColumnIds)) {
           updatedData[colId] = {
             value: null,
-            status: 'error' as const,
-            error: `Batch submission failed: ${(uploadError as Error).message}`,
+            status: 'batch_submitted' as const,
+            batchJobId: jobId,
           };
         }
 
         return { id: row.id, data: updatedData };
       });
 
-      // Execute all error updates in batches
-      await batchUpdateRows(errorUpdates);
+      await batchUpdateRows(rowUpdates);
 
-      throw uploadError;
+      try {
+        // Upload file to Azure
+        const filename = `batch_${jobId}_${Date.now()}.jsonl`;
+        const fileResponse = await uploadBatchFile(jsonlContent, filename);
+
+        // Update job with file ID
+        await db.update(schema.batchEnrichmentJobs).set({
+          azureFileId: fileResponse.id,
+          status: 'submitted',
+          updatedAt: new Date(),
+        }).where(eq(schema.batchEnrichmentJobs.id, jobId));
+
+        // Create batch job
+        const batchResponse = await createBatchJob(fileResponse.id, {
+          jobId,
+          tableId,
+          batchNumber: String(batchNumber),
+          totalBatches: String(totalBatches),
+        });
+
+        // Update job with batch ID
+        await db.update(schema.batchEnrichmentJobs).set({
+          azureBatchId: batchResponse.id,
+          azureStatus: batchResponse.status,
+          status: 'submitted',
+          submittedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(schema.batchEnrichmentJobs.id, jobId));
+
+        createdJobs.push({
+          jobId,
+          batchNumber,
+          rowCount: batchRows.length,
+          status: 'submitted',
+          azureBatchId: batchResponse.id,
+        });
+
+      } catch (uploadError) {
+        // Update job as error
+        await db.update(schema.batchEnrichmentJobs).set({
+          status: 'error',
+          lastError: (uploadError as Error).message,
+          updatedAt: new Date(),
+        }).where(eq(schema.batchEnrichmentJobs.id, jobId));
+
+        // Mark cells as error for this batch
+        const errorUpdates = batchRows.map(row => {
+          const updatedData: Record<string, CellValue> = {
+            ...(row.data as Record<string, CellValue>),
+            [targetColumnId]: {
+              value: null,
+              status: 'error' as const,
+              error: `Batch ${batchNumber} submission failed: ${(uploadError as Error).message}`,
+            },
+          };
+
+          for (const colId of Object.values(outputColumnIds)) {
+            updatedData[colId] = {
+              value: null,
+              status: 'error' as const,
+              error: `Batch ${batchNumber} submission failed: ${(uploadError as Error).message}`,
+            };
+          }
+
+          return { id: row.id, data: updatedData };
+        });
+
+        await batchUpdateRows(errorUpdates);
+
+        createdJobs.push({
+          jobId,
+          batchNumber,
+          rowCount: batchRows.length,
+          status: 'error',
+        });
+
+        // Continue with remaining batches instead of failing completely
+        console.error(`Batch ${batchNumber} failed, continuing with remaining batches:`, uploadError);
+      }
     }
+
+    // Calculate summary stats
+    const successfulBatches = createdJobs.filter(j => j.status === 'submitted').length;
+    const failedBatches = createdJobs.filter(j => j.status === 'error').length;
+    const totalRowsSubmitted = createdJobs
+      .filter(j => j.status === 'submitted')
+      .reduce((sum, j) => sum + j.rowCount, 0);
+
+    // Build response message
+    let message: string;
+    if (totalBatches === 1) {
+      message = `Batch job submitted with ${rows.length.toLocaleString()} rows. Processing may take 1-24 hours.`;
+    } else if (failedBatches === 0) {
+      message = `${totalBatches} batches submitted with ${rows.length.toLocaleString()} total rows. Processing may take 1-24 hours.`;
+    } else {
+      message = `${successfulBatches}/${totalBatches} batches submitted (${totalRowsSubmitted.toLocaleString()} rows). ${failedBatches} batch(es) failed.`;
+    }
+
+    return NextResponse.json({
+      // Legacy fields for single-batch compatibility
+      jobId: createdJobs[0]?.jobId,
+      azureBatchId: createdJobs[0]?.azureBatchId,
+      // New batch group fields
+      batchGroupId,
+      totalBatches,
+      totalRows: rows.length,
+      jobs: createdJobs,
+      status: failedBatches === totalBatches ? 'error' : 'submitted',
+      message,
+      createdColumns: Object.keys(outputColumnIds).length > 0
+        ? Object.entries(outputColumnIds).map(([name, id]) => ({ name, id }))
+        : [],
+      targetColumnId,
+    });
 
   } catch (error) {
     console.error('Error creating batch job:', error);

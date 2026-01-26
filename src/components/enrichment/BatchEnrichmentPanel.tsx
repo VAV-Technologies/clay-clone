@@ -35,6 +35,19 @@ interface BatchJob {
   totalCost: number;
   createdAt: string;
   completedAt?: string;
+  // Batch group fields
+  batchGroupId?: string;
+  batchNumber?: number;
+  totalBatches?: number;
+}
+
+interface BatchGroup {
+  batchGroupId: string;
+  jobs: BatchJob[];
+  totalRows: number;
+  processedCount: number;
+  totalCost: number;
+  status: string;
 }
 
 export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelProps) {
@@ -49,6 +62,11 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null);
+  const [submittedBatchInfo, setSubmittedBatchInfo] = useState<{
+    totalBatches: number;
+    totalRows: number;
+    batchGroupId?: string;
+  } | null>(null);
   const [createdColumns, setCreatedColumns] = useState<Array<{name: string, id: string}>>([]);
 
   // Active batch jobs for this table
@@ -68,6 +86,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
   useEffect(() => {
     if (isOpen) {
       setSubmittedJobId(null);
+      setSubmittedBatchInfo(null);
       setCreatedColumns([]);
       setError(null);
     }
@@ -324,6 +343,11 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
 
       const batchResult = await batchResponse.json();
       setSubmittedJobId(batchResult.jobId);
+      setSubmittedBatchInfo({
+        totalBatches: batchResult.totalBatches || 1,
+        totalRows: batchResult.totalRows,
+        batchGroupId: batchResult.batchGroupId,
+      });
       setCreatedColumns(batchResult.createdColumns || []);
 
       // Refresh table to show new column and pending statuses
@@ -568,41 +592,157 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
             </div>
 
             <div className="space-y-2">
-              {activeJobs.slice(0, 5).map((job) => (
-                <GlassCard key={job.id} padding="sm" className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className={cn(
-                      "px-2 py-0.5 text-xs font-medium rounded-full",
-                      getStatusColor(job.status)
-                    )}>
-                      {job.status}
-                    </span>
-                    <span className="text-xs text-white/40">
-                      {new Date(job.createdAt).toLocaleString()}
-                    </span>
-                  </div>
+              {/* Group jobs by batchGroupId */}
+              {(() => {
+                // Group jobs
+                const groups = new Map<string, BatchJob[]>();
+                const standaloneJobs: BatchJob[] = [];
 
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-white/60">
-                      {job.processedCount} / {job.totalRows} rows
-                    </span>
-                    {job.totalCost > 0 && (
-                      <span className="text-emerald-400">
-                        ${job.totalCost.toFixed(4)}
-                      </span>
-                    )}
-                  </div>
+                activeJobs.forEach(job => {
+                  if (job.batchGroupId) {
+                    const existing = groups.get(job.batchGroupId) || [];
+                    existing.push(job);
+                    groups.set(job.batchGroupId, existing);
+                  } else {
+                    standaloneJobs.push(job);
+                  }
+                });
 
-                  {job.status === 'processing' && (
-                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-amber-400 transition-all"
-                        style={{ width: `${(job.processedCount / job.totalRows) * 100}%` }}
-                      />
-                    </div>
-                  )}
-                </GlassCard>
-              ))}
+                // Sort group jobs by batchNumber
+                groups.forEach((jobs, key) => {
+                  groups.set(key, jobs.sort((a, b) => (a.batchNumber || 0) - (b.batchNumber || 0)));
+                });
+
+                const allItems: Array<{ type: 'group' | 'job'; data: BatchJob[] | BatchJob }> = [];
+
+                // Add groups first
+                groups.forEach((jobs) => {
+                  allItems.push({ type: 'group', data: jobs });
+                });
+
+                // Add standalone jobs
+                standaloneJobs.forEach(job => {
+                  allItems.push({ type: 'job', data: job });
+                });
+
+                return allItems.slice(0, 5).map((item, index) => {
+                  if (item.type === 'group') {
+                    const jobs = item.data as BatchJob[];
+                    const groupTotalRows = jobs.reduce((sum, j) => sum + j.totalRows, 0);
+                    const groupProcessedCount = jobs.reduce((sum, j) => sum + j.processedCount, 0);
+                    const groupTotalCost = jobs.reduce((sum, j) => sum + j.totalCost, 0);
+                    const completedBatches = jobs.filter(j => j.status === 'complete').length;
+                    const hasProcessing = jobs.some(j => ['submitted', 'processing', 'downloading'].includes(j.status));
+                    const hasError = jobs.some(j => j.status === 'error');
+
+                    let groupStatus = 'processing';
+                    if (completedBatches === jobs.length) groupStatus = 'complete';
+                    else if (hasError && !hasProcessing) groupStatus = 'error';
+
+                    return (
+                      <GlassCard key={jobs[0].batchGroupId} padding="sm" className="space-y-3">
+                        {/* Group header */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "px-2 py-0.5 text-xs font-medium rounded-full",
+                              getStatusColor(groupStatus)
+                            )}>
+                              {groupStatus}
+                            </span>
+                            <span className="text-xs text-white/50">
+                              {jobs.length} batches
+                            </span>
+                          </div>
+                          <span className="text-xs text-white/40">
+                            {new Date(jobs[0].createdAt).toLocaleString()}
+                          </span>
+                        </div>
+
+                        {/* Group progress bar */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-white/60">
+                              {groupProcessedCount.toLocaleString()} / {groupTotalRows.toLocaleString()} rows
+                            </span>
+                            {groupTotalCost > 0 && (
+                              <span className="text-emerald-400">
+                                ${groupTotalCost.toFixed(4)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-amber-400 transition-all"
+                              style={{ width: `${groupTotalRows > 0 ? (groupProcessedCount / groupTotalRows) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Individual batch pills */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {jobs.map((job) => (
+                            <div
+                              key={job.id}
+                              className={cn(
+                                "px-2 py-1 text-xs rounded-md flex items-center gap-1.5",
+                                job.status === 'complete' ? 'bg-emerald-500/20 text-emerald-400' :
+                                job.status === 'error' ? 'bg-red-500/20 text-red-400' :
+                                'bg-amber-500/20 text-amber-400'
+                              )}
+                            >
+                              <span className="font-medium">Batch {job.batchNumber}</span>
+                              {job.status === 'complete' && <Check className="w-3 h-3" />}
+                              {job.status === 'error' && <AlertCircle className="w-3 h-3" />}
+                              {['submitted', 'processing', 'downloading'].includes(job.status) && (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </GlassCard>
+                    );
+                  } else {
+                    // Single standalone job
+                    const job = item.data as BatchJob;
+                    return (
+                      <GlassCard key={job.id} padding="sm" className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className={cn(
+                            "px-2 py-0.5 text-xs font-medium rounded-full",
+                            getStatusColor(job.status)
+                          )}>
+                            {job.status}
+                          </span>
+                          <span className="text-xs text-white/40">
+                            {new Date(job.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-white/60">
+                            {job.processedCount.toLocaleString()} / {job.totalRows.toLocaleString()} rows
+                          </span>
+                          {job.totalCost > 0 && (
+                            <span className="text-emerald-400">
+                              ${job.totalCost.toFixed(4)}
+                            </span>
+                          )}
+                        </div>
+
+                        {job.status === 'processing' && (
+                          <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-amber-400 transition-all"
+                              style={{ width: `${job.totalRows > 0 ? (job.processedCount / job.totalRows) * 100 : 0}%` }}
+                            />
+                          </div>
+                        )}
+                      </GlassCard>
+                    );
+                  }
+                });
+              })()}
             </div>
           </div>
         )}
@@ -613,13 +753,26 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
             <div className="flex items-start gap-2">
               <Check className="w-4 h-4 text-emerald-400 mt-0.5" />
               <div className="text-sm flex-1">
-                <p className="font-medium text-emerald-400">Batch job submitted!</p>
-                <p className="text-white/60 text-xs mt-1">
-                  Job ID: <code className="text-white/80 bg-white/5 px-1 rounded">{submittedJobId}</code>
+                <p className="font-medium text-emerald-400">
+                  {submittedBatchInfo && submittedBatchInfo.totalBatches > 1
+                    ? `${submittedBatchInfo.totalBatches} batches submitted!`
+                    : 'Batch job submitted!'}
                 </p>
-                <p className="text-white/60 text-xs mt-1">
-                  Processing {getRowCountText()}. Results will appear in 1-24 hours.
-                </p>
+                {submittedBatchInfo && submittedBatchInfo.totalBatches > 1 ? (
+                  <p className="text-white/60 text-xs mt-1">
+                    Processing {submittedBatchInfo.totalRows.toLocaleString()} rows across {submittedBatchInfo.totalBatches} batches.
+                    Results will appear in 1-24 hours.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-white/60 text-xs mt-1">
+                      Job ID: <code className="text-white/80 bg-white/5 px-1 rounded">{submittedJobId}</code>
+                    </p>
+                    <p className="text-white/60 text-xs mt-1">
+                      Processing {getRowCountText()}. Results will appear in 1-24 hours.
+                    </p>
+                  </>
+                )}
 
                 {/* Show created columns */}
                 {(outputColumnName || createdColumns.length > 0) && (
@@ -641,6 +794,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                 <button
                   onClick={() => {
                     setSubmittedJobId(null);
+                    setSubmittedBatchInfo(null);
                     setCreatedColumns([]);
                     setPrompt('');
                     setOutputColumnName('Batch Output');

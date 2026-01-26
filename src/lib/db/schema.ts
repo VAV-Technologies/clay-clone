@@ -130,6 +130,11 @@ export const batchEnrichmentJobs = sqliteTable('batch_enrichment_jobs', {
   configId: text('config_id').notNull(),
   targetColumnId: text('target_column_id').notNull(),
 
+  // Batch grouping - for splitting large batches (>25K rows)
+  batchGroupId: text('batch_group_id'),      // Links related batches together
+  batchNumber: integer('batch_number'),       // 1, 2, 3, etc.
+  totalBatches: integer('total_batches'),     // Total batches in group
+
   // Azure IDs
   azureFileId: text('azure_file_id'),
   azureBatchId: text('azure_batch_id'),
