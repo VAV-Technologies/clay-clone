@@ -12,6 +12,7 @@ export function middleware(request: NextRequest) {
     pathname === '/auth' ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/cron') ||
+    pathname.startsWith('/api/admin') ||
     pathname.startsWith('/api/fix-stuck') ||
     pathname.startsWith('/api/nuke-table') ||
     pathname.startsWith('/_next') ||
