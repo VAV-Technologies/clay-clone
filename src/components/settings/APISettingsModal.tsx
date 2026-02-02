@@ -97,7 +97,7 @@ export function APISettingsModal({ isOpen, onClose }: APISettingsModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-md mx-4 bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+      <div className="relative w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
