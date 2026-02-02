@@ -13,6 +13,7 @@ import {
 } from '@/lib/ninja-email';
 
 // Vercel function config
+export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const BATCH_SIZE = 50; // Process 50 rows per cron run (rate limited)
