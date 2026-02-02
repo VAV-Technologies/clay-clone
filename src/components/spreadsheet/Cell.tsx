@@ -31,6 +31,7 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const errorBadgeRef = useRef<HTMLDivElement>(null);
+  const hasInitializedEdit = useRef(false);
 
   const cellData = row.data[column.id] as CellValue | undefined;
   const displayValue = cellData?.value ?? '';
@@ -102,10 +103,14 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
   };
 
   useEffect(() => {
-    if (isEditing) {
+    if (isEditing && !hasInitializedEdit.current) {
       setEditValue(displayValue?.toString() ?? '');
       inputRef.current?.focus();
       inputRef.current?.select();
+      hasInitializedEdit.current = true;
+    }
+    if (!isEditing) {
+      hasInitializedEdit.current = false;
     }
   }, [isEditing, displayValue]);
 
