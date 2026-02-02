@@ -56,17 +56,17 @@ export async function GET(request: NextRequest) {
 
       const job = activeJobs[0];
 
-      // Get API key from job or env
-      const apiKey = job.apiKey || process.env.MAILNINJA_API_KEY;
+      // Get API key from env variable
+      const apiKey = process.env.MAILNINJA_API_KEY;
       if (!apiKey) {
-        // Mark job as error if no API key
+        // Mark job as error if no API key configured
         await db.update(schema.ninjaEmailJobs)
           .set({
             status: 'error',
             updatedAt: new Date(),
           })
           .where(eq(schema.ninjaEmailJobs.id, job.id));
-        console.error(`Job ${job.id} has no API key configured`);
+        console.error('MAILNINJA_API_KEY environment variable not configured');
         continue;
       }
 

@@ -76,15 +76,14 @@ export async function POST(request: NextRequest) {
       lastNameColumnId,
       domainColumnId,
       outputColumnName,
-      apiKey,
     } = body;
 
-    // Get API key from body or header or env
-    const ninjaApiKey = apiKey || request.headers.get('X-MailNinja-Key') || process.env.MAILNINJA_API_KEY;
+    // Use env variable for API key
+    const ninjaApiKey = process.env.MAILNINJA_API_KEY;
     if (!ninjaApiKey) {
       return NextResponse.json(
-        { error: 'MailNinja API key is required. Please add it in Settings.' },
-        { status: 400 }
+        { error: 'MailNinja API key not configured on server' },
+        { status: 500 }
       );
     }
 
@@ -160,7 +159,7 @@ export async function POST(request: NextRequest) {
       firstNameColumnId: inputMode === 'firstLast' ? firstNameColumnId : null,
       lastNameColumnId: inputMode === 'firstLast' ? lastNameColumnId : null,
       domainColumnId,
-      apiKey: ninjaApiKey, // Store API key with job for cron processing
+      apiKey: null, // API key from env variable only
       rowIds,
       currentIndex: 0,
       status: 'pending',

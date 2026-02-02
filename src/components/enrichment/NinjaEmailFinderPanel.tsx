@@ -155,23 +155,9 @@ export function NinjaEmailFinderPanel({ isOpen, onClose }: NinjaEmailFinderPanel
     return { name: getName(), domain: getDomain() };
   };
 
-  // Get API key from localStorage
-  const getApiKey = () => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('mailninja_api_key') || '';
-    }
-    return '';
-  };
-
   // Test 1 row
   const handleTest = async () => {
     if (!currentTable || !isFormValid()) return;
-
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      setError('Please configure your MailNinja API key in Settings first');
-      return;
-    }
 
     setIsTesting(true);
     setTestResult(null);
@@ -190,7 +176,6 @@ export function NinjaEmailFinderPanel({ isOpen, onClose }: NinjaEmailFinderPanel
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-MailNinja-Key': apiKey,
         },
         body: JSON.stringify({
           tableId: currentTable.id,
@@ -222,12 +207,6 @@ export function NinjaEmailFinderPanel({ isOpen, onClose }: NinjaEmailFinderPanel
   const handleSubmit = async () => {
     if (!currentTable || !isFormValid()) return;
 
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      setError('Please configure your MailNinja API key in Settings first');
-      return;
-    }
-
     setIsSubmitting(true);
     setError(null);
     setSubmittedJobId(null);
@@ -242,7 +221,6 @@ export function NinjaEmailFinderPanel({ isOpen, onClose }: NinjaEmailFinderPanel
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-MailNinja-Key': apiKey,
         },
         body: JSON.stringify({
           tableId: currentTable.id,
@@ -253,7 +231,6 @@ export function NinjaEmailFinderPanel({ isOpen, onClose }: NinjaEmailFinderPanel
           lastNameColumnId: inputMode === 'firstLast' ? lastNameColumnId : undefined,
           domainColumnId,
           outputColumnName: outputColumnName.trim(),
-          apiKey, // Pass API key to store with job
         }),
       });
 
