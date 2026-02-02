@@ -163,42 +163,13 @@ export function cleanDomain(domain: string): string {
   return cleaned;
 }
 
-// Token cache (in-memory, will reset on cold starts)
-let cachedToken: { token: string; expiresAt: number } | null = null;
-
 /**
- * Get or refresh the MailTester Ninja API token
+ * Get verification token - for backwards compatibility, just returns the API key
+ * The API now supports direct key access, so no token exchange needed
  */
 export async function getVerificationToken(apiKey: string): Promise<string> {
-  // Check if we have a valid cached token (with 5 min buffer)
-  const now = Date.now();
-  if (cachedToken && cachedToken.expiresAt > now + 5 * 60 * 1000) {
-    return cachedToken.token;
-  }
-
-  // Get new token from API
-  const response = await fetch('https://api.mailtester.ninja/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ api_key: apiKey }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to get API token: ${response.status} ${errorText}`);
-  }
-
-  const data = await response.json();
-
-  // Cache the token (assume 1 hour validity if not specified)
-  cachedToken = {
-    token: data.token,
-    expiresAt: now + (data.expires_in || 3600) * 1000,
-  };
-
-  return cachedToken.token;
+  // Direct key access - just return the API key itself
+  return apiKey;
 }
 
 /**
@@ -226,27 +197,53 @@ export async function findEmail(
   }
 
   try {
-    // MailTester Ninja expects "Name, domain" format
-    const query = `${cleanedName}, ${cleanedDomain}`;
+    // Generate email variations to test
+    const nameParts = cleanedName.toLowerCase().split(' ');
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts[nameParts.length - 1] || '';
+    const firstInitial = firstName.charAt(0);
+    const lastInitial = lastName.charAt(0);
 
-    const response = await fetch('https://api.mailtester.ninja/verify', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ query }),
-    });
+    // Common email formats to try
+    const emailVariations = [
+      `${firstName}.${lastName}@${cleanedDomain}`,
+      `${firstName}${lastName}@${cleanedDomain}`,
+      `${firstInitial}${lastName}@${cleanedDomain}`,
+      `${firstName}@${cleanedDomain}`,
+      `${firstName}${lastInitial}@${cleanedDomain}`,
+      `${firstInitial}.${lastName}@${cleanedDomain}`,
+    ].filter(e => e && !e.startsWith('.') && !e.startsWith('@'));
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: `API error: ${response.status} ${errorText}` };
+    const results: VerificationResult[] = [];
+
+    // Test each email variation
+    for (const email of emailVariations) {
+      const response = await fetch(`https://happy.mailtester.ninja/ninja?email=${encodeURIComponent(email)}&key=${encodeURIComponent(token)}`, {
+        method: 'GET',
+      });
+
+      if (!response.ok) {
+        continue; // Skip failed requests
+      }
+
+      const data = await response.json();
+
+      // Map API response to our format
+      const status = mapApiStatus(data.code || data.message);
+      results.push({
+        email,
+        status,
+        isCatchAll: data.code === 'catch-all' || data.message?.toLowerCase().includes('catch'),
+      });
+
+      // If we found an accepted email, we can stop
+      if (status === 'accepted') {
+        break;
+      }
+
+      // Rate limit between requests
+      await delay(RATE_LIMIT_DELAY);
     }
-
-    const data = await response.json();
-
-    // The API returns an array of tested emails with their status
-    const results: VerificationResult[] = data.results || [];
 
     // Select the best email based on priority
     const bestResult = selectBestEmail(results);
@@ -273,6 +270,40 @@ export async function findEmail(
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
+}
+
+/**
+ * Map API response code/message to our status format
+ */
+function mapApiStatus(codeOrMessage: string): VerificationResult['status'] {
+  const lower = (codeOrMessage || '').toLowerCase();
+
+  if (lower === 'ok' || lower === 'accepted' || lower.includes('accepted')) {
+    return 'accepted';
+  }
+  if (lower.includes('catch') || lower.includes('catch-all')) {
+    return 'catch-all';
+  }
+  if (lower.includes('limited') || lower.includes('quota')) {
+    return 'limited';
+  }
+  if (lower.includes('reject') || lower === 'rejected' || lower === 'invalid') {
+    return 'rejected';
+  }
+  if (lower.includes('no mx') || lower.includes('no_mx')) {
+    return 'no mx';
+  }
+  if (lower.includes('mx error') || lower.includes('mx_error')) {
+    return 'mx error';
+  }
+  if (lower.includes('timeout')) {
+    return 'timeout';
+  }
+  if (lower.includes('spam')) {
+    return 'spam';
+  }
+
+  return 'rejected'; // Default to rejected for unknown statuses
 }
 
 /**
