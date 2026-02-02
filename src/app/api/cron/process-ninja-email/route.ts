@@ -24,27 +24,6 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    // Get API key
-    const apiKey = process.env.MAILNINJA_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({
-        message: 'MAILNINJA_API_KEY not configured',
-        processed: 0,
-      });
-    }
-
-    // Get API token
-    let token: string;
-    try {
-      token = await getVerificationToken(apiKey);
-    } catch (error) {
-      console.error('Failed to get ninja API token:', error);
-      return NextResponse.json({
-        message: 'Failed to get API token',
-        error: (error as Error).message,
-      }, { status: 500 });
-    }
-
     let totalProcessed = 0;
     let totalFound = 0;
     let totalNotFound = 0;
@@ -76,6 +55,35 @@ export async function GET(request: NextRequest) {
       }
 
       const job = activeJobs[0];
+
+      // Get API key from job or env
+      const apiKey = job.apiKey || process.env.MAILNINJA_API_KEY;
+      if (!apiKey) {
+        // Mark job as error if no API key
+        await db.update(schema.ninjaEmailJobs)
+          .set({
+            status: 'error',
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.ninjaEmailJobs.id, job.id));
+        console.error(`Job ${job.id} has no API key configured`);
+        continue;
+      }
+
+      // Get API token
+      let token: string;
+      try {
+        token = await getVerificationToken(apiKey);
+      } catch (error) {
+        console.error(`Failed to get API token for job ${job.id}:`, error);
+        await db.update(schema.ninjaEmailJobs)
+          .set({
+            status: 'error',
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.ninjaEmailJobs.id, job.id));
+        continue;
+      }
 
       // Check for stale jobs
       const updatedAt = job.updatedAt ? new Date(job.updatedAt).getTime() : 0;

@@ -185,6 +185,7 @@ function runLocalMigrations(sqlite: Database.Database) {
       first_name_column_id TEXT,
       last_name_column_id TEXT,
       domain_column_id TEXT NOT NULL,
+      api_key TEXT,
       row_ids TEXT NOT NULL,
       current_index INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'pending',

@@ -35,12 +35,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get API key
-    const apiKey = process.env.MAILNINJA_API_KEY;
+    // Get API key from header or env var
+    const apiKey = request.headers.get('X-MailNinja-Key') || process.env.MAILNINJA_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'MAILNINJA_API_KEY not configured' },
-        { status: 500 }
+        { error: 'MailNinja API key not configured. Please add it in Settings.' },
+        { status: 400 }
       );
     }
 

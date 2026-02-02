@@ -223,6 +223,8 @@ export const ninjaEmailJobs = sqliteTable('ninja_email_jobs', {
   firstNameColumnId: text('first_name_column_id'),
   lastNameColumnId: text('last_name_column_id'),
   domainColumnId: text('domain_column_id').notNull(),
+  // API key for processing (stored encrypted in production)
+  apiKey: text('api_key'),
   // Row tracking
   rowIds: text('row_ids', { mode: 'json' }).notNull().$type<string[]>(),
   currentIndex: integer('current_index').notNull().default(0),
