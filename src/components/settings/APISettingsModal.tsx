@@ -104,7 +104,7 @@ export function APISettingsModal({ isOpen, onClose }: APISettingsModalProps) {
             <div className="p-2 rounded-lg bg-lavender/20">
               <Key className="w-5 h-5 text-lavender" />
             </div>
-            <h2 className="text-lg font-semibold text-white">API Settings</h2>
+            <h2 className="text-lg font-semibold text-white">API Settings</h2>{/* v2 */}
           </div>
           <button
             onClick={onClose}
