@@ -211,3 +211,33 @@ export type EnrichmentJob = typeof enrichmentJobs.$inferSelect;
 export type NewEnrichmentJob = typeof enrichmentJobs.$inferInsert;
 export type BatchEnrichmentJob = typeof batchEnrichmentJobs.$inferSelect;
 export type NewBatchEnrichmentJob = typeof batchEnrichmentJobs.$inferInsert;
+
+// Ninja Email Finder jobs - for finding emails using MailTester Ninja API
+export const ninjaEmailJobs = sqliteTable('ninja_email_jobs', {
+  id: text('id').primaryKey(),
+  tableId: text('table_id').notNull(),
+  targetColumnId: text('target_column_id').notNull(),
+  // Input column configuration
+  inputMode: text('input_mode', { enum: ['fullName', 'firstLast'] }).notNull(),
+  fullNameColumnId: text('full_name_column_id'),
+  firstNameColumnId: text('first_name_column_id'),
+  lastNameColumnId: text('last_name_column_id'),
+  domainColumnId: text('domain_column_id').notNull(),
+  // Row tracking
+  rowIds: text('row_ids', { mode: 'json' }).notNull().$type<string[]>(),
+  currentIndex: integer('current_index').notNull().default(0),
+  // Status: pending, running, complete, cancelled, error
+  status: text('status', { enum: ['pending', 'running', 'complete', 'cancelled', 'error'] }).notNull().default('pending'),
+  // Stats
+  processedCount: integer('processed_count').notNull().default(0),
+  foundCount: integer('found_count').notNull().default(0),
+  notFoundCount: integer('not_found_count').notNull().default(0),
+  errorCount: integer('error_count').notNull().default(0),
+  // Timestamps
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+});
+
+export type NinjaEmailJob = typeof ninjaEmailJobs.$inferSelect;
+export type NewNinjaEmailJob = typeof ninjaEmailJobs.$inferInsert;

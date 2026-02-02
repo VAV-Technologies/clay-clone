@@ -127,6 +127,75 @@ function runLocalMigrations(sqlite: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_tables_project ON tables(project_id);
     CREATE INDEX IF NOT EXISTS idx_columns_table ON columns(table_id);
     CREATE INDEX IF NOT EXISTS idx_rows_table ON rows(table_id);
+
+    -- Enrichment jobs table
+    CREATE TABLE IF NOT EXISTS enrichment_jobs (
+      id TEXT PRIMARY KEY,
+      table_id TEXT NOT NULL,
+      config_id TEXT NOT NULL,
+      target_column_id TEXT NOT NULL,
+      row_ids TEXT NOT NULL,
+      current_index INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      processed_count INTEGER NOT NULL DEFAULT 0,
+      error_count INTEGER NOT NULL DEFAULT 0,
+      total_cost REAL NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      completed_at INTEGER
+    );
+
+    -- Batch enrichment jobs table
+    CREATE TABLE IF NOT EXISTS batch_enrichment_jobs (
+      id TEXT PRIMARY KEY,
+      table_id TEXT NOT NULL,
+      config_id TEXT NOT NULL,
+      target_column_id TEXT NOT NULL,
+      batch_group_id TEXT,
+      batch_number INTEGER,
+      total_batches INTEGER,
+      azure_file_id TEXT,
+      azure_batch_id TEXT,
+      azure_output_file_id TEXT,
+      azure_error_file_id TEXT,
+      row_mappings TEXT NOT NULL,
+      azure_status TEXT NOT NULL DEFAULT 'pending_upload',
+      status TEXT NOT NULL DEFAULT 'pending',
+      total_rows INTEGER NOT NULL DEFAULT 0,
+      processed_count INTEGER NOT NULL DEFAULT 0,
+      success_count INTEGER NOT NULL DEFAULT 0,
+      error_count INTEGER NOT NULL DEFAULT 0,
+      total_cost REAL NOT NULL DEFAULT 0,
+      total_input_tokens INTEGER NOT NULL DEFAULT 0,
+      total_output_tokens INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      submitted_at INTEGER,
+      completed_at INTEGER
+    );
+
+    -- Ninja email jobs table
+    CREATE TABLE IF NOT EXISTS ninja_email_jobs (
+      id TEXT PRIMARY KEY,
+      table_id TEXT NOT NULL,
+      target_column_id TEXT NOT NULL,
+      input_mode TEXT NOT NULL,
+      full_name_column_id TEXT,
+      first_name_column_id TEXT,
+      last_name_column_id TEXT,
+      domain_column_id TEXT NOT NULL,
+      row_ids TEXT NOT NULL,
+      current_index INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      processed_count INTEGER NOT NULL DEFAULT 0,
+      found_count INTEGER NOT NULL DEFAULT 0,
+      not_found_count INTEGER NOT NULL DEFAULT 0,
+      error_count INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      completed_at INTEGER
+    );
   `);
 }
 
