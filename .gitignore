@@ -26,6 +26,7 @@ yarn-error.log*
 # Local env files
 .env*.local
 .env
+.env.vercel
 
 # Vercel
 .vercel
@@ -42,12 +43,10 @@ next-env.d.ts
 # IDE
 .idea
 .vscode
+.claude/
 
 # Service account
 service-account.json
-
-.vercel
-.env*.local
 
 # Temp files and executables
 *.temp

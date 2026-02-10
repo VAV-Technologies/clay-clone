@@ -18,7 +18,7 @@ jobs:
           # At ~50 rows per batch, ~1 batch per call = 50 rows per call
           # 5 calls x 50 rows = 250 rows per 5-min run = 3,000 rows/hour
 
-          APP_URL="${{ vars.VERCEL_APP_URL || 'https://dataflow-pi.vercel.app' }}"
+          APP_URL="${{ vars.VERCEL_APP_URL || 'https://clay-clone-omega.vercel.app' }}"
           echo "Starting enrichment processing at $(date)"
 
           for i in {1..5}; do
