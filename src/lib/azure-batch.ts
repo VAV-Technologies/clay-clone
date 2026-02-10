@@ -4,11 +4,11 @@
 
 const API_VERSION = '2025-01-01-preview';
 
-// Hardcoded Azure Batch API config (dedicated for batch processing)
+// Azure Batch API config (dedicated for batch processing)
 const BATCH_CONFIG = {
-  endpoint: 'https://mama-mkof4van-eastus2.cognitiveservices.azure.com',
-  apiKey: 'EAUz04QAIN1DxUG2MijyS0k1ZuPgDbLIIQhk1irZooGRBp3LJCQmJQQJ99CAACHYHv6XJ3w3AAAAACOGzQm5',
-  deployment: 'gpt-4.1-mini',
+  endpoint: process.env.AZURE_BATCH_ENDPOINT || 'https://mama-mkof4van-eastus2.cognitiveservices.azure.com',
+  apiKey: process.env.AZURE_BATCH_API_KEY || 'EAUz04QAIN1DxUG2MijyS0k1ZuPgDbLIIQhk1irZooGRBp3LJCQmJQQJ99CAACHYHv6XJ3w3AAAAACOGzQm5',
+  deployment: process.env.AZURE_BATCH_DEPLOYMENT || 'gpt-4.1-mini',
 };
 
 // Model mapping for batch processing

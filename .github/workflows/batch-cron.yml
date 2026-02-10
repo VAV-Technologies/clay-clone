@@ -15,9 +15,10 @@ jobs:
         run: |
           echo "Checking batch jobs at $(date)"
 
+          APP_URL="${{ vars.VERCEL_APP_URL || 'https://dataflow-pi.vercel.app' }}"
           response=$(curl -s --max-time 120 \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "https://dataflow-pi.vercel.app/api/cron/process-batch")
+            "${APP_URL}/api/cron/process-batch")
 
           echo "$response"
 

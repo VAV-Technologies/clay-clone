@@ -18,12 +18,13 @@ jobs:
           # At ~50 rows per batch, ~1 batch per call = 50 rows per call
           # 5 calls x 50 rows = 250 rows per 5-min run = 3,000 rows/hour
 
+          APP_URL="${{ vars.VERCEL_APP_URL || 'https://dataflow-pi.vercel.app' }}"
           echo "Starting enrichment processing at $(date)"
 
           for i in {1..5}; do
             echo ""
             echo "=== Call $i at $(date) ==="
-            response=$(curl -s --max-time 65 "https://dataflow-pi.vercel.app/api/cron/process-enrichment?secret=${{ secrets.CRON_SECRET }}")
+            response=$(curl -s --max-time 65 "${APP_URL}/api/cron/process-enrichment?secret=${{ secrets.CRON_SECRET }}")
             echo "$response"
 
             # If no active jobs, stop early

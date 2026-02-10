@@ -48,3 +48,8 @@ service-account.json
 
 .vercel
 .env*.local
+
+# Temp files and executables
+*.temp
+*.exe
+nul
