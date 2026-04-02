@@ -11,7 +11,8 @@ interface AddDataModalProps {
   isOpen: boolean;
   onClose: () => void;
   tableId: string;
-  onComplete: () => void;
+  workbookId?: string;
+  onComplete: (newSheetId?: string) => void;
 }
 
 const SENIORITY_OPTIONS = [
@@ -171,8 +172,8 @@ function CheckboxGroup({ options, selected, onChange }: {
 
 // ─── Main Component ────────────────────────────────────────────────────────
 
-export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataModalProps) {
-  const { columns, rows, selectedRows, addColumn, fetchTable } = useTableStore();
+export function AddDataModal({ isOpen, onClose, tableId, workbookId, onComplete }: AddDataModalProps) {
+  const { columns, rows, selectedRows, addColumn, fetchTable, addSheet, switchSheet, fetchWorkbook } = useTableStore();
   const abortRef = useRef<AbortController | null>(null);
 
   // Step state
@@ -424,25 +425,37 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
     if (items.length === 0) return;
 
     setStep('searching');
-    setSearchStatus('Adding rows to table...');
+    setSearchStatus('Creating new sheet...');
 
     try {
-      // Create/find output columns
+      // Determine the target table — create a new sheet if inside a workbook
+      let targetTableId = tableId;
+
+      if (workbookId) {
+        // Create a new sheet in the workbook for this dataset
+        const sheetName = isCompanyMode ? 'Companies' : 'People';
+        const res = await fetch('/api/tables', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId: workbookId, name: sheetName }),
+        });
+        if (!res.ok) throw new Error('Failed to create new sheet');
+        const newTable = await res.json();
+        targetTableId = newTable.id;
+      }
+
+      setSearchStatus('Adding columns...');
+
+      // Create output columns on the target table
       const colIdMap: Record<string, string> = {};
       for (const outCol of outputCols) {
-        const existing = columns.find(c => c.name.toLowerCase() === outCol.name.toLowerCase());
-        if (existing) {
-          colIdMap[outCol.key] = existing.id;
-        } else {
-          const res = await fetch('/api/columns', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tableId, name: outCol.name, type: outCol.type }),
-          });
-          const col = await res.json();
-          addColumn(col);
-          colIdMap[outCol.key] = col.id;
-        }
+        const res = await fetch('/api/columns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tableId: targetTableId, name: outCol.name, type: outCol.type }),
+        });
+        const col = await res.json();
+        colIdMap[outCol.key] = col.id;
       }
 
       // Build rows
@@ -464,13 +477,19 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
         await fetch('/api/rows', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tableId, rows: batch }),
+          body: JSON.stringify({ tableId: targetTableId, rows: batch }),
         });
         setSearchStatus(`Added ${Math.min(i + BATCH_SIZE, rowData.length)} / ${rowData.length} rows...`);
       }
 
-      await fetchTable(tableId);
-      onComplete();
+      // If we created a new sheet, refresh the workbook and switch to it
+      if (workbookId && targetTableId !== tableId) {
+        await fetchWorkbook(workbookId, targetTableId);
+        onComplete(targetTableId);
+      } else {
+        await fetchTable(tableId);
+        onComplete();
+      }
     } catch (err) {
       setError((err as Error).message);
       setStep('results');

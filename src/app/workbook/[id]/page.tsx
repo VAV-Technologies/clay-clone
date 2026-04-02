@@ -180,6 +180,7 @@ function WorkbookContent() {
             isOpen={isAddDataOpen}
             onClose={() => setIsAddDataOpen(false)}
             tableId={tableId}
+            workbookId={workbookId}
             onComplete={() => setIsAddDataOpen(false)}
           />
         </>
