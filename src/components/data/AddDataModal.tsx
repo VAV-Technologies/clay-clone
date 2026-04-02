@@ -5,7 +5,7 @@ import { Search, Loader2, AlertCircle, Check, ChevronDown, UserPlus } from 'luci
 import { cn } from '@/lib/utils';
 import { Modal, GlassButton } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
-import type { ClaySearchFilters, ClayPerson } from '@/lib/clay-api';
+import type { ClaySearchFilters, ClayPerson, ClayCompanySearchFilters, ClayCompany } from '@/lib/clay-api';
 
 interface AddDataModalProps {
   isOpen: boolean;
@@ -33,7 +33,7 @@ const COMPANY_SIZE_OPTIONS = [
   '1', '2-10', '11-50', '51-200', '201-500', '501-1000', '1001-5000', '5001-10000', '10001+',
 ];
 
-const OUTPUT_COLUMNS = [
+const PEOPLE_OUTPUT_COLUMNS = [
   { name: 'First Name', type: 'text', key: 'first_name' },
   { name: 'Last Name', type: 'text', key: 'last_name' },
   { name: 'Full Name', type: 'text', key: 'full_name' },
@@ -42,6 +42,28 @@ const OUTPUT_COLUMNS = [
   { name: 'Company Domain', type: 'text', key: 'company_domain' },
   { name: 'LinkedIn URL', type: 'url', key: 'linkedin_url' },
 ];
+
+const COMPANY_OUTPUT_COLUMNS = [
+  { name: 'Company Name', type: 'text', key: 'name' },
+  { name: 'Type', type: 'text', key: 'type' },
+  { name: 'Size', type: 'text', key: 'size' },
+  { name: 'Industry', type: 'text', key: 'industry' },
+  { name: 'Country', type: 'text', key: 'country' },
+  { name: 'Location', type: 'text', key: 'location' },
+  { name: 'Domain', type: 'text', key: 'domain' },
+  { name: 'LinkedIn URL', type: 'url', key: 'linkedin_url' },
+  { name: 'Annual Revenue', type: 'text', key: 'annual_revenue' },
+  { name: 'Description', type: 'text', key: 'description' },
+];
+
+const COMPANY_TYPE_OPTIONS = [
+  'Privately Held', 'Public Company', 'Self Owned', 'Partnership', 'Non Profit',
+];
+
+const COMPANY_SIZE_CODE_MAP: Record<string, string> = {
+  '1': '1', '2-10': '2', '11-50': '10', '51-200': '50', '201-500': '200',
+  '501-1000': '500', '1001-5000': '1000', '5001-10000': '5000', '10001+': '10000',
+};
 
 // ─── Helper Components ─────────────────────────────────────────────────────
 
@@ -139,7 +161,10 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
   // Step state
   const [step, setStep] = useState<'configure' | 'searching' | 'results'>('configure');
 
-  // Domain input
+  // Search type
+  const [searchType, setSearchType] = useState<'people' | 'companies'>('people');
+
+  // Domain input (people mode)
   const [domainMode, setDomainMode] = useState<'manual' | 'column'>('manual');
   const [manualDomains, setManualDomains] = useState('');
   const [domainColumnId, setDomainColumnId] = useState('');
@@ -188,17 +213,39 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
   const [limit, setLimit] = useState('50');
   const [limitPerCompany, setLimitPerCompany] = useState('');
 
+  // Company-specific filters
+  const [cIndustries, setCIndustries] = useState('');
+  const [cIndustriesExclude, setCIndustriesExclude] = useState('');
+  const [cSizes, setCSizes] = useState<string[]>([]);
+  const [cCountries, setCCountries] = useState('');
+  const [cCountriesExclude, setCCountriesExclude] = useState('');
+  const [cDescKeywords, setCDescKeywords] = useState('');
+  const [cDescExclude, setCDescExclude] = useState('');
+  const [cRevenues, setCRevenues] = useState('');
+  const [cFunding, setCFunding] = useState('');
+  const [cTypes, setCTypes] = useState<string[]>([]);
+  const [cSemantic, setCSemantic] = useState('');
+  const [cTechProducts, setCTechProducts] = useState('');
+  const [cTechVendors, setCTechVendors] = useState('');
+  const [cMinMembers, setCMinMembers] = useState('');
+  const [cMaxMembers, setCMaxMembers] = useState('');
+  const [cMinFollowers, setCMinFollowers] = useState('');
+  const [cLimit, setCLimit] = useState('50');
+  const [cDomains, setCDomains] = useState('');
+
   // Search state
   const [searchStatus, setSearchStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<ClayPerson[]>([]);
+  const [peopleResults, setPeopleResults] = useState<ClayPerson[]>([]);
+  const [companyResults, setCompanyResults] = useState<ClayCompany[]>([]);
 
   // Reset on close
   useEffect(() => {
     if (!isOpen) {
       setStep('configure');
       setError(null);
-      setResults([]);
+      setPeopleResults([]);
+      setCompanyResults([]);
       setSearchStatus('');
     }
   }, [isOpen]);
@@ -239,60 +286,98 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
 
   // ─── Search ──────────────────────────────────────────────────────────────
 
-  const handleSearch = async () => {
-    const domains = getDomains();
-    if (domains.length === 0) return;
+  // Company filter counts
+  const cIndustryCount = countActive(cIndustries, cIndustriesExclude);
+  const cLocationCount = countActive(cCountries, cCountriesExclude);
+  const cDescCount = countActive(cDescKeywords, cDescExclude, cSemantic);
+  const cRevenueCount = countActive(cRevenues, cFunding, cTypes);
+  const cTechCount = countActive(cTechProducts, cTechVendors);
+  const cMemberCount = countActive(cMinMembers, cMaxMembers, cMinFollowers);
 
+  const handleSearch = async () => {
     setStep('searching');
     setError(null);
     setSearchStatus('Starting search...');
 
-    const filters: ClaySearchFilters = {
-      job_title_keywords: splitCSV(titleKeywords),
-      job_title_exclude_keywords: splitCSV(titleExclude),
-      job_title_mode: titleMode as 'smart' | 'contain' | 'exact',
-      seniority_levels: seniority,
-      job_functions: jobFunctions,
-      job_description_keywords: splitCSV(jobDescKeywords),
-      countries_include: splitCSV(countriesInclude),
-      countries_exclude: splitCSV(countriesExclude),
-      states_include: splitCSV(statesInclude),
-      states_exclude: splitCSV(statesExclude),
-      cities_include: splitCSV(citiesInclude),
-      cities_exclude: splitCSV(citiesExclude),
-      regions_include: splitCSV(regionsInclude),
-      regions_exclude: splitCSV(regionsExclude),
-      company_sizes: companySizes,
-      company_industries_include: splitCSV(industriesInclude),
-      company_industries_exclude: splitCSV(industriesExclude),
-      company_description_keywords: splitCSV(companyKeywords),
-      company_description_keywords_exclude: splitCSV(companyKeywordsExclude),
-      headline_keywords: splitCSV(headlineKeywords),
-      about_keywords: splitCSV(aboutKeywords),
-      profile_keywords: splitCSV(profileKeywords),
-      certification_keywords: splitCSV(certKeywords),
-      school_names: splitCSV(schoolNames),
-      languages: splitCSV(languages),
-      names: splitCSV(names),
-      connection_count: toNum(minConnections),
-      max_connection_count: toNum(maxConnections),
-      follower_count: toNum(minFollowers),
-      max_follower_count: toNum(maxFollowers),
-      experience_count: toNum(minExperience),
-      max_experience_count: toNum(maxExperience),
-      current_role_min_months: toNum(minRoleMonths),
-      current_role_max_months: toNum(maxRoleMonths),
-      include_past_experiences: includePast,
-      limit: toNum(limit),
-      limit_per_company: toNum(limitPerCompany),
-    };
-
     try {
       abortRef.current = new AbortController();
+      let bodyPayload: Record<string, unknown>;
+
+      if (searchType === 'companies') {
+        const companyFilters: ClayCompanySearchFilters = {
+          industries: splitCSV(cIndustries),
+          industries_exclude: splitCSV(cIndustriesExclude),
+          sizes: cSizes.map(s => COMPANY_SIZE_CODE_MAP[s] || s),
+          country_names: splitCSV(cCountries),
+          country_names_exclude: splitCSV(cCountriesExclude),
+          description_keywords: splitCSV(cDescKeywords),
+          description_keywords_exclude: splitCSV(cDescExclude),
+          annual_revenues: splitCSV(cRevenues),
+          funding_amounts: splitCSV(cFunding),
+          types: cTypes,
+          semantic_description: cSemantic,
+          technographics_products: splitCSV(cTechProducts),
+          technographics_vendors: splitCSV(cTechVendors),
+          minimum_member_count: toNum(cMinMembers),
+          maximum_member_count: toNum(cMaxMembers),
+          minimum_follower_count: toNum(cMinFollowers),
+          company_identifier: splitCSV(cDomains),
+          limit: toNum(cLimit),
+        };
+        bodyPayload = { searchType: 'companies', filters: companyFilters };
+      } else {
+        const domains = getDomains();
+        if (domains.length === 0) {
+          setError('Enter at least one domain for people search');
+          setStep('configure');
+          return;
+        }
+        const filters: ClaySearchFilters = {
+          job_title_keywords: splitCSV(titleKeywords),
+          job_title_exclude_keywords: splitCSV(titleExclude),
+          job_title_mode: titleMode as 'smart' | 'contain' | 'exact',
+          seniority_levels: seniority,
+          job_functions: jobFunctions,
+          job_description_keywords: splitCSV(jobDescKeywords),
+          countries_include: splitCSV(countriesInclude),
+          countries_exclude: splitCSV(countriesExclude),
+          states_include: splitCSV(statesInclude),
+          states_exclude: splitCSV(statesExclude),
+          cities_include: splitCSV(citiesInclude),
+          cities_exclude: splitCSV(citiesExclude),
+          regions_include: splitCSV(regionsInclude),
+          regions_exclude: splitCSV(regionsExclude),
+          company_sizes: companySizes,
+          company_industries_include: splitCSV(industriesInclude),
+          company_industries_exclude: splitCSV(industriesExclude),
+          company_description_keywords: splitCSV(companyKeywords),
+          company_description_keywords_exclude: splitCSV(companyKeywordsExclude),
+          headline_keywords: splitCSV(headlineKeywords),
+          about_keywords: splitCSV(aboutKeywords),
+          profile_keywords: splitCSV(profileKeywords),
+          certification_keywords: splitCSV(certKeywords),
+          school_names: splitCSV(schoolNames),
+          languages: splitCSV(languages),
+          names: splitCSV(names),
+          connection_count: toNum(minConnections),
+          max_connection_count: toNum(maxConnections),
+          follower_count: toNum(minFollowers),
+          max_follower_count: toNum(maxFollowers),
+          experience_count: toNum(minExperience),
+          max_experience_count: toNum(maxExperience),
+          current_role_min_months: toNum(minRoleMonths),
+          current_role_max_months: toNum(maxRoleMonths),
+          include_past_experiences: includePast,
+          limit: toNum(limit),
+          limit_per_company: toNum(limitPerCompany),
+        };
+        bodyPayload = { searchType: 'people', domains, filters };
+      }
+
       const response = await fetch('/api/add-data/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domains, filters }),
+        body: JSON.stringify(bodyPayload),
         signal: abortRef.current.signal,
       });
 
@@ -302,7 +387,11 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
       }
 
       const data = await response.json();
-      setResults(data.people || []);
+      if (searchType === 'companies') {
+        setCompanyResults(data.companies || []);
+      } else {
+        setPeopleResults(data.people || []);
+      }
       setStep('results');
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
@@ -317,7 +406,10 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
   // ─── Add to Table ────────────────────────────────────────────────────────
 
   const handleAddToTable = async () => {
-    if (results.length === 0) return;
+    const isCompanyMode = searchType === 'companies';
+    const outputCols = isCompanyMode ? COMPANY_OUTPUT_COLUMNS : PEOPLE_OUTPUT_COLUMNS;
+    const items = isCompanyMode ? companyResults : peopleResults;
+    if (items.length === 0) return;
 
     setStep('searching');
     setSearchStatus('Adding rows to table...');
@@ -325,7 +417,7 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
     try {
       // Create/find output columns
       const colIdMap: Record<string, string> = {};
-      for (const outCol of OUTPUT_COLUMNS) {
+      for (const outCol of outputCols) {
         const existing = columns.find(c => c.name.toLowerCase() === outCol.name.toLowerCase());
         if (existing) {
           colIdMap[outCol.key] = existing.id;
@@ -342,12 +434,12 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
       }
 
       // Build rows
-      const rowData = results.map(person => {
+      const rowData = items.map(item => {
         const data: Record<string, { value: string }> = {};
-        for (const outCol of OUTPUT_COLUMNS) {
+        for (const outCol of outputCols) {
           const colId = colIdMap[outCol.key];
           if (colId) {
-            data[colId] = { value: person[outCol.key as keyof ClayPerson] || '' };
+            data[colId] = { value: (item as Record<string, string>)[outCol.key] || '' };
           }
         }
         return data;
@@ -389,8 +481,22 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
         {/* ─── Step 1: Configure ──────────────────────────────────── */}
         {step === 'configure' && (
           <div className="p-4 space-y-4">
-            {/* Domain Input */}
-            <div className="space-y-2">
+            {/* Search Type Toggle */}
+            <div className="flex rounded-lg border border-white/10 overflow-hidden">
+              <button type="button" onClick={() => setSearchType('people')}
+                className={cn('flex-1 px-3 py-2 text-sm font-medium transition-colors border-r border-white/10',
+                  searchType === 'people' ? 'bg-cyan-500/20 text-white' : 'bg-white/5 text-white/50')}>
+                Find People
+              </button>
+              <button type="button" onClick={() => setSearchType('companies')}
+                className={cn('flex-1 px-3 py-2 text-sm font-medium transition-colors',
+                  searchType === 'companies' ? 'bg-cyan-500/20 text-white' : 'bg-white/5 text-white/50')}>
+                Find Companies
+              </button>
+            </div>
+
+            {/* People: Domain Input */}
+            {searchType === 'people' && <div className="space-y-2">
               <label className="text-sm font-medium text-white/70">Company Domains</label>
               <div className="flex rounded-lg border border-white/10 overflow-hidden mb-2">
                 <button
@@ -431,17 +537,17 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
               <p className="text-xs text-white/40">
                 {domainCount > 0 ? `${domainCount} domain${domainCount !== 1 ? 's' : ''} ready` : 'Enter at least one domain'}
               </p>
-            </div>
+            </div>}
 
-            {/* Results Limit (always visible) */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* People: Results Limit */}
+            {searchType === 'people' && <div className="grid grid-cols-2 gap-3">
               <NumberFilterInput label="Total Limit" value={limit} onChange={setLimit} placeholder="50" />
               <NumberFilterInput label="Per Company" value={limitPerCompany} onChange={setLimitPerCompany} placeholder="No limit" />
-            </div>
+            </div>}
 
-            {/* Filter Sections */}
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-white/70">Filters</p>
+            {/* People: Filter Sections */}
+            {searchType === 'people' && <div className="space-y-2">
+              <p className="text-sm font-medium text-white/70">People Filters</p>
 
               {/* Job & Role */}
               <FilterSection title="Job & Role" count={jobCount}>
@@ -519,7 +625,67 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
                   Include past experiences
                 </label>
               </FilterSection>
-            </div>
+            </div>}
+
+            {/* Company: Filters */}
+            {searchType === 'companies' && <>
+              <div className="grid grid-cols-2 gap-3">
+                <NumberFilterInput label="Result Limit" value={cLimit} onChange={setCLimit} placeholder="50" />
+                <TextFilterInput label="Specific Domains (optional)" value={cDomains} onChange={setCDomains} placeholder="stripe.com, shopify.com..." />
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-white/70">Company Filters</p>
+
+                <FilterSection title="Industry" count={cIndustryCount}>
+                  <TextFilterInput label="Industries" value={cIndustries} onChange={setCIndustries} placeholder="Software Development, SaaS..." />
+                  <TextFilterInput label="Exclude Industries" value={cIndustriesExclude} onChange={setCIndustriesExclude} />
+                </FilterSection>
+
+                <FilterSection title="Company Size" count={countActive(cSizes)}>
+                  <CheckboxGroup options={COMPANY_SIZE_OPTIONS} selected={cSizes} onChange={setCSizes} />
+                </FilterSection>
+
+                <FilterSection title="Location" count={cLocationCount}>
+                  <TextFilterInput label="Countries" value={cCountries} onChange={setCCountries} placeholder="United States, Germany..." />
+                  <TextFilterInput label="Exclude Countries" value={cCountriesExclude} onChange={setCCountriesExclude} />
+                </FilterSection>
+
+                <FilterSection title="Revenue & Funding" count={cRevenueCount}>
+                  <TextFilterInput label="Annual Revenue Ranges" value={cRevenues} onChange={setCRevenues} placeholder="10M-25M, 25M-75M..." />
+                  <TextFilterInput label="Funding Amounts" value={cFunding} onChange={setCFunding} placeholder="1M-10M, 10M-50M..." />
+                  <div>
+                    <label className="text-xs text-white/40 mb-1 block">Company Types</label>
+                    <CheckboxGroup options={COMPANY_TYPE_OPTIONS} selected={cTypes} onChange={setCTypes} />
+                  </div>
+                </FilterSection>
+
+                <FilterSection title="Description & Semantic" count={cDescCount}>
+                  <TextFilterInput label="Description Keywords" value={cDescKeywords} onChange={setCDescKeywords} />
+                  <TextFilterInput label="Exclude Keywords" value={cDescExclude} onChange={setCDescExclude} />
+                  <div>
+                    <label className="text-xs text-white/40 mb-1 block">AI Semantic Search</label>
+                    <textarea value={cSemantic} onChange={e => setCSemantic(e.target.value)}
+                      placeholder="Describe the type of company you're looking for..."
+                      rows={2}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender resize-none" />
+                  </div>
+                </FilterSection>
+
+                <FilterSection title="Technology" count={cTechCount}>
+                  <TextFilterInput label="Products / Tools" value={cTechProducts} onChange={setCTechProducts} placeholder="Salesforce, HubSpot, AWS..." />
+                  <TextFilterInput label="Vendors" value={cTechVendors} onChange={setCTechVendors} placeholder="Microsoft, Google..." />
+                </FilterSection>
+
+                <FilterSection title="Employee Count" count={cMemberCount}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <NumberFilterInput label="Min Employees" value={cMinMembers} onChange={setCMinMembers} />
+                    <NumberFilterInput label="Max Employees" value={cMaxMembers} onChange={setCMaxMembers} />
+                  </div>
+                  <NumberFilterInput label="Min LinkedIn Followers" value={cMinFollowers} onChange={setCMinFollowers} />
+                </FilterSection>
+              </div>
+            </>}
 
             {/* Error */}
             {error && (
@@ -536,10 +702,13 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
                 variant="primary"
                 className="flex-1"
                 onClick={handleSearch}
-                disabled={domainCount === 0}
+                disabled={searchType === 'people' && domainCount === 0}
               >
                 <Search className="w-4 h-4 mr-1" />
-                Search {domainCount > 0 ? `(${domainCount} domain${domainCount !== 1 ? 's' : ''})` : ''}
+                {searchType === 'companies'
+                  ? 'Search Companies'
+                  : `Search ${domainCount > 0 ? `(${domainCount} domain${domainCount !== 1 ? 's' : ''})` : ''}`
+                }
               </GlassButton>
             </div>
           </div>
@@ -556,72 +725,93 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
         )}
 
         {/* ─── Step 3: Results ────────────────────────────────────── */}
-        {step === 'results' && (
-          <div className="p-4 space-y-4">
-            {/* Summary */}
-            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-              <Check className="w-5 h-5 text-emerald-400" />
-              <p className="text-sm text-emerald-400">
-                Found {results.length} {results.length === 1 ? 'person' : 'people'}
-              </p>
-            </div>
+        {step === 'results' && (() => {
+          const isCompany = searchType === 'companies';
+          const items = isCompany ? companyResults : peopleResults;
+          const label = isCompany ? (items.length === 1 ? 'Company' : 'Companies') : (items.length === 1 ? 'Person' : 'People');
 
-            {/* Preview table */}
-            {results.length > 0 && (
-              <div className="border border-white/10 rounded-lg overflow-hidden">
-                <div className="overflow-x-auto max-h-64">
-                  <table className="w-full text-sm">
-                    <thead className="bg-white/[0.03]">
-                      <tr>
-                        <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Name</th>
-                        <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Job Title</th>
-                        <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Domain</th>
-                        <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Location</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/[0.05]">
-                      {results.slice(0, 20).map((p, i) => (
-                        <tr key={i} className="hover:bg-white/[0.02]">
-                          <td className="px-3 py-1.5 text-white/80">{p.full_name || `${p.first_name} ${p.last_name}`}</td>
-                          <td className="px-3 py-1.5 text-white/60">{p.job_title}</td>
-                          <td className="px-3 py-1.5 text-white/60">{p.company_domain}</td>
-                          <td className="px-3 py-1.5 text-white/60">{p.location}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+          return (
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                <Check className="w-5 h-5 text-emerald-400" />
+                <p className="text-sm text-emerald-400">Found {items.length} {label}</p>
+              </div>
+
+              {items.length > 0 && (
+                <div className="border border-white/10 rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto max-h-64">
+                    <table className="w-full text-sm">
+                      <thead className="bg-white/[0.03]">
+                        {isCompany ? (
+                          <tr>
+                            <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Company</th>
+                            <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Industry</th>
+                            <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Country</th>
+                            <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Size</th>
+                            <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Revenue</th>
+                          </tr>
+                        ) : (
+                          <tr>
+                            <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Name</th>
+                            <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Job Title</th>
+                            <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Domain</th>
+                            <th className="text-left px-3 py-2 text-xs font-medium text-white/50">Location</th>
+                          </tr>
+                        )}
+                      </thead>
+                      <tbody className="divide-y divide-white/[0.05]">
+                        {isCompany
+                          ? companyResults.slice(0, 20).map((c, i) => (
+                              <tr key={i} className="hover:bg-white/[0.02]">
+                                <td className="px-3 py-1.5 text-white/80">{c.name}</td>
+                                <td className="px-3 py-1.5 text-white/60">{c.industry}</td>
+                                <td className="px-3 py-1.5 text-white/60">{c.country}</td>
+                                <td className="px-3 py-1.5 text-white/60">{c.size}</td>
+                                <td className="px-3 py-1.5 text-white/60">{c.annual_revenue}</td>
+                              </tr>
+                            ))
+                          : peopleResults.slice(0, 20).map((p, i) => (
+                              <tr key={i} className="hover:bg-white/[0.02]">
+                                <td className="px-3 py-1.5 text-white/80">{p.full_name || `${p.first_name} ${p.last_name}`}</td>
+                                <td className="px-3 py-1.5 text-white/60">{p.job_title}</td>
+                                <td className="px-3 py-1.5 text-white/60">{p.company_domain}</td>
+                                <td className="px-3 py-1.5 text-white/60">{p.location}</td>
+                              </tr>
+                            ))
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                  {items.length > 20 && (
+                    <p className="px-3 py-2 text-xs text-white/40 border-t border-white/10">
+                      Showing 20 of {items.length} results
+                    </p>
+                  )}
                 </div>
-                {results.length > 20 && (
-                  <p className="px-3 py-2 text-xs text-white/40 border-t border-white/10">
-                    Showing 20 of {results.length} results
-                  </p>
-                )}
-              </div>
-            )}
+              )}
 
-            {/* Error */}
-            {error && (
-              <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-                <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
-                <p className="text-sm text-red-400">{error}</p>
-              </div>
-            )}
+              {error && (
+                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                  <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-red-400">{error}</p>
+                </div>
+              )}
 
-            {/* Actions */}
-            <div className="flex gap-2 pt-2">
-              <GlassButton variant="ghost" onClick={() => setStep('configure')}>Back</GlassButton>
-              <GlassButton
-                variant="primary"
-                className="flex-1"
-                onClick={handleAddToTable}
-                disabled={results.length === 0}
-              >
-                <UserPlus className="w-4 h-4 mr-1" />
-                Add {results.length} {results.length === 1 ? 'Person' : 'People'} to Table
-              </GlassButton>
+              <div className="flex gap-2 pt-2">
+                <GlassButton variant="ghost" onClick={() => setStep('configure')}>Back</GlassButton>
+                <GlassButton
+                  variant="primary"
+                  className="flex-1"
+                  onClick={handleAddToTable}
+                  disabled={items.length === 0}
+                >
+                  <UserPlus className="w-4 h-4 mr-1" />
+                  Add {items.length} {label} to Table
+                </GlassButton>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </Modal>
   );

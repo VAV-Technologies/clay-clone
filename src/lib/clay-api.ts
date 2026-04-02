@@ -1,4 +1,4 @@
-// Clay People Search API Client
+// Clay People & Company Search API Client
 // Reimplemented from https://github.com/neomhr/autoclay in TypeScript
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -8,7 +8,8 @@ const CLAY_APP_ORIGIN = 'https://app.clay.com';
 const CLAY_APP_REFERER = 'https://app.clay.com/';
 const CLAY_FRONTEND_VERSION = 'v20260226_193559Z_fc7e8d7d1f';
 const ACTION_PACKAGE_ID = 'e251a70e-46d7-4f3a-b3ef-a211ad3d8bd2';
-const PREVIEW_ACTION_KEY = 'find-lists-of-people-with-mixrank-source-preview';
+const PEOPLE_PREVIEW_ACTION_KEY = 'find-lists-of-people-with-mixrank-source-preview';
+const COMPANY_PREVIEW_ACTION_KEY = 'find-lists-of-companies-with-mixrank-source-preview';
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 120000;
 const BULK_FETCH_BATCH_SIZE = 200;
@@ -364,7 +365,7 @@ async function previewSearch(
   const data = await clayFetch('actions/run-enrichment', {
     body: {
       workspaceId,
-      enrichmentType: PREVIEW_ACTION_KEY,
+      enrichmentType: PEOPLE_PREVIEW_ACTION_KEY,
       options: { sync: true, returnTaskId: true, returnActionMetadata: true },
       inputs: buildInputs(domains, previewFilters),
     },
@@ -422,7 +423,7 @@ async function fullSearch(
         dedupeOnUniqueIds: true,
         hasEvaluatedInputs: true,
         inputs: buildInputs(domains, filters),
-        previewActionKey: PREVIEW_ACTION_KEY,
+        previewActionKey: PEOPLE_PREVIEW_ACTION_KEY,
       },
       clientSettings: { tableType: 'people' },
       basicFields: BASIC_FIELDS,
@@ -552,4 +553,143 @@ export async function searchPeople(
 
   const people = await fullSearch(domains, filters, onProgress);
   return { people, totalCount: people.length, mode: 'full' };
+}
+
+// ─── Company Search ────────────────────────────────────────────────────────
+
+export interface ClayCompanySearchFilters {
+  industries?: string[];
+  industries_exclude?: string[];
+  sizes?: string[];
+  country_names?: string[];
+  country_names_exclude?: string[];
+  locations?: string[];
+  locations_exclude?: string[];
+  description_keywords?: string[];
+  description_keywords_exclude?: string[];
+  annual_revenues?: string[];
+  funding_amounts?: string[];
+  types?: string[];
+  derived_business_types?: string[];
+  derived_industries?: string[];
+  derived_revenue_streams?: string[];
+  derived_subindustries?: string[];
+  derived_subindustries_exclude?: string[];
+  semantic_description?: string;
+  technographics_main_categories?: string[];
+  technographics_parent_categories?: string[];
+  technographics_products?: string[];
+  technographics_vendors?: string[];
+  minimum_member_count?: number | null;
+  maximum_member_count?: number | null;
+  minimum_follower_count?: number | null;
+  company_identifier?: string[];
+  limit?: number | null;
+}
+
+export interface ClayCompany {
+  name: string;
+  type: string;
+  size: string;
+  industry: string;
+  country: string;
+  location: string;
+  domain: string;
+  linkedin_url: string;
+  description: string;
+  annual_revenue: string;
+}
+
+export interface ClayCompanySearchResult {
+  companies: ClayCompany[];
+  totalCount: number;
+  mode: 'preview' | 'full';
+}
+
+function buildCompanyInputs(filters: ClayCompanySearchFilters): Record<string, unknown> {
+  return {
+    annual_revenues: filters.annual_revenues ?? [],
+    company_identifier: filters.company_identifier ?? [],
+    country_names: filters.country_names ?? [],
+    country_names_exclude: filters.country_names_exclude ?? [],
+    derived_business_types: filters.derived_business_types ?? [],
+    derived_industries: filters.derived_industries ?? [],
+    derived_revenue_streams: filters.derived_revenue_streams ?? [],
+    derived_subindustries: filters.derived_subindustries ?? [],
+    derived_subindustries_exclude: filters.derived_subindustries_exclude ?? [],
+    description_keywords: filters.description_keywords ?? [],
+    description_keywords_exclude: filters.description_keywords_exclude ?? [],
+    domainFieldId: null,
+    exclude_entities_configuration: [],
+    exclude_entities_bitmap: null,
+    previous_entities_bitmap: null,
+    exclude_company_identifiers_mixed: [],
+    funding_amounts: filters.funding_amounts ?? [],
+    industries: filters.industries ?? [],
+    industries_exclude: filters.industries_exclude ?? [],
+    limit: filters.limit ?? 50,
+    locations: filters.locations ?? [],
+    locations_exclude: filters.locations_exclude ?? [],
+    maximum_member_count: filters.maximum_member_count ?? null,
+    minimum_follower_count: filters.minimum_follower_count ?? null,
+    minimum_member_count: filters.minimum_member_count ?? null,
+    name: '',
+    radialKnnMinScore: null,
+    has_resolved_domain: null,
+    resolved_domain_is_live: null,
+    resolved_domain_redirects: null,
+    semantic_description: filters.semantic_description ?? '',
+    sizes: filters.sizes ?? [],
+    startFromCompanyType: 'company_identifier',
+    tableId: null,
+    technographics_main_categories: filters.technographics_main_categories ?? [],
+    technographics_parent_categories: filters.technographics_parent_categories ?? [],
+    technographics_products: filters.technographics_products ?? [],
+    technographics_vendors: filters.technographics_vendors ?? [],
+    types: filters.types ?? [],
+    useRadialKnn: false,
+    result_count: true,
+  };
+}
+
+function parseCompanyPreview(raw: Record<string, unknown>): ClayCompany {
+  return {
+    name: (raw.name as string) || '',
+    type: (raw.type as string) || '',
+    size: (raw.size as string) || '',
+    industry: (raw.industry as string) || '',
+    country: (raw.country as string) || '',
+    location: (raw.location as string) || '',
+    domain: (raw.domain as string) || '',
+    linkedin_url: (raw.linkedin_url as string) || '',
+    description: ((raw.description as string) || '').slice(0, 500),
+    annual_revenue: (raw.annual_revenue as string) || '',
+  };
+}
+
+export async function searchCompanies(
+  filters: ClayCompanySearchFilters,
+  onProgress?: (msg: string) => void
+): Promise<ClayCompanySearchResult> {
+  const workspaceId = getWorkspaceId();
+
+  onProgress?.('Searching for companies...');
+
+  const data = await clayFetch('actions/run-enrichment', {
+    body: {
+      workspaceId,
+      enrichmentType: COMPANY_PREVIEW_ACTION_KEY,
+      options: { sync: true, returnTaskId: true, returnActionMetadata: true },
+      inputs: buildCompanyInputs(filters),
+    },
+  }) as Record<string, unknown>;
+
+  const result = data.result as Record<string, unknown>;
+  const rawCompanies = (result?.companies as Record<string, unknown>[]) || [];
+  const companies = rawCompanies.map(parseCompanyPreview);
+  const totalCount = (result?.companyCount as number) || companies.length;
+
+  onProgress?.(`Found ${companies.length} companies (${totalCount} total matches)`);
+
+  return { companies, totalCount, mode: 'preview' };
 }
