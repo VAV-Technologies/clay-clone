@@ -294,21 +294,16 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
   const cTechCount = countActive(cTechProducts, cTechVendors);
   const cMemberCount = countActive(cMinMembers, cMaxMembers, cMinFollowers);
 
-  const CHUNK_SIZE = 10000;
-
   const handleSearch = async () => {
     setStep('searching');
     setError(null);
-    setSearchStatus('Starting search...');
+    setSearchStatus('Searching... this can take a few minutes for large lists');
 
     try {
       abortRef.current = new AbortController();
-      const isCompany = searchType === 'companies';
+      let bodyPayload: Record<string, unknown>;
 
-      // Build the base payload (without limit — we'll set it per chunk)
-      let basePayload: Record<string, unknown>;
-
-      if (isCompany) {
+      if (searchType === 'companies') {
         const companyFilters: ClayCompanySearchFilters = {
           industries: splitCSV(cIndustries),
           industries_exclude: splitCSV(cIndustriesExclude),
@@ -329,7 +324,7 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
           company_identifier: splitCSV(cDomains),
           limit: toNum(cLimit),
         };
-        basePayload = { searchType: 'companies', filters: companyFilters };
+        bodyPayload = { searchType: 'companies', filters: companyFilters };
       } else {
         const domains = getDomains();
         const filters: ClaySearchFilters = {
@@ -371,70 +366,26 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
           limit: toNum(limit),
           limit_per_company: toNum(limitPerCompany),
         };
-        basePayload = { searchType: 'people', domains, filters };
+        bodyPayload = { searchType: 'people', domains, filters };
       }
 
-      // Determine total limit and chunking
-      const totalLimit = isCompany ? (toNum(cLimit) ?? 50) : (toNum(limit) ?? 50);
-      const numChunks = Math.ceil(totalLimit / CHUNK_SIZE);
+      const response = await fetch('/api/add-data/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload),
+        signal: abortRef.current.signal,
+      });
 
-      const allPeople: ClayPerson[] = [];
-      const allCompanies: ClayCompany[] = [];
-
-      for (let chunk = 0; chunk < numChunks; chunk++) {
-        if (abortRef.current.signal.aborted) break;
-
-        const chunkLimit = Math.min(CHUNK_SIZE, totalLimit - chunk * CHUNK_SIZE);
-        const chunkPayload = { ...basePayload };
-        const filters = { ...(chunkPayload.filters as Record<string, unknown>), limit: chunkLimit };
-        chunkPayload.filters = filters;
-
-        if (numChunks > 1) {
-          setSearchStatus(`Batch ${chunk + 1}/${numChunks} — ${isCompany ? allCompanies.length : allPeople.length} ${isCompany ? 'companies' : 'people'} so far...`);
-        } else {
-          setSearchStatus('Searching...');
-        }
-
-        const response = await fetch('/api/add-data/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(chunkPayload),
-          signal: abortRef.current.signal,
-        });
-
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Search failed' }));
-          throw new Error(err.error || `Error ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (isCompany) {
-          allCompanies.push(...(data.companies || []));
-        } else {
-          allPeople.push(...(data.people || []));
-        }
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Search failed' }));
+        throw new Error(err.error || `Error ${response.status}`);
       }
 
-      // Deduplicate
-      if (isCompany) {
-        const seen = new Set<string>();
-        const deduped = allCompanies.filter(c => {
-          const key = c.domain || c.name;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        setCompanyResults(deduped);
+      const data = await response.json();
+      if (searchType === 'companies') {
+        setCompanyResults(data.companies || []);
       } else {
-        const seen = new Set<string>();
-        const deduped = allPeople.filter(p => {
-          const key = p.linkedin_url || `${p.full_name}@${p.company_domain}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        setPeopleResults(deduped);
+        setPeopleResults(data.people || []);
       }
       setStep('results');
     } catch (err) {
