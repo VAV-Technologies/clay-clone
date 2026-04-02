@@ -6,7 +6,7 @@ import type { CellValue } from '@/lib/db/schema';
 export const maxDuration = 300;
 
 const NINJER_BASE_URL = 'https://api-production-9cde.up.railway.app';
-const DELAY_BETWEEN_CALLS_MS = 500;
+const DELAY_BETWEEN_CALLS_MS = 100; // 100ms interval = ~10 req/s per key, 20 req/s with 2 keys
 const TIMEOUT_MS = 90000; // Worst case: 50 variations can take up to 90s
 
 function sleep(ms: number) {
