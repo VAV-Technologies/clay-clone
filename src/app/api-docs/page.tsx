@@ -95,7 +95,7 @@ export default function APIDocsPage() {
   const B = BASE_URL;
 
   return (
-    <div className="min-h-screen bg-[#0d0d39] text-white">
+    <div className="fixed inset-0 bg-[#0d0d39] text-white overflow-y-auto">
       {/* Header */}
       <header className="border-b border-white/10 bg-midnight/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center gap-4">
