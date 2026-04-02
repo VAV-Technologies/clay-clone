@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Plus, Sparkles, Code, Clock, Mail } from 'lucide-react';
+import { Plus, Sparkles, Code, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassButton } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
@@ -11,7 +11,6 @@ import { Cell } from './Cell';
 import { FilterBar } from './FilterBar';
 import { EnrichmentDataViewer } from './EnrichmentDataViewer';
 import { BatchEnrichmentPanel } from '@/components/enrichment/BatchEnrichmentPanel';
-import { NinjaEmailFinderPanel } from '@/components/enrichment/NinjaEmailFinderPanel';
 import { RowDisplayControl } from './RowDisplayControl';
 import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { AddFilterButton } from './AddFilterButton';
@@ -57,9 +56,6 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
 
   // State for batch enrichment panel
   const [isBatchEnrichmentOpen, setIsBatchEnrichmentOpen] = useState(false);
-
-  // State for ninja email finder panel
-  const [isNinjaEmailOpen, setIsNinjaEmailOpen] = useState(false);
 
   const {
     currentTable,
@@ -363,15 +359,6 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
             Batch Enrich
           </GlassButton>
 
-          <GlassButton
-            variant="default"
-            size="sm"
-            onClick={() => setIsNinjaEmailOpen(true)}
-            className="bg-cyan-500/20 border-cyan-500/30 hover:bg-cyan-500/30"
-          >
-            <Mail className="w-4 h-4 mr-1" />
-            Ninja Email
-          </GlassButton>
         </div>
       </div>
 
@@ -606,11 +593,6 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
         onClose={() => setIsBatchEnrichmentOpen(false)}
       />
 
-      {/* Ninja Email Finder Panel */}
-      <NinjaEmailFinderPanel
-        isOpen={isNinjaEmailOpen}
-        onClose={() => setIsNinjaEmailOpen(false)}
-      />
     </div>
   );
 }

@@ -175,28 +175,6 @@ function runLocalMigrations(sqlite: Database.Database) {
       completed_at INTEGER
     );
 
-    -- Ninja email jobs table
-    CREATE TABLE IF NOT EXISTS ninja_email_jobs (
-      id TEXT PRIMARY KEY,
-      table_id TEXT NOT NULL,
-      target_column_id TEXT NOT NULL,
-      input_mode TEXT NOT NULL,
-      full_name_column_id TEXT,
-      first_name_column_id TEXT,
-      last_name_column_id TEXT,
-      domain_column_id TEXT NOT NULL,
-      api_key TEXT,
-      row_ids TEXT NOT NULL,
-      current_index INTEGER NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'pending',
-      processed_count INTEGER NOT NULL DEFAULT 0,
-      found_count INTEGER NOT NULL DEFAULT 0,
-      not_found_count INTEGER NOT NULL DEFAULT 0,
-      error_count INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      completed_at INTEGER
-    );
   `);
 }
 

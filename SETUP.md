@@ -9,7 +9,6 @@ Complete instructions for deploying this Next.js project to a new Vercel account
 - Turso account (database)
 - Google Cloud account (Vertex AI for Gemini models)
 - Azure account (OpenAI + Batch API)
-- MailNinja account (email verification)
 
 ## 2. Vercel Environment Variables
 
@@ -69,12 +68,6 @@ Set all of these in Vercel → Project → Settings → Environment Variables.
 
 > **Note:** For Google AI, you can either use Vertex AI (service account + project) or a Gemini API key. Vertex AI is recommended for production.
 
-### MailNinja (email verification)
-
-| Variable | Description |
-|---|---|
-| `MAILNINJA_API_KEY` | MailNinja API key for email verification service |
-
 ## 3. GitHub Configuration
 
 ### GitHub Actions Secret
@@ -125,11 +118,6 @@ Go to your repo → Settings → Secrets and variables → Actions → Variables
    ```
 5. Set the result as `GOOGLE_SERVICE_ACCOUNT_BASE64`
 
-### MailNinja
-
-1. Sign up at MailNinja
-2. Get your API key from the dashboard
-
 ## 5. Vercel Deployment
 
 1. Go to [vercel.com](https://vercel.com) and import the GitHub repository
@@ -151,7 +139,6 @@ These will start automatically once the GitHub secrets/variables are configured.
 - [ ] AI enrichment processes rows (check Azure OpenAI connectivity)
 - [ ] GitHub Actions cron jobs run successfully (check Actions tab)
 - [ ] Batch processing works (submit a batch job and wait for completion)
-- [ ] Email verification works via MailNinja
 
 ## 7. Summary of All Required Env Vars
 
@@ -164,7 +151,6 @@ These will start automatically once the GitHub secrets/variables are configured.
 **For full functionality, also add:**
 - `AZURE_BATCH_ENDPOINT` + `AZURE_BATCH_API_KEY` (batch processing)
 - `GOOGLE_CLOUD_PROJECT` + `GOOGLE_SERVICE_ACCOUNT_BASE64` (Gemini models)
-- `MAILNINJA_API_KEY` (email verification)
 
 **GitHub repo settings:**
 - Secret: `CRON_SECRET`

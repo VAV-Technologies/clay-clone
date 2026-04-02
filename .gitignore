@@ -52,3 +52,6 @@ service-account.json
 *.temp
 *.exe
 nul
+
+.vercel
+.env*.local
