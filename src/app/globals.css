@@ -103,19 +103,6 @@ body {
   }
 }
 
-/* Animation delay utilities */
-.animation-delay-1000 {
-  animation-delay: 1000ms;
-}
-
-.animation-delay-2000 {
-  animation-delay: 2000ms;
-}
-
-.animation-delay-4000 {
-  animation-delay: 4000ms;
-}
-
 /* Focus visible for accessibility */
 :focus-visible {
   outline: 2px solid var(--lavender-accent);

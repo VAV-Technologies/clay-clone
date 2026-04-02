@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useState } from 'react';
+import { forwardRef } from 'react';
 import { cn } from '@/lib/utils';
 
 interface GlassButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -11,24 +11,6 @@ interface GlassButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>
 
 export const GlassButton = forwardRef<HTMLButtonElement, GlassButtonProps>(
   ({ className, variant = 'default', size = 'md', loading, children, disabled, onClick, ...props }, ref) => {
-    const [ripples, setRipples] = useState<{ x: number; y: number; id: number }[]>([]);
-
-    const createRipple = (e: React.MouseEvent<HTMLButtonElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const ripple = {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-        id: Date.now(),
-      };
-      setRipples((prev) => [...prev, ripple]);
-      setTimeout(() => setRipples((prev) => prev.filter((r) => r.id !== ripple.id)), 600);
-    };
-
-    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-      createRipple(e);
-      onClick?.(e);
-    };
-
     return (
       <button
         ref={ref}
@@ -63,7 +45,7 @@ export const GlassButton = forwardRef<HTMLButtonElement, GlassButtonProps>(
           className
         )}
         disabled={disabled || loading}
-        onClick={handleClick}
+        onClick={onClick}
         {...props}
       >
         {/* Content */}
@@ -96,24 +78,6 @@ export const GlassButton = forwardRef<HTMLButtonElement, GlassButtonProps>(
             </svg>
           </span>
         )}
-
-        {/* Ripple effects */}
-        {ripples.map((ripple) => (
-          <span
-            key={ripple.id}
-            className="absolute bg-white/30 rounded-full animate-ripple pointer-events-none"
-            style={{
-              left: ripple.x,
-              top: ripple.y,
-              width: '10px',
-              height: '10px',
-              transform: 'translate(-50%, -50%)',
-            }}
-          />
-        ))}
-
-        {/* Shimmer effect on hover */}
-        <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-500 group-hover:translate-x-full" />
       </button>
     );
   }
