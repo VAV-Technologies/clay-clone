@@ -131,7 +131,7 @@ function ProjectContent() {
 
       if (response.ok) {
         const table = await response.json();
-        toast.success('Table created', `"${table.name}" has been created`);
+        toast.success('Workbook created', `"${table.name}" has been created`);
         setNewTableName('');
         setIsCreateModalOpen(false);
         router.push(`/workbook/${projectId}?sheet=${table.id}`);
@@ -284,11 +284,11 @@ function ProjectContent() {
         {/* Action Bar */}
         <div className="flex items-center justify-between mb-6">
           <p className="text-white/50">
-            {project.tables?.length || 0} {project.tables?.length === 1 ? 'table' : 'tables'}
+            {project.tables?.length || 0} {project.tables?.length === 1 ? 'workbook' : 'workbooks'}
           </p>
           <GlassButton variant="primary" onClick={() => setIsCreateModalOpen(true)}>
             <Plus className="w-4 h-4 mr-1" />
-            New Table
+            New Workbook
           </GlassButton>
         </div>
 
@@ -429,11 +429,11 @@ function ProjectContent() {
       <Modal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        title="Create New Table"
+        title="Create New Workbook"
       >
         <div className="space-y-4">
           <GlassInput
-            label="Table Name"
+            label="Workbook Name"
             placeholder="e.g., Leads, Contacts, Companies"
             value={newTableName}
             onChange={(e) => setNewTableName(e.target.value)}

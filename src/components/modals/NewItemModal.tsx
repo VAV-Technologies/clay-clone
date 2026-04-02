@@ -57,7 +57,7 @@ export function NewItemModal({ type, isOpen, onClose, onCreate }: NewItemModalPr
               )}
             </div>
             <h2 className="text-lg font-semibold text-white">
-              New {isFolder ? 'Folder' : 'Table'}
+              New {isFolder ? 'Folder' : 'Workbook'}
             </h2>
           </div>
           <button
@@ -76,7 +76,7 @@ export function NewItemModal({ type, isOpen, onClose, onCreate }: NewItemModalPr
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={isFolder ? 'My Folder' : 'My Table'}
+              placeholder={isFolder ? 'My Folder' : 'My Workbook'}
               autoFocus
               className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10
                          text-white placeholder:text-white/30
