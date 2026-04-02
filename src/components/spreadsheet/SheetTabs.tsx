@@ -52,18 +52,22 @@ export function SheetTabs() {
   };
 
   return (
-    <div className="flex-shrink-0 flex items-center h-11 border-t border-white/10 bg-midnight-100/80 px-2 gap-1 overflow-x-auto rounded-b-2xl">
-      {sheets.map((sheet) => (
+    <div className="flex-shrink-0 flex items-stretch h-11 border-t border-white/10 bg-midnight/40 overflow-x-auto rounded-b-2xl">
+      {/* Tabs — flush, no gaps, dividers between them */}
+      {sheets.map((sheet, index) => (
         <button
           key={sheet.id}
           onClick={() => switchSheet(sheet.id)}
           onContextMenu={(e) => handleContextMenu(e, sheet.id)}
           onDoubleClick={() => handleStartRename(sheet.id)}
           className={cn(
-            'flex items-center h-8 px-4 text-sm rounded-t-lg border-t-2 transition-colors whitespace-nowrap min-w-0',
+            'flex items-center px-5 text-sm transition-colors whitespace-nowrap border-r border-white/[0.06]',
+            // First tab: match card's bottom-left radius
+            index === 0 && 'rounded-bl-2xl',
+            // Active tab
             activeSheetId === sheet.id
-              ? 'bg-lavender/10 border-t-lavender text-white'
-              : 'bg-white/[0.03] border-t-transparent text-white/50 hover:text-white/70 hover:bg-white/[0.05]'
+              ? 'bg-lavender/10 text-white border-t-2 border-t-lavender'
+              : 'bg-transparent text-white/50 hover:text-white/70 hover:bg-white/[0.04] border-t-2 border-t-transparent'
           )}
         >
           {renaming === sheet.id ? (
@@ -85,14 +89,17 @@ export function SheetTabs() {
         </button>
       ))}
 
-      {/* Add sheet button */}
+      {/* Add sheet — flush, same height */}
       <button
         onClick={handleAddSheet}
-        className="flex items-center justify-center w-8 h-8 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-colors flex-shrink-0"
+        className="flex items-center justify-center w-11 text-white/40 hover:text-white hover:bg-white/[0.04] transition-colors border-r border-white/[0.06]"
         title="Add sheet"
       >
         <Plus className="w-4 h-4" />
       </button>
+
+      {/* Empty space fills the rest — inherits the bottom-right radius */}
+      <div className="flex-1 rounded-br-2xl" />
 
       {/* Context menu */}
       {contextMenu && createPortal(
