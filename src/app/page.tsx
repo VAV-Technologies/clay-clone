@@ -75,7 +75,7 @@ function ProjectRow({
           {isFolder ? (
             <Folder className="w-5 h-5 text-amber-400" />
           ) : (
-            <Table className="w-5 h-5 text-lavender" />
+            <FileSpreadsheet className="w-5 h-5 text-lavender" />
           )}
         </div>
         <div>
