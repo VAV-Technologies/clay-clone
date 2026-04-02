@@ -384,6 +384,15 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                     Formula
                   </button>
                   <button
+                    onClick={() => { setIsActionsOpen(false); setIsLookUpOpen(true); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                      <Link2 className="w-3.5 h-3.5 text-emerald-400" />
+                    </div>
+                    Look Up
+                  </button>
+                  <button
                     onClick={() => { setIsActionsOpen(false); onEnrich?.(); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
                   >
@@ -401,7 +410,6 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                     </div>
                     Batch Enrich
                   </button>
-                  <div className="my-1 border-t border-white/[0.06]" />
                   <button
                     onClick={() => { setIsActionsOpen(false); setIsFindEmailOpen(true); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
@@ -410,15 +418,6 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                       <Mail className="w-3.5 h-3.5 text-cyan-400" />
                     </div>
                     Find Email
-                  </button>
-                  <button
-                    onClick={() => { setIsActionsOpen(false); setIsLookUpOpen(true); }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
-                  >
-                    <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                      <Link2 className="w-3.5 h-3.5 text-emerald-400" />
-                    </div>
-                    Look Up
                   </button>
                 </div>
               </>,
