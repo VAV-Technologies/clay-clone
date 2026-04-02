@@ -7,7 +7,7 @@ export const maxDuration = 300;
 
 const NINJER_BASE_URL = 'https://api-production-9cde.up.railway.app';
 const DELAY_BETWEEN_CALLS_MS = 500;
-const TIMEOUT_MS = 30000;
+const TIMEOUT_MS = 90000; // Worst case: 50 variations can take up to 90s
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -125,6 +125,7 @@ export async function POST(request: NextRequest) {
       domain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
 
       try {
+        console.log(`[find-email] Processing row ${i + 1}/${rows.length}: ${inputMode === 'full_name' ? fullName : `${firstName} ${lastName}`} @ ${domain}`);
         // Build request body
         const body: Record<string, string> = { domain };
         if (inputMode === 'full_name') {
@@ -135,6 +136,7 @@ export async function POST(request: NextRequest) {
         }
 
         const apiResult = await callNinjerAPI(body, apiKey);
+        console.log(`[find-email] Result: ${apiResult.status} ${apiResult.email || 'none'} (${apiResult.time_ms}ms)`);
 
         const emailValue = apiResult.email || '';
         const statusValue = formatStatus(apiResult.status, apiResult.confidence);
@@ -149,6 +151,7 @@ export async function POST(request: NextRequest) {
         if (apiResult.email) foundCount++;
         results.push({ rowId: row.id, success: true, email: apiResult.email, status: apiResult.status });
       } catch (err) {
+        console.error(`[find-email] Error for row ${row.id}:`, err);
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
         const updatedData = {
           ...data,
