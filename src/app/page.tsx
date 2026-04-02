@@ -314,7 +314,7 @@ function DashboardContent() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowNewModal('folder')}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm
+              className="flex items-center justify-center gap-2 w-40 py-3 rounded-xl text-sm
                          bg-white/5 border border-white/10
                          text-white hover:bg-white/10 hover:border-white/20
                          transition-all duration-200 backdrop-blur-md"
@@ -325,7 +325,7 @@ function DashboardContent() {
 
             <button
               onClick={() => setShowNewModal('table')}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm
+              className="flex items-center justify-center gap-2 w-40 py-3 rounded-xl text-sm
                          bg-lavender/20 border border-lavender/30
                          text-white hover:bg-lavender/30
                          transition-all duration-200 backdrop-blur-md"

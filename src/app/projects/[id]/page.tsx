@@ -137,7 +137,7 @@ function ProjectContent() {
         router.push(`/workbook/${projectId}?sheet=${table.id}`);
       }
     } catch (error) {
-      toast.error('Error', 'Failed to create table');
+      toast.error('Error', 'Failed to create workbook');
     } finally {
       setIsCreating(false);
     }
@@ -412,14 +412,14 @@ function ProjectContent() {
               <FileSpreadsheet className="w-8 h-8 text-white/20" />
             </div>
             <h3 className="text-lg font-medium text-white mb-1">
-              No tables yet
+              No workbooks yet
             </h3>
             <p className="text-white/50 mb-4">
-              Create your first table to start organizing your data
+              Create your first workbook to start organizing your data
             </p>
             <GlassButton variant="primary" onClick={() => setIsCreateModalOpen(true)}>
               <Plus className="w-4 h-4 mr-1" />
-              Create Table
+              Create Workbook
             </GlassButton>
           </div>
         )}
