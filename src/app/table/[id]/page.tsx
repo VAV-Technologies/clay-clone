@@ -3,13 +3,14 @@
 import { useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Upload, Download } from 'lucide-react';
+import { ArrowLeft, Upload, Download, UserPlus } from 'lucide-react';
 import Papa from 'papaparse';
 import { ToastProvider, useToast } from '@/components/ui';
 import { SpreadsheetView } from '@/components/spreadsheet';
 import { CSVImportModal } from '@/components/import/CSVImportModal';
 import { EnrichmentPanel } from '@/components/enrichment/EnrichmentPanel';
 import { FormulaPanel } from '@/components/formula/FormulaPanel';
+import { AddDataModal } from '@/components/data/AddDataModal';
 import { useTableStore } from '@/stores/tableStore';
 
 // Dynamically import AnimatedBackground to avoid hydration issues
@@ -29,6 +30,7 @@ function TableContent() {
   const [editEnrichmentColumnId, setEditEnrichmentColumnId] = useState<string | null>(null);
   const [isFormulaOpen, setIsFormulaOpen] = useState(false);
   const [editFormulaColumnId, setEditFormulaColumnId] = useState<string | null>(null);
+  const [isAddDataOpen, setIsAddDataOpen] = useState(false);
 
   const handleImport = useCallback(() => {
     setIsImportModalOpen(true);
@@ -127,6 +129,14 @@ function TableContent() {
                 <Download className="w-4 h-4" />
                 <span>Export</span>
               </button>
+              <button
+                onClick={() => setIsAddDataOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                title="Add Data — People Search"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Add Data</span>
+              </button>
             </div>
           </div>
 
@@ -166,6 +176,13 @@ function TableContent() {
         }}
         tableId={tableId}
         columnId={editFormulaColumnId || undefined}
+      />
+
+      <AddDataModal
+        isOpen={isAddDataOpen}
+        onClose={() => setIsAddDataOpen(false)}
+        tableId={tableId}
+        onComplete={() => setIsAddDataOpen(false)}
       />
 
     </div>
