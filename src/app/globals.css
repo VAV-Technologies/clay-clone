@@ -103,6 +103,17 @@ body {
   }
 }
 
+/* Fix native select/option text color (white text on white bg) */
+select option {
+  background: #16164d;
+  color: #ffffff;
+}
+
+select option:checked {
+  background: #9393ff;
+  color: #ffffff;
+}
+
 /* Focus visible for accessibility */
 :focus-visible {
   outline: 2px solid var(--lavender-accent);

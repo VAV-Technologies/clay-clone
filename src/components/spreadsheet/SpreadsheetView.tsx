@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Plus, Sparkles, Code, Clock, Mail, Link2 } from 'lucide-react';
+import { Plus, Sparkles, Code, Clock, Mail, Link2, Zap, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassButton } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
@@ -64,6 +65,10 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
 
   // State for look up panel
   const [isLookUpOpen, setIsLookUpOpen] = useState(false);
+
+  // Actions dropdown
+  const [isActionsOpen, setIsActionsOpen] = useState(false);
+  const actionsButtonRef = useRef<HTMLButtonElement>(null);
 
   const {
     currentTable,
@@ -345,45 +350,81 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
             </GlassButton>
           )}
 
-          <GlassButton variant="default" size="sm" onClick={() => onFormula?.()}>
-            <Code className="w-4 h-4 mr-1" />
-            Formula
-          </GlassButton>
+          {/* Actions dropdown */}
+          <div className="relative">
+            <button
+              ref={actionsButtonRef}
+              onClick={() => setIsActionsOpen(!isActionsOpen)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg
+                         bg-lavender/20 border border-lavender/30 text-white
+                         hover:bg-lavender/30 transition-all"
+            >
+              <Zap className="w-4 h-4 text-lavender" />
+              Actions
+              <ChevronDown className={cn('w-3.5 h-3.5 text-white/50 transition-transform', isActionsOpen && 'rotate-180')} />
+            </button>
 
-          <GlassButton variant="primary" size="sm" onClick={() => onEnrich?.()}>
-            <Sparkles className="w-4 h-4 mr-1" />
-            Real-Time Enrich
-          </GlassButton>
-
-          <GlassButton
-            variant="default"
-            size="sm"
-            onClick={() => setIsBatchEnrichmentOpen(true)}
-            className="bg-amber-500/20 border-amber-500/30 hover:bg-amber-500/30"
-          >
-            <Clock className="w-4 h-4 mr-1" />
-            Batch Enrich
-          </GlassButton>
-
-          <GlassButton
-            variant="default"
-            size="sm"
-            onClick={() => setIsFindEmailOpen(true)}
-            className="bg-cyan-500/20 border-cyan-500/30 hover:bg-cyan-500/30"
-          >
-            <Mail className="w-4 h-4 mr-1" />
-            Find Email
-          </GlassButton>
-
-          <GlassButton
-            variant="default"
-            size="sm"
-            onClick={() => setIsLookUpOpen(true)}
-            className="bg-emerald-500/20 border-emerald-500/30 hover:bg-emerald-500/30"
-          >
-            <Link2 className="w-4 h-4 mr-1" />
-            Look Up
-          </GlassButton>
+            {isActionsOpen && createPortal(
+              <>
+                <div className="fixed inset-0 z-[99]" onClick={() => setIsActionsOpen(false)} />
+                <div
+                  className="fixed z-[100] w-52 py-1.5 bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl"
+                  style={{
+                    top: (actionsButtonRef.current?.getBoundingClientRect().bottom ?? 0) + 6,
+                    right: window.innerWidth - (actionsButtonRef.current?.getBoundingClientRect().right ?? 0),
+                  }}
+                >
+                  <button
+                    onClick={() => { setIsActionsOpen(false); onFormula?.(); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-white/[0.06] flex items-center justify-center">
+                      <Code className="w-3.5 h-3.5 text-white/60" />
+                    </div>
+                    Formula
+                  </button>
+                  <button
+                    onClick={() => { setIsActionsOpen(false); onEnrich?.(); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-lavender/10 flex items-center justify-center">
+                      <Sparkles className="w-3.5 h-3.5 text-lavender" />
+                    </div>
+                    Real-Time Enrich
+                  </button>
+                  <button
+                    onClick={() => { setIsActionsOpen(false); setIsBatchEnrichmentOpen(true); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    </div>
+                    Batch Enrich
+                  </button>
+                  <div className="my-1 border-t border-white/[0.06]" />
+                  <button
+                    onClick={() => { setIsActionsOpen(false); setIsFindEmailOpen(true); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-cyan-500/10 flex items-center justify-center">
+                      <Mail className="w-3.5 h-3.5 text-cyan-400" />
+                    </div>
+                    Find Email
+                  </button>
+                  <button
+                    onClick={() => { setIsActionsOpen(false); setIsLookUpOpen(true); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                      <Link2 className="w-3.5 h-3.5 text-emerald-400" />
+                    </div>
+                    Look Up
+                  </button>
+                </div>
+              </>,
+              document.body
+            )}
+          </div>
 
         </div>
       </div>
