@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Plus, Sparkles, Code, Clock, Mail } from 'lucide-react';
+import { Plus, Sparkles, Code, Clock, Mail, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassButton } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
@@ -12,6 +12,7 @@ import { FilterBar } from './FilterBar';
 import { EnrichmentDataViewer } from './EnrichmentDataViewer';
 import { BatchEnrichmentPanel } from '@/components/enrichment/BatchEnrichmentPanel';
 import { FindEmailPanel } from '@/components/email/FindEmailPanel';
+import { LookUpPanel } from '@/components/lookup/LookUpPanel';
 import { RowDisplayControl } from './RowDisplayControl';
 import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { AddFilterButton } from './AddFilterButton';
@@ -60,6 +61,9 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
 
   // State for find email panel
   const [isFindEmailOpen, setIsFindEmailOpen] = useState(false);
+
+  // State for look up panel
+  const [isLookUpOpen, setIsLookUpOpen] = useState(false);
 
   const {
     currentTable,
@@ -371,6 +375,16 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
             Find Email
           </GlassButton>
 
+          <GlassButton
+            variant="default"
+            size="sm"
+            onClick={() => setIsLookUpOpen(true)}
+            className="bg-emerald-500/20 border-emerald-500/30 hover:bg-emerald-500/30"
+          >
+            <Link2 className="w-4 h-4 mr-1" />
+            Look Up
+          </GlassButton>
+
         </div>
       </div>
 
@@ -609,6 +623,13 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
       <FindEmailPanel
         isOpen={isFindEmailOpen}
         onClose={() => setIsFindEmailOpen(false)}
+      />
+
+      {/* Look Up Panel */}
+      <LookUpPanel
+        isOpen={isLookUpOpen}
+        onClose={() => setIsLookUpOpen(false)}
+        tableId={tableId}
       />
 
     </div>
