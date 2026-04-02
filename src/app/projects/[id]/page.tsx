@@ -134,7 +134,7 @@ function ProjectContent() {
         toast.success('Table created', `"${table.name}" has been created`);
         setNewTableName('');
         setIsCreateModalOpen(false);
-        router.push(`/table/${table.id}`);
+        router.push(`/workbook/${projectId}?sheet=${table.id}`);
       }
     } catch (error) {
       toast.error('Error', 'Failed to create table');
@@ -312,7 +312,7 @@ function ProjectContent() {
                   {/* Clickable content area */}
                   <div
                     className="flex items-center gap-3 flex-1 cursor-pointer min-w-0"
-                    onClick={() => router.push(`/table/${table.id}`)}
+                    onClick={() => router.push(`/workbook/${projectId}?sheet=${table.id}`)}
                   >
                     <div className="w-9 h-9 rounded-lg bg-lavender/20 flex items-center justify-center flex-shrink-0">
                       <FileSpreadsheet className="w-4 h-4 text-lavender" />

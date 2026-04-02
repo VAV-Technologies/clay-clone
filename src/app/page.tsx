@@ -202,30 +202,26 @@ function DashboardContent() {
           toast.success('Folder created');
         }
       } else {
-        // Create a table directly
-        // First create a project to hold the table (or use a default one)
+        // Create a workbook with one default sheet
         const projectResponse = await fetch('/api/projects', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, type: 'table' }),
+          body: JSON.stringify({ name, type: 'workbook' }),
         });
 
         if (projectResponse.ok) {
           const project = await projectResponse.json();
 
-          // Create the table inside this project
-          const tableResponse = await fetch('/api/tables', {
+          // Create the first sheet inside the workbook
+          await fetch('/api/tables', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectId: project.id, name }),
+            body: JSON.stringify({ projectId: project.id, name: 'Sheet 1' }),
           });
 
-          if (tableResponse.ok) {
-            const table = await tableResponse.json();
-            await fetchProjects();
-            toast.success('Table created');
-            router.push(`/table/${table.id}`);
-          }
+          await fetchProjects();
+          toast.success('Workbook created');
+          router.push(`/workbook/${project.id}`);
         }
       }
     } catch (error) {
@@ -252,21 +248,8 @@ function DashboardContent() {
     if (project.type === 'folder') {
       router.push(`/projects/${project.id}`);
     } else {
-      // For table type, fetch the table and navigate to it
-      try {
-        const response = await fetch(`/api/projects/${project.id}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.tables && data.tables.length > 0) {
-            router.push(`/table/${data.tables[0].id}`);
-          } else {
-            // If no table yet, go to project page to create one
-            router.push(`/projects/${project.id}`);
-          }
-        }
-      } catch {
-        router.push(`/projects/${project.id}`);
-      }
+      // Workbook or table type — open as workbook
+      router.push(`/workbook/${project.id}`);
     }
   };
 

@@ -22,7 +22,18 @@ type FilterOperator =
 
 type FilterLogic = 'AND' | 'OR';
 
+interface SheetInfo {
+  id: string;
+  name: string;
+  projectId: string;
+}
+
 interface TableState {
+  // Workbook (multi-sheet) state
+  workbookId: string | null;
+  sheets: SheetInfo[];
+  activeSheetId: string | null;
+
   currentTable: Table | null;
   columns: Column[];
   rows: Row[];
@@ -87,6 +98,13 @@ interface TableState {
   setActiveJob: (columnId: string, jobId: string | null) => void;
   getActiveJobId: (columnId: string) => string | null;
 
+  // Workbook actions
+  fetchWorkbook: (workbookId: string, sheetId?: string) => Promise<void>;
+  switchSheet: (sheetId: string) => Promise<void>;
+  addSheet: (name: string) => Promise<SheetInfo | null>;
+  renameSheet: (sheetId: string, name: string) => Promise<void>;
+  deleteSheet: (sheetId: string) => Promise<void>;
+
   // Computed
   getFilteredRows: () => Row[];
   getSortedRows: () => Row[];
@@ -95,6 +113,10 @@ interface TableState {
 }
 
 export const useTableStore = create<TableState>((set, get) => ({
+  workbookId: null,
+  sheets: [],
+  activeSheetId: null,
+
   currentTable: null,
   columns: [],
   rows: [],
@@ -263,6 +285,90 @@ export const useTableStore = create<TableState>((set, get) => ({
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false });
     }
+  },
+
+  // ─── Workbook actions ────────────────────────────────────────────
+
+  fetchWorkbook: async (workbookId: string, sheetId?: string) => {
+    set({ isLoading: true, error: null, workbookId });
+    try {
+      // Fetch all tables (sheets) for this workbook/project
+      const res = await fetch(`/api/tables?projectId=${workbookId}`);
+      if (!res.ok) throw new Error('Failed to fetch workbook sheets');
+      const tables = await res.json();
+
+      const sheets: SheetInfo[] = tables.map((t: Table) => ({
+        id: t.id, name: t.name, projectId: workbookId,
+      }));
+
+      // Pick which sheet to display
+      const targetSheetId = sheetId || sheets[0]?.id;
+      set({ sheets, activeSheetId: targetSheetId });
+
+      // Load that sheet's data
+      if (targetSheetId) {
+        await get().fetchTable(targetSheetId, true);
+      }
+      set({ isLoading: false });
+    } catch (error) {
+      set({ error: (error as Error).message, isLoading: false });
+    }
+  },
+
+  switchSheet: async (sheetId: string) => {
+    set({ activeSheetId: sheetId, selectedRows: new Set(), selectedCells: new Set(), editingCell: null, filters: [], sortColumn: null });
+    await get().fetchTable(sheetId, false);
+  },
+
+  addSheet: async (name: string) => {
+    const { workbookId, sheets } = get();
+    if (!workbookId) return null;
+    try {
+      const res = await fetch('/api/tables', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: workbookId, name }),
+      });
+      if (!res.ok) throw new Error('Failed to create sheet');
+      const newTable = await res.json();
+      const newSheet: SheetInfo = { id: newTable.id, name: newTable.name, projectId: workbookId };
+      set({ sheets: [...sheets, newSheet] });
+      // Switch to the new sheet
+      await get().switchSheet(newTable.id);
+      return newSheet;
+    } catch {
+      return null;
+    }
+  },
+
+  renameSheet: async (sheetId: string, name: string) => {
+    try {
+      await fetch(`/api/tables/${sheetId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      set((state) => ({
+        sheets: state.sheets.map(s => s.id === sheetId ? { ...s, name } : s),
+        currentTable: state.currentTable?.id === sheetId
+          ? { ...state.currentTable, name }
+          : state.currentTable,
+      }));
+    } catch { /* */ }
+  },
+
+  deleteSheet: async (sheetId: string) => {
+    const { sheets, activeSheetId } = get();
+    if (sheets.length <= 1) return; // Must keep at least 1 sheet
+    try {
+      await fetch(`/api/tables/${sheetId}`, { method: 'DELETE' });
+      const remaining = sheets.filter(s => s.id !== sheetId);
+      set({ sheets: remaining });
+      // If we deleted the active sheet, switch to the first remaining
+      if (activeSheetId === sheetId && remaining.length > 0) {
+        await get().switchSheet(remaining[0].id);
+      }
+    } catch { /* */ }
   },
 
   getFilteredRows: () => {
