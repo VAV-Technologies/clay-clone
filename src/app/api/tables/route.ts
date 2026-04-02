@@ -51,12 +51,7 @@ export async function POST(request: NextRequest) {
 
     await db.insert(schema.tables).values(table);
 
-    // Create default columns if none provided
-    const columnsToCreate = initialColumns || [
-      { name: 'Name', type: 'text' },
-      { name: 'Email', type: 'email' },
-      { name: 'Company', type: 'text' },
-    ];
+    const columnsToCreate = initialColumns || [];
 
     const columns = columnsToCreate.map((col: { name: string; type: string }, index: number) => ({
       id: generateId(),
