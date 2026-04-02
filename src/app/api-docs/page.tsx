@@ -249,6 +249,18 @@ export default function APIDocsPage() {
             response={`{"people":[{"first_name":"...","last_name":"...","job_title":"...","company_domain":"...","linkedin_url":"..."}],"totalCount":100,"mode":"full"}`} />
         </Section>
 
+        {/* Monitoring */}
+        <Section title="Job Monitoring & Progress">
+          <Endpoint method="GET" path="/api/jobs/status" description="All active jobs with ETA, cost, throughput"
+            curl={`curl -H "${H}" ${B}/api/jobs/status`}
+            response={`{"activeJobs":[{"type":"enrichment","tableName":"People","columnName":"AI Research","status":"running","progress":{"total":10000,"completed":3200,"errors":12,"percentComplete":32},"timing":{"rowsPerMinute":160,"estimatedRemainingSeconds":2550},"cost":{"totalSoFar":1.24,"estimatedTotal":3.87}}],"summary":{"totalActiveJobs":1,"totalRowsCompleted":3200}}`} />
+          <Endpoint method="GET" path="/api/jobs/status?tableId={id}" description="Active jobs filtered by table" />
+          <Endpoint method="GET" path="/api/jobs/status?columnId={id}" description="Active jobs filtered by column" />
+          <Endpoint method="GET" path="/api/columns/{id}/progress" description="Cell-level status counts for a column"
+            curl={`curl -H "${H}" ${B}/api/columns/COLUMN_ID/progress`}
+            response={`{"columnName":"AI Research","totalRows":10000,"cellStatuses":{"complete":3200,"processing":50,"pending":6738,"error":12,"empty":0},"timing":{"rowsPerMinute":160,"estimatedRemainingSeconds":2550},"errors":{"count":12,"samples":[{"rowId":"...","error":"API timeout"}]}}`} />
+        </Section>
+
         {/* Stats */}
         <Section title="Stats">
           <Endpoint method="GET" path="/api/stats" description="Storage and resource counts"
