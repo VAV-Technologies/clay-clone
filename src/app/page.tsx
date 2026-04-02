@@ -11,9 +11,7 @@ import {
   Folder,
   MoreVertical,
   Sparkles,
-  Table,
   Trash2,
-  Database,
   HardDrive,
 } from 'lucide-react';
 import { ToastProvider, useToast } from '@/components/ui';
@@ -287,10 +285,11 @@ function DashboardContent() {
           />
         </div>
 
-        {/* Storage Counter */}
-        {storageStats && (
-          <div className="mb-8 flex items-center gap-4 text-sm">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+        {/* Storage + Actions Row */}
+        <div className="flex items-center justify-between mb-8">
+          {/* Left: Storage */}
+          {storageStats ? (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm">
               <HardDrive className="w-4 h-4 text-lavender" />
               <span className="text-white/70">
                 {storageStats.storage.estimatedMB < 1
@@ -298,7 +297,7 @@ function DashboardContent() {
                   : `${storageStats.storage.estimatedMB} MB`}
               </span>
               <span className="text-white/40">/ {storageStats.storage.maxGB} GB</span>
-              <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden ml-1">
                 <div
                   className={cn(
                     "h-full rounded-full transition-all",
@@ -309,42 +308,32 @@ function DashboardContent() {
                 />
               </div>
             </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
-              <Database className="w-4 h-4 text-lavender" />
-              <span className="text-white/70">{storageStats.counts.rows.toLocaleString()}</span>
-              <span className="text-white/40">rows</span>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
-              <Table className="w-4 h-4 text-lavender" />
-              <span className="text-white/70">{storageStats.counts.tables}</span>
-              <span className="text-white/40">tables</span>
-            </div>
+          ) : <div />}
+
+          {/* Right: New Folder + New Workbook */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowNewModal('folder')}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm
+                         bg-white/5 border border-white/10
+                         text-white hover:bg-white/10 hover:border-white/20
+                         transition-all duration-200 backdrop-blur-md"
+            >
+              <FolderPlus className="w-4 h-4 text-amber-400" />
+              <span>New Folder</span>
+            </button>
+
+            <button
+              onClick={() => setShowNewModal('table')}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm
+                         bg-lavender/20 border border-lavender/30
+                         text-white hover:bg-lavender/30
+                         transition-all duration-200 backdrop-blur-md"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-lavender" />
+              <span>New Workbook</span>
+            </button>
           </div>
-        )}
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-4 mb-8">
-          <button
-            onClick={() => setShowNewModal('folder')}
-            className="flex items-center gap-3 px-5 py-3 rounded-xl
-                       bg-white/5 border border-white/10
-                       text-white hover:bg-white/10 hover:border-white/20
-                       transition-all duration-200 backdrop-blur-md"
-          >
-            <FolderPlus className="w-5 h-5 text-amber-400" />
-            <span>New Folder</span>
-          </button>
-
-          <button
-            onClick={() => setShowNewModal('table')}
-            className="flex items-center gap-3 px-5 py-3 rounded-xl
-                       bg-lavender/20 border border-lavender/30
-                       text-white hover:bg-lavender/30
-                       transition-all duration-200 backdrop-blur-md"
-          >
-            <FileSpreadsheet className="w-5 h-5 text-lavender" />
-            <span>New Workbook</span>
-          </button>
         </div>
 
         {/* Projects List */}
