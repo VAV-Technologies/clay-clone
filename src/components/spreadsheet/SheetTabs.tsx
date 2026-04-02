@@ -21,8 +21,7 @@ export function SheetTabs() {
   }, [renaming]);
 
   const handleAddSheet = () => {
-    const nextNum = sheets.length + 1;
-    addSheet(`Sheet ${nextNum}`);
+    addSheet(`Sheet ${sheets.length + 1}`);
   };
 
   const handleContextMenu = (e: React.MouseEvent, sheetId: string) => {
@@ -52,54 +51,65 @@ export function SheetTabs() {
   };
 
   return (
-    <div className="flex-shrink-0 flex items-stretch h-11 border-t border-white/10 bg-midnight/40 overflow-x-auto rounded-b-2xl">
-      {/* Tabs — flush, no gaps, dividers between them */}
-      {sheets.map((sheet, index) => (
-        <button
-          key={sheet.id}
-          onClick={() => switchSheet(sheet.id)}
-          onContextMenu={(e) => handleContextMenu(e, sheet.id)}
-          onDoubleClick={() => handleStartRename(sheet.id)}
-          className={cn(
-            'flex items-center px-5 text-sm transition-colors whitespace-nowrap border-r border-white/[0.06]',
-            // First tab: match card's bottom-left radius
-            index === 0 && 'rounded-bl-2xl',
-            // Active tab
-            activeSheetId === sheet.id
-              ? 'bg-lavender/10 text-white border-t-2 border-t-lavender'
-              : 'bg-transparent text-white/50 hover:text-white/70 hover:bg-white/[0.04] border-t-2 border-t-transparent'
-          )}
-        >
-          {renaming === sheet.id ? (
-            <input
-              ref={renameInputRef}
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onBlur={handleFinishRename}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleFinishRename();
-                if (e.key === 'Escape') setRenaming(null);
-              }}
-              className="bg-transparent border-none outline-none text-sm text-white w-24"
-              onClick={(e) => e.stopPropagation()}
-            />
-          ) : (
-            sheet.name
-          )}
-        </button>
-      ))}
+    <div className="flex-shrink-0 flex items-stretch border-t border-white/10 bg-midnight-100/60 overflow-hidden rounded-b-2xl">
+      {sheets.map((sheet, index) => {
+        const isActive = activeSheetId === sheet.id;
+        const isFirst = index === 0;
 
-      {/* Add sheet — flush, same height */}
+        return (
+          <button
+            key={sheet.id}
+            onClick={() => switchSheet(sheet.id)}
+            onContextMenu={(e) => handleContextMenu(e, sheet.id)}
+            onDoubleClick={() => handleStartRename(sheet.id)}
+            className={cn(
+              'relative flex items-center h-11 px-5 text-sm transition-colors whitespace-nowrap',
+              // First tab curves to match card corner, rest are square
+              isFirst ? 'rounded-bl-2xl' : '',
+              // Right divider between tabs
+              'border-r border-white/[0.08]',
+              // Active/inactive states
+              isActive
+                ? 'bg-white/[0.06] text-white'
+                : 'bg-transparent text-white/50 hover:text-white/70 hover:bg-white/[0.03]'
+            )}
+          >
+            {/* Active indicator — lavender bar at top */}
+            {isActive && (
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-lavender" />
+            )}
+
+            {renaming === sheet.id ? (
+              <input
+                ref={renameInputRef}
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={handleFinishRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleFinishRename();
+                  if (e.key === 'Escape') setRenaming(null);
+                }}
+                className="bg-transparent border-none outline-none text-sm text-white w-24"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              sheet.name
+            )}
+          </button>
+        );
+      })}
+
+      {/* Add sheet button — square, flush */}
       <button
         onClick={handleAddSheet}
-        className="flex items-center justify-center w-11 text-white/40 hover:text-white hover:bg-white/[0.04] transition-colors border-r border-white/[0.06]"
+        className="flex items-center justify-center w-11 h-11 text-white/40 hover:text-white hover:bg-white/[0.03] transition-colors border-r border-white/[0.08]"
         title="Add sheet"
       >
         <Plus className="w-4 h-4" />
       </button>
 
-      {/* Empty space fills the rest — inherits the bottom-right radius */}
-      <div className="flex-1 rounded-br-2xl" />
+      {/* Empty fill — takes remaining space, carries bottom-right radius */}
+      <div className="flex-1" />
 
       {/* Context menu */}
       {contextMenu && createPortal(
