@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Plus, Sparkles, Code, Clock } from 'lucide-react';
+import { Plus, Sparkles, Code, Clock, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassButton } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
@@ -11,6 +11,7 @@ import { Cell } from './Cell';
 import { FilterBar } from './FilterBar';
 import { EnrichmentDataViewer } from './EnrichmentDataViewer';
 import { BatchEnrichmentPanel } from '@/components/enrichment/BatchEnrichmentPanel';
+import { FindEmailPanel } from '@/components/email/FindEmailPanel';
 import { RowDisplayControl } from './RowDisplayControl';
 import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { AddFilterButton } from './AddFilterButton';
@@ -56,6 +57,9 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
 
   // State for batch enrichment panel
   const [isBatchEnrichmentOpen, setIsBatchEnrichmentOpen] = useState(false);
+
+  // State for find email panel
+  const [isFindEmailOpen, setIsFindEmailOpen] = useState(false);
 
   const {
     currentTable,
@@ -357,6 +361,16 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
             Batch Enrich
           </GlassButton>
 
+          <GlassButton
+            variant="default"
+            size="sm"
+            onClick={() => setIsFindEmailOpen(true)}
+            className="bg-cyan-500/20 border-cyan-500/30 hover:bg-cyan-500/30"
+          >
+            <Mail className="w-4 h-4 mr-1" />
+            Find Email
+          </GlassButton>
+
         </div>
       </div>
 
@@ -589,6 +603,12 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
       <BatchEnrichmentPanel
         isOpen={isBatchEnrichmentOpen}
         onClose={() => setIsBatchEnrichmentOpen(false)}
+      />
+
+      {/* Find Email Panel */}
+      <FindEmailPanel
+        isOpen={isFindEmailOpen}
+        onClose={() => setIsFindEmailOpen(false)}
       />
 
     </div>
