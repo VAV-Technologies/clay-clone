@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Loader2, AlertCircle, Check, ChevronDown, UserPlus } from 'lucide-react';
+import { Search, Loader2, AlertCircle, Check, ChevronDown, ChevronUp, UserPlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Modal, GlassButton } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
@@ -96,13 +96,13 @@ function TextFilterInput({ label, value, onChange, placeholder }: {
 }) {
   return (
     <div>
-      <label className="text-xs text-white/40 mb-1 block">{label}</label>
+      <label className="text-xs text-white/50 mb-1 block">{label}</label>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || 'Comma-separated values...'}
-        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
+        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
       />
     </div>
   );
@@ -111,16 +111,33 @@ function TextFilterInput({ label, value, onChange, placeholder }: {
 function NumberFilterInput({ label, value, onChange, placeholder }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
+  const numVal = value ? Number(value) : 0;
+  const increment = () => onChange(String(numVal + 1));
+  const decrement = () => onChange(String(Math.max(0, numVal - 1)));
   return (
     <div>
-      <label className="text-xs text-white/40 mb-1 block">{label}</label>
-      <input
-        type="number"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder || ''}
-        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
-      />
+      <label className="text-xs text-white/50 mb-1 block">{label}</label>
+      <div className="flex border border-white/10 rounded-lg overflow-hidden focus-within:border-lavender">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={value}
+          onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, ''))}
+          placeholder={placeholder || ''}
+          className="flex-1 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none"
+        />
+        <div className="flex flex-col border-l border-white/10 bg-white/[0.03]">
+          <button type="button" onClick={increment}
+            className="flex items-center justify-center w-7 flex-1 hover:bg-white/10 transition-colors text-white/40 hover:text-white">
+            <ChevronUp className="w-3 h-3" />
+          </button>
+          <div className="border-t border-white/10" />
+          <button type="button" onClick={decrement}
+            className="flex items-center justify-center w-7 flex-1 hover:bg-white/10 transition-colors text-white/40 hover:text-white">
+            <ChevronDown className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -467,7 +484,7 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
 
   if (!isOpen) return null;
 
-  const selectClasses = 'w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-lavender';
+  const selectClasses = 'w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 pr-9 text-sm text-white focus:outline-none focus:border-lavender appearance-none bg-[length:16px_16px] bg-[position:right_0.5rem_center] bg-no-repeat bg-[url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2716%27%20height%3D%2716%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27rgba(255%2C255%2C255%2C0.4)%27%20stroke-width%3D%272%27%3E%3Cpath%20d%3D%27M6%209l6%206%206-6%27/%3E%3C/svg%3E")]';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add Data — People Search" size="full">
@@ -497,7 +514,7 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
                 <button
                   type="button"
                   onClick={() => setDomainMode('manual')}
-                  className={cn('flex-1 px-3 py-1.5 text-xs transition-colors border-r border-white/10',
+                  className={cn('flex-1 px-3 py-2 text-sm transition-colors border-r border-white/10',
                     domainMode === 'manual' ? 'bg-cyan-500/20 text-white' : 'bg-white/5 text-white/50')}
                 >
                   Type Manually
@@ -505,7 +522,7 @@ export function AddDataModal({ isOpen, onClose, tableId, onComplete }: AddDataMo
                 <button
                   type="button"
                   onClick={() => setDomainMode('column')}
-                  className={cn('flex-1 px-3 py-1.5 text-xs transition-colors',
+                  className={cn('flex-1 px-3 py-2 text-sm transition-colors',
                     domainMode === 'column' ? 'bg-cyan-500/20 text-white' : 'bg-white/5 text-white/50')}
                 >
                   From Column

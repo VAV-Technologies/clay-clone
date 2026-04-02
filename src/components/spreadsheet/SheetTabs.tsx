@@ -52,7 +52,7 @@ export function SheetTabs() {
   };
 
   return (
-    <div className="flex-shrink-0 flex items-center h-9 border-t border-white/10 bg-midnight-100/80 px-1 gap-0.5 overflow-x-auto">
+    <div className="flex-shrink-0 flex items-center h-11 border-t border-white/10 bg-midnight-100/80 px-2 gap-1 overflow-x-auto rounded-b-2xl">
       {sheets.map((sheet) => (
         <button
           key={sheet.id}
@@ -60,7 +60,7 @@ export function SheetTabs() {
           onContextMenu={(e) => handleContextMenu(e, sheet.id)}
           onDoubleClick={() => handleStartRename(sheet.id)}
           className={cn(
-            'flex items-center h-7 px-3 text-xs rounded-t-md border-t-2 transition-colors whitespace-nowrap min-w-0',
+            'flex items-center h-8 px-4 text-sm rounded-t-lg border-t-2 transition-colors whitespace-nowrap min-w-0',
             activeSheetId === sheet.id
               ? 'bg-lavender/10 border-t-lavender text-white'
               : 'bg-white/[0.03] border-t-transparent text-white/50 hover:text-white/70 hover:bg-white/[0.05]'
@@ -76,7 +76,7 @@ export function SheetTabs() {
                 if (e.key === 'Enter') handleFinishRename();
                 if (e.key === 'Escape') setRenaming(null);
               }}
-              className="bg-transparent border-none outline-none text-xs text-white w-20"
+              className="bg-transparent border-none outline-none text-sm text-white w-24"
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
@@ -88,10 +88,10 @@ export function SheetTabs() {
       {/* Add sheet button */}
       <button
         onClick={handleAddSheet}
-        className="flex items-center justify-center w-7 h-7 text-white/40 hover:text-white hover:bg-white/10 rounded transition-colors flex-shrink-0"
+        className="flex items-center justify-center w-8 h-8 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-colors flex-shrink-0"
         title="Add sheet"
       >
-        <Plus className="w-3.5 h-3.5" />
+        <Plus className="w-4 h-4" />
       </button>
 
       {/* Context menu */}
