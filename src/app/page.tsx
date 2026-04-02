@@ -156,7 +156,7 @@ function DashboardContent() {
     fetchProjects();
   }, [fetchProjects]);
 
-  // Fetch storage stats with polling
+  // Fetch storage stats once on mount
   useEffect(() => {
     const fetchStats = async () => {
       try {
@@ -171,9 +171,6 @@ function DashboardContent() {
     };
 
     fetchStats();
-    // Poll every 30 seconds for real-time updates
-    const interval = setInterval(fetchStats, 30000);
-    return () => clearInterval(interval);
   }, []);
 
   const filteredProjects = projects.filter((p) =>

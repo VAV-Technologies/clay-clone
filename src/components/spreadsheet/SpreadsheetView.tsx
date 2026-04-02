@@ -79,18 +79,18 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
     fetchTable(tableId);
   }, [tableId, fetchTable]);
 
-  // Poll for updates when enrichment jobs are active
+  // Poll for updates only when enrichment jobs are active
+  const [isPolling, setIsPolling] = useState(false);
+
   useEffect(() => {
     let pollInterval: NodeJS.Timeout | null = null;
     let isMounted = true;
 
     const checkForActiveJobs = async (): Promise<boolean> => {
       try {
-        // Get all enrichment columns
         const enrichmentColumns = columns.filter(c => c.type === 'enrichment');
         if (enrichmentColumns.length === 0) return false;
 
-        // Check if any jobs are running for this table's columns
         for (const col of enrichmentColumns) {
           const response = await fetch(`/api/enrichment/jobs?columnId=${col.id}`);
           if (response.ok) {
@@ -107,27 +107,25 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
       }
     };
 
-    const startPolling = async () => {
+    const poll = async () => {
       if (!isMounted) return;
 
       const hasActiveJobs = await checkForActiveJobs();
       if (!isMounted) return;
 
       if (hasActiveJobs) {
-        // Refresh table data silently
+        setIsPolling(true);
         fetchTable(tableId, true);
-
-        // Continue polling every 5 seconds when jobs are active
-        pollInterval = setTimeout(startPolling, 5000);
+        pollInterval = setTimeout(poll, 5000);
       } else {
-        // Check again in 10 seconds in case new jobs are created
-        pollInterval = setTimeout(startPolling, 10000);
+        // No active jobs — stop polling
+        setIsPolling(false);
       }
     };
 
-    // Start polling after initial load
+    // Check once after load, then only poll if jobs are active
     if (!isLoading && columns.length > 0) {
-      startPolling();
+      poll();
     }
 
     return () => {

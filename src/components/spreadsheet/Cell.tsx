@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, AlertCircle, RotateCcw, CheckCircle2, ChevronRight, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -23,7 +23,7 @@ interface CellProps {
   onShowEnrichmentData?: (rowId: string, columnId: string, data: Record<string, string | number | null>, metadata?: CellMetadata) => void;
 }
 
-export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: CellProps) {
+export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: CellProps) {
   const { updateCell, setEditingCell, fetchTable } = useTableStore();
   const [editValue, setEditValue] = useState('');
   const [isRetrying, setIsRetrying] = useState(false);
@@ -367,4 +367,11 @@ export function Cell({ row, column, isEditing, tableId, onShowEnrichmentData }: 
       )}
     </div>
   );
-}
+}, (prev, next) => {
+  return (
+    prev.row.data[prev.column.id] === next.row.data[next.column.id] &&
+    prev.isEditing === next.isEditing &&
+    prev.column.id === next.column.id &&
+    prev.row.id === next.row.id
+  );
+});
