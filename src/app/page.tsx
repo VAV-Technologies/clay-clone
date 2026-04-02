@@ -9,7 +9,6 @@ import {
   FileSpreadsheet,
   Folder,
   MoreVertical,
-  Settings,
   Sparkles,
   Table,
   Trash2,
@@ -18,7 +17,6 @@ import {
 } from 'lucide-react';
 import { ToastProvider, useToast } from '@/components/ui';
 import { NewItemModal } from '@/components/modals/NewItemModal';
-import { APISettingsModal } from '@/components/settings/APISettingsModal';
 import { useProjectStore } from '@/stores/projectStore';
 import { cn } from '@/lib/utils';
 
@@ -151,7 +149,6 @@ function DashboardContent() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewModal, setShowNewModal] = useState<'folder' | 'table' | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
 
   // Fetch projects on mount
@@ -279,13 +276,6 @@ function DashboardContent() {
             </div>
             <h1 className="text-xl font-bold text-white">DataFlow</h1>
           </div>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-            title="Settings"
-          >
-            <Settings className="w-5 h-5 text-white/70" />
-          </button>
         </div>
       </header>
 
@@ -410,10 +400,6 @@ function DashboardContent() {
         onCreate={handleCreate}
       />
 
-      <APISettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-      />
     </div>
   );
 }

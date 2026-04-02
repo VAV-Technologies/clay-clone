@@ -5,7 +5,6 @@ import type { CellValue } from '@/lib/db/schema';
 import {
   callAI as callUnifiedAI,
   getModelPricing,
-  getProviderFromModel,
   getProviderRateLimits,
   type AIResult,
 } from '@/lib/ai-provider';
@@ -225,10 +224,9 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
     return db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
   }));
 
-  const modelId = config.model || 'gemini-2.5-flash';
+  const modelId = config.model || 'gpt-5-mini';
   const pricing = getModelPricing(modelId);
-  const provider = getProviderFromModel(modelId);
-  const rateLimits = getProviderRateLimits(provider, modelId);
+  const rateLimits = getProviderRateLimits(modelId);
   let batchCost = 0;
   let batchErrors = 0;
 

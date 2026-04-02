@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
 
     // Call AI
     try {
-      const modelId = config.model || 'gemini-2.5-flash';
+      const modelId = config.model || 'gpt-5-mini';
       const pricing = getModelPricing(modelId);
       const aiResult = await callUnifiedAI(prompt, modelId, {
         temperature: config.temperature ?? 0.7,

@@ -7,7 +7,6 @@ Complete instructions for deploying this Next.js project to a new Vercel account
 - GitHub account with this repo pushed
 - Vercel account (free tier works)
 - Turso account (database)
-- Google Cloud account (Vertex AI for Gemini models)
 - Azure account (OpenAI + Batch API)
 
 ## 2. Vercel Environment Variables
@@ -56,18 +55,6 @@ Set all of these in Vercel → Project → Settings → Environment Variables.
 | `AZURE_BATCH_API_KEY` | API key for the batch processing endpoint |
 | `AZURE_BATCH_DEPLOYMENT` | *(Optional)* Deployment name, defaults to `gpt-4.1-mini` |
 
-### Google Cloud / Vertex AI (Gemini models)
-
-| Variable | Description |
-|---|---|
-| `GOOGLE_CLOUD_PROJECT` | Google Cloud project ID |
-| `GOOGLE_CLOUD_LOCATION` | *(Optional)* Region, defaults to `us-central1` |
-| `GOOGLE_SERVICE_ACCOUNT_BASE64` | Base64-encoded service account JSON key (preferred) |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | *(Alternative)* Raw JSON service account key |
-| `GEMINI_API_KEY` | *(Alternative)* Gemini API key (if not using Vertex AI / service account) |
-
-> **Note:** For Google AI, you can either use Vertex AI (service account + project) or a Gemini API key. Vertex AI is recommended for production.
-
 ## 3. GitHub Configuration
 
 ### GitHub Actions Secret
@@ -107,17 +94,6 @@ Go to your repo → Settings → Secrets and variables → Actions → Variables
 3. Copy the endpoint URL and API key
 4. For batch processing, you can use the same or a separate Azure OpenAI resource
 
-### Google Cloud / Vertex AI
-
-1. Create a Google Cloud project
-2. Enable the Vertex AI API
-3. Create a service account with Vertex AI User role
-4. Download the JSON key and base64-encode it:
-   ```bash
-   base64 -w 0 service-account.json
-   ```
-5. Set the result as `GOOGLE_SERVICE_ACCOUNT_BASE64`
-
 ## 5. Vercel Deployment
 
 1. Go to [vercel.com](https://vercel.com) and import the GitHub repository
@@ -150,7 +126,7 @@ These will start automatically once the GitHub secrets/variables are configured.
 
 **For full functionality, also add:**
 - `AZURE_BATCH_ENDPOINT` + `AZURE_BATCH_API_KEY` (batch processing)
-- `GOOGLE_CLOUD_PROJECT` + `GOOGLE_SERVICE_ACCOUNT_BASE64` (Gemini models)
+
 
 **GitHub repo settings:**
 - Secret: `CRON_SECRET`

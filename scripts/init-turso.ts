@@ -55,7 +55,7 @@ async function initDatabase() {
     `CREATE TABLE IF NOT EXISTS enrichment_configs (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      model TEXT NOT NULL DEFAULT 'gemini-1.5-flash',
+      model TEXT NOT NULL DEFAULT 'gpt-5-mini',
       prompt TEXT NOT NULL,
       input_columns TEXT NOT NULL,
       output_columns TEXT,

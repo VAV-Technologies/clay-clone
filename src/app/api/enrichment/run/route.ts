@@ -3,7 +3,7 @@ import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import type { CellValue } from '@/lib/db/schema';
-import { callAI as callUnifiedAI, getModelPricing, getProviderFromModel, getProviderRateLimits } from '@/lib/ai-provider';
+import { callAI as callUnifiedAI, getModelPricing, getProviderRateLimits } from '@/lib/ai-provider';
 
 // Vercel function config - extend timeout for AI calls
 export const maxDuration = 60;
@@ -144,10 +144,9 @@ export async function POST(request: NextRequest) {
 
     // Process rows with rate limiting to avoid API throttling
     const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
-    const modelId = config.model || 'gemini-2.5-flash';
+    const modelId = config.model || 'gpt-5-mini';
     const pricing = getModelPricing(modelId);
-    const provider = getProviderFromModel(modelId);
-    const rateLimits = getProviderRateLimits(provider, modelId);
+    const rateLimits = getProviderRateLimits(modelId);
     let totalCost = 0;
 
     const results: RowResult[] = [];

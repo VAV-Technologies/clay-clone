@@ -80,7 +80,7 @@ export const rowsRelations = relations(rows, ({ one }) => ({
 export const enrichmentConfigs = sqliteTable('enrichment_configs', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  model: text('model').notNull().default('gemini-2.5-flash'),
+  model: text('model').notNull().default('gpt-5-mini'),
   prompt: text('prompt').notNull(),
   inputColumns: text('input_columns', { mode: 'json' }).notNull().$type<string[]>(),
   // Output columns defined in Data Guide - each becomes a separate column

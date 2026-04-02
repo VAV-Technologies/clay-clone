@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { Plus, FileSpreadsheet, MoreHorizontal, Trash2, ArrowLeft, Settings, Pencil, FolderInput, Folder, ChevronRight } from 'lucide-react';
+import { Plus, FileSpreadsheet, MoreHorizontal, Trash2, ArrowLeft, Pencil, FolderInput, Folder, ChevronRight } from 'lucide-react';
 import {
   GlassButton,
   GlassInput,
@@ -11,7 +11,6 @@ import {
   ToastProvider,
   useToast,
 } from '@/components/ui';
-import { APISettingsModal } from '@/components/settings/APISettingsModal';
 
 // Dynamically import AnimatedBackground to avoid hydration issues
 const AnimatedBackground = dynamic(
@@ -51,7 +50,6 @@ function ProjectContent() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newTableName, setNewTableName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   // Rename modal state
@@ -276,13 +274,6 @@ function ProjectContent() {
             <div className="w-px h-5 bg-white/20" />
             <h1 className="text-lg font-semibold text-white">{project.name}</h1>
           </div>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-            title="Settings"
-          >
-            <Settings className="w-5 h-5 text-white/70" />
-          </button>
         </div>
       </header>
 
@@ -598,11 +589,6 @@ function ProjectContent() {
         </div>
       </Modal>
 
-      {/* Settings Modal */}
-      <APISettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-      />
     </div>
   );
 }

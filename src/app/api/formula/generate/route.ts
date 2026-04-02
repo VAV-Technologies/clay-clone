@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { callAI } from '@/lib/ai-provider';
 
 interface ColumnInfo {
   name: string;
@@ -78,24 +79,14 @@ ${columnContext}
 
 Return ONLY the JavaScript expression:`;
 
-    const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-    const apiKey = process.env.GEMINI_API_KEY;
+    const fullPrompt = `${SYSTEM_PROMPT}\n\n---\n\n${userPrompt}`;
 
-    let formula: string;
+    const result = await callAI(fullPrompt, 'gpt-5-mini', {
+      temperature: 0.2,
+      maxOutputTokens: 512,
+    });
 
-    if (projectId) {
-      formula = await generateWithVertexAI(userPrompt, projectId);
-    } else if (apiKey) {
-      formula = await generateWithGeminiAPI(userPrompt, apiKey);
-    } else {
-      return NextResponse.json(
-        { error: 'No AI provider configured. Set GOOGLE_CLOUD_PROJECT or GEMINI_API_KEY.' },
-        { status: 500 }
-      );
-    }
-
-    // Clean up the formula - remove markdown code blocks if present
-    formula = cleanFormula(formula);
+    let formula = cleanFormula(result.text);
 
     return NextResponse.json({
       formula,
@@ -123,7 +114,6 @@ function cleanFormula(formula: string): string {
   // Remove any leading/trailing quotes if the entire thing is quoted
   if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
       (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
-    // Only remove if it's actually quoting the formula, not part of it
     const inner = cleaned.slice(1, -1);
     if (!inner.includes('"') && !inner.includes("'")) {
       cleaned = inner;
@@ -131,67 +121,4 @@ function cleanFormula(formula: string): string {
   }
 
   return cleaned.trim();
-}
-
-async function generateWithVertexAI(
-  userPrompt: string,
-  projectId: string
-): Promise<string> {
-  const { getGenerativeModel } = await import('@/lib/vertex-ai');
-
-  const model = getGenerativeModel('gemini-2.0-flash', {
-    temperature: 0.2,
-    maxOutputTokens: 512,
-  });
-
-  const fullPrompt = `${SYSTEM_PROMPT}\n\n---\n\n${userPrompt}`;
-
-  const result = await model.generateContent(fullPrompt);
-  const response = result.response;
-
-  if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
-    return response.candidates[0].content.parts[0].text;
-  }
-
-  throw new Error('No response from AI');
-}
-
-async function generateWithGeminiAPI(
-  userPrompt: string,
-  apiKey: string
-): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
-
-  const fullPrompt = `${SYSTEM_PROMPT}\n\n---\n\n${userPrompt}`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: fullPrompt }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 512,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-
-  if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-    return data.candidates[0].content.parts[0].text;
-  }
-
-  throw new Error('No response from AI');
 }

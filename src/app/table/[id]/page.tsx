@@ -3,14 +3,13 @@
 import { useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Settings, Upload, Download } from 'lucide-react';
+import { ArrowLeft, Upload, Download } from 'lucide-react';
 import Papa from 'papaparse';
 import { ToastProvider, useToast } from '@/components/ui';
 import { SpreadsheetView } from '@/components/spreadsheet';
 import { CSVImportModal } from '@/components/import/CSVImportModal';
 import { EnrichmentPanel } from '@/components/enrichment/EnrichmentPanel';
 import { FormulaPanel } from '@/components/formula/FormulaPanel';
-import { APISettingsModal } from '@/components/settings/APISettingsModal';
 import { useTableStore } from '@/stores/tableStore';
 
 // Dynamically import AnimatedBackground to avoid hydration issues
@@ -30,7 +29,6 @@ function TableContent() {
   const [editEnrichmentColumnId, setEditEnrichmentColumnId] = useState<string | null>(null);
   const [isFormulaOpen, setIsFormulaOpen] = useState(false);
   const [editFormulaColumnId, setEditFormulaColumnId] = useState<string | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
 
   const handleImport = useCallback(() => {
     setIsImportModalOpen(true);
@@ -129,14 +127,6 @@ function TableContent() {
                 <Download className="w-4 h-4" />
                 <span>Export</span>
               </button>
-              <div className="w-px h-5 bg-white/20 mx-1" />
-              <button
-                onClick={() => setShowSettings(true)}
-                className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-                title="Settings"
-              >
-                <Settings className="w-5 h-5 text-white/70" />
-              </button>
             </div>
           </div>
 
@@ -178,10 +168,6 @@ function TableContent() {
         columnId={editFormulaColumnId || undefined}
       />
 
-      <APISettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-      />
     </div>
   );
 }
