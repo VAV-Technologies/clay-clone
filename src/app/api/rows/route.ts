@@ -81,6 +81,33 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// PATCH /api/rows - Bulk update rows
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { updates } = body as { updates: Array<{ id: string; data: Record<string, unknown> }> };
+
+    if (!updates || !Array.isArray(updates) || updates.length === 0) {
+      return NextResponse.json({ error: 'updates array is required: [{id, data}]' }, { status: 400 });
+    }
+
+    let updatedCount = 0;
+    for (const { id, data } of updates) {
+      if (!id || !data) continue;
+      const existing = await db.select().from(schema.rows).where(eq(schema.rows.id, id)).limit(1);
+      if (existing.length === 0) continue;
+      const mergedData = { ...existing[0].data, ...data };
+      await db.update(schema.rows).set({ data: mergedData }).where(eq(schema.rows.id, id));
+      updatedCount++;
+    }
+
+    return NextResponse.json({ success: true, updatedCount });
+  } catch (error) {
+    console.error('Error bulk updating rows:', error);
+    return NextResponse.json({ error: 'Failed to update rows' }, { status: 500 });
+  }
+}
+
 // DELETE /api/rows - Delete rows (bulk)
 export async function DELETE(request: NextRequest) {
   try {

@@ -264,6 +264,12 @@ function DashboardContent() {
             </div>
             <h1 className="text-xl font-bold text-white">DataFlow</h1>
           </div>
+          <a
+            href="/api-docs"
+            className="px-3 py-1.5 text-sm text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-colors"
+          >
+            API Docs
+          </a>
         </div>
       </header>
 

@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 
+// GET /api/export/csv?tableId=xxx - Export CSV via query param (for API access)
+export async function GET(request: NextRequest) {
+  const tableId = request.nextUrl.searchParams.get('tableId');
+  if (!tableId) {
+    return NextResponse.json({ error: 'tableId query param is required' }, { status: 400 });
+  }
+  // Reuse POST logic
+  const fakeRequest = { json: async () => ({ tableId }) } as NextRequest;
+  return POST(fakeRequest);
+}
+
 // POST /api/export/csv - Generate CSV export
 export async function POST(request: NextRequest) {
   try {
