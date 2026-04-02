@@ -29,13 +29,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    // People search
-    const domains = body.domains as string[];
+    // People search — domains are optional (query mode searches across all companies)
+    const domains = (body.domains as string[]) || [];
     const filters = (body.filters || {}) as ClaySearchFilters;
-
-    if (!domains || !Array.isArray(domains) || domains.length === 0) {
-      return NextResponse.json({ error: 'At least one domain is required for people search' }, { status: 400 });
-    }
 
     const cleanDomains = domains
       .map((d: string) => d.trim().toLowerCase())

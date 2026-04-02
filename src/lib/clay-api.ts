@@ -21,7 +21,7 @@ const BASIC_FIELDS = [
   { name: 'First Name', dataType: 'text', formulaText: '{{source}}.first_name' },
   { name: 'Last Name', dataType: 'text', formulaText: '{{source}}.last_name' },
   { name: 'Full Name', dataType: 'text', formulaText: '{{source}}.name' },
-  { name: 'Job Title', dataType: 'text', formulaText: '{{source}}.latest_experience_title' },
+  { name: 'Job Title', dataType: 'text', formulaText: '{{source}}.matched_experience.job_title || {{source}}.latest_experience_title' },
   { name: 'Location', dataType: 'text', formulaText: '{{source}}.location_name' },
   { name: 'Company Domain', dataType: 'url', formulaText: '{{source}}.domain' },
   { name: 'LinkedIn Profile', dataType: 'url', formulaText: '{{source}}.url', isDedupeField: true },
@@ -272,14 +272,27 @@ async function clayFetch(
 
 // ─── Search Pipeline ───────────────────────────────────────────────────────
 
+// Clay's create-cpj-table requires comma-formatted sizes: "501-1,000" not "501-1000"
+const CLAY_SIZE_FORMAT: Record<string, string> = {
+  '501-1000': '501-1,000', '1001-5000': '1,001-5,000',
+  '5001-10000': '5,001-10,000', '10001+': '10,001+',
+};
+function normalizeCompanySizes(sizes: string[]): string[] {
+  return sizes.map(s => CLAY_SIZE_FORMAT[s] || s);
+}
+
 function buildInputs(domains: string[], filters: ClaySearchFilters): Record<string, unknown> {
   return {
-    start_from_method: 'CsvOfCompanies',
+    start_from_method: domains.length > 0 ? 'CsvOfCompanies' : 'query',
     company_identifier: domains,
     company_record_id: [],
-    company_table_id: '',
+    company_table_id: null,
+    company_table_field_id: null,
+    company_table_view_id: null,
     company_audience_segment_id: null,
     include_company_filter_bitmap: null,
+    include_company_filter_identifier_count: 0,
+    company_annual_revenues: [],
     limit: filters.limit ?? null,
     limit_per_company: filters.limit_per_company ?? null,
     job_functions: filters.job_functions ?? [],
@@ -300,7 +313,7 @@ function buildInputs(domains: string[], filters: ClaySearchFilters): Record<stri
     location_regions_include: filters.regions_include ?? [],
     location_regions_exclude: filters.regions_exclude ?? [],
     search_raw_location: filters.search_raw_location ?? false,
-    company_sizes: filters.company_sizes ?? [],
+    company_sizes: normalizeCompanySizes(filters.company_sizes ?? []),
     company_industries_include: filters.company_industries_include ?? [],
     company_industries_exclude: filters.company_industries_exclude ?? [],
     company_description_keywords: filters.company_description_keywords ?? [],
@@ -329,6 +342,9 @@ function buildInputs(domains: string[], filters: ClaySearchFilters): Record<stri
     exclude_people_identifiers_mixed: [],
     role_range_start_month: filters.role_range_start_month ?? null,
     role_range_end_month: filters.role_range_end_month ?? null,
+    job_title_seniority_floor_level: null,
+    job_title_seniority_levels_v2: [],
+    job_title_seniority_match_mode: 'exact',
     result_count: true,
     name: '',
   };
@@ -386,8 +402,14 @@ async function fullSearch(
 ): Promise<ClayPerson[]> {
   const workspaceId = getWorkspaceId();
 
-  // Step 1: Create conversation
-  onProgress?.('Step 1/6: Creating conversation...');
+  // Step 1a: Create workbook
+  onProgress?.('Step 1/6: Creating workbook...');
+  const wbResp = await clayFetch('workbooks', {
+    body: { workspaceId, name: 'People Search' },
+  }) as Record<string, unknown>;
+  const workbookId = wbResp.id as string;
+
+  // Step 1b: Create conversation
   const convResp = await clayFetch(`${workspaceId}/ai-generation/chat-conversation`, {
     body: {
       conversationType: 'ai_onboarding',
@@ -395,7 +417,7 @@ async function fullSearch(
         sourceType: 'people',
         sourceConfig: {
           type: 'people',
-          inputs: buildInputs([], {} as ClaySearchFilters, ),
+          inputs: buildInputs([], {} as ClaySearchFilters),
         },
       },
     },
@@ -406,28 +428,36 @@ async function fullSearch(
   onProgress?.('Step 2/6: Running preview for task ID...');
   const { taskId } = await previewSearch(domains, filters);
 
-  // Step 3: Create CPJ table
+  // Step 3: Create CPJ table (updated payload format)
   onProgress?.('Step 3/6: Creating search table...');
   const tableResp = await clayFetch('sources/create-cpj-table', {
     body: {
       workspaceId,
-      workbookId: conversationId,
-      sourceConfig: {
+      workbookName: 'People Search',
+      workbookId,
+      conversationId,
+      assignedFieldId: 'f_people_search',
+      cpjConfig: {
         type: 'people',
-        actionPackageId: ACTION_PACKAGE_ID,
-        previewTextPath: 'name',
-        defaultPreviewText: 'Clay Profile',
-        recordsPath: 'people',
-        idPath: 'profile_id',
-        scheduleConfig: { runSettings: 'once' },
-        dedupeOnUniqueIds: true,
-        hasEvaluatedInputs: true,
-        inputs: buildInputs(domains, filters),
-        previewActionKey: PEOPLE_PREVIEW_ACTION_KEY,
+        typeSettings: {
+          name: 'Find people',
+          iconType: 'User',
+          actionKey: 'find-lists-of-people-with-mixrank-source',
+          actionPackageId: ACTION_PACKAGE_ID,
+          previewTextPath: 'name',
+          defaultPreviewText: 'Clay Profile',
+          recordsPath: 'people',
+          idPath: 'profile_id',
+          scheduleConfig: { runSettings: 'once' },
+          dedupeOnUniqueIds: true,
+          hasEvaluatedInputs: true,
+          inputs: buildInputs(domains, filters),
+          previewActionKey: PEOPLE_PREVIEW_ACTION_KEY,
+        },
+        basicFields: BASIC_FIELDS,
+        clientSettings: { tableType: 'people' },
+        previewActionTaskId: taskId,
       },
-      clientSettings: { tableType: 'people' },
-      basicFields: BASIC_FIELDS,
-      previewActionTaskId: taskId,
     },
   }) as Record<string, unknown>;
 
