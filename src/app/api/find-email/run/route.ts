@@ -6,7 +6,8 @@ import type { CellValue } from '@/lib/db/schema';
 export const maxDuration = 300;
 
 const NINJER_BASE_URL = 'https://api-production-9cde.up.railway.app';
-const DELAY_BETWEEN_CALLS_MS = 100; // 100ms interval = ~10 req/s per key, 20 req/s with 2 keys
+const CONCURRENT_REQUESTS = 2; // 2 API keys processed in parallel = ~20 req/s
+const DELAY_BETWEEN_BATCHES_MS = 100; // 100ms floor between concurrent batches
 const TIMEOUT_MS = 90000; // Worst case: 50 variations can take up to 90s
 
 function sleep(ms: number) {
@@ -90,11 +91,10 @@ export async function POST(request: NextRequest) {
     let foundCount = 0;
     let errorCount = 0;
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
+    // Process a single row and return the result
+    const processRow = async (row: typeof rows[0], index: number) => {
       const data = row.data as Record<string, CellValue>;
 
-      // Extract input values
       let domain = data[domainColumnId]?.value?.toString().trim() || '';
       let fullName = '';
       let firstName = '';
@@ -107,26 +107,21 @@ export async function POST(request: NextRequest) {
         lastName = data[lastNameColumnId]?.value?.toString().trim() || '';
       }
 
-      // Skip if missing required data
       const hasName = inputMode === 'full_name' ? !!fullName : !!(firstName && lastName);
       if (!hasName || !domain) {
-        // Update cells as skipped
         const updatedData = {
           ...data,
           [emailColumnId]: { value: '', status: 'complete' as const },
           [emailStatusColumnId]: { value: 'skipped', status: 'complete' as const },
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-        results.push({ rowId: row.id, success: true, email: null, status: 'skipped' });
-        continue;
+        return { rowId: row.id, success: true, email: null as string | null, status: 'skipped' };
       }
 
-      // Strip protocol/path from domain if it looks like a URL
       domain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
 
       try {
-        console.log(`[find-email] Processing row ${i + 1}/${rows.length}: ${inputMode === 'full_name' ? fullName : `${firstName} ${lastName}`} @ ${domain}`);
-        // Build request body
+        console.log(`[find-email] Processing row ${index + 1}/${rows.length}: ${inputMode === 'full_name' ? fullName : `${firstName} ${lastName}`} @ ${domain}`);
         const body: Record<string, string> = { domain };
         if (inputMode === 'full_name') {
           body.full_name = fullName;
@@ -148,8 +143,7 @@ export async function POST(request: NextRequest) {
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
 
-        if (apiResult.email) foundCount++;
-        results.push({ rowId: row.id, success: true, email: apiResult.email, status: apiResult.status });
+        return { rowId: row.id, success: true, email: apiResult.email, status: apiResult.status };
       } catch (err) {
         console.error(`[find-email] Error for row ${row.id}:`, err);
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
@@ -159,13 +153,27 @@ export async function POST(request: NextRequest) {
           [emailStatusColumnId]: { value: 'error', status: 'error' as const, error: errorMsg },
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-        errorCount++;
-        results.push({ rowId: row.id, success: false, email: null, status: 'error' });
+
+        return { rowId: row.id, success: false, email: null as string | null, status: 'error' };
+      }
+    };
+
+    // Process rows in concurrent chunks of CONCURRENT_REQUESTS with 100ms delay between chunks
+    for (let i = 0; i < rows.length; i += CONCURRENT_REQUESTS) {
+      const chunk = rows.slice(i, i + CONCURRENT_REQUESTS);
+      const chunkResults = await Promise.all(
+        chunk.map((row, j) => processRow(row, i + j))
+      );
+
+      for (const r of chunkResults) {
+        if (r.email) foundCount++;
+        if (!r.success) errorCount++;
+        results.push(r);
       }
 
-      // Rate limit delay (skip after last row)
-      if (i < rows.length - 1) {
-        await sleep(DELAY_BETWEEN_CALLS_MS);
+      // 100ms delay between concurrent chunks
+      if (i + CONCURRENT_REQUESTS < rows.length) {
+        await sleep(DELAY_BETWEEN_BATCHES_MS);
       }
     }
 
