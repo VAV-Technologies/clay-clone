@@ -697,29 +697,207 @@ function parseCompanyPreview(raw: Record<string, unknown>): ClayCompany {
   };
 }
 
-export async function searchCompanies(
+const COMPANY_BASIC_FIELDS = [
+  { name: 'Company Name', dataType: 'text', formulaText: '{{source}}.name' },
+  { name: 'Type', dataType: 'text', formulaText: '{{source}}.type' },
+  { name: 'Size', dataType: 'text', formulaText: '{{source}}.size' },
+  { name: 'Industry', dataType: 'text', formulaText: '{{source}}.industry' },
+  { name: 'Country', dataType: 'text', formulaText: '{{source}}.country' },
+  { name: 'Location', dataType: 'text', formulaText: '{{source}}.location' },
+  { name: 'Domain', dataType: 'url', formulaText: '{{source}}.domain', isDedupeField: true },
+  { name: 'LinkedIn URL', dataType: 'url', formulaText: '{{source}}.linkedin_url' },
+  { name: 'Annual Revenue', dataType: 'text', formulaText: '{{source}}.annual_revenue' },
+  { name: 'Description', dataType: 'text', formulaText: '{{source}}.description' },
+];
+
+const COMPANY_FIELD_NAME_MAP: Record<string, string> = {
+  'Company Name': 'name',
+  'Type': 'type',
+  'Size': 'size',
+  'Industry': 'industry',
+  'Country': 'country',
+  'Location': 'location',
+  'Domain': 'domain',
+  'LinkedIn URL': 'linkedin_url',
+  'Annual Revenue': 'annual_revenue',
+  'Description': 'description',
+};
+
+async function companyPreviewSearch(
   filters: ClayCompanySearchFilters,
   onProgress?: (msg: string) => void
-): Promise<ClayCompanySearchResult> {
+): Promise<{ taskId: string; companies: ClayCompany[] }> {
   const workspaceId = getWorkspaceId();
+  const previewFilters = { ...filters, limit: Math.min(filters.limit ?? 50, 50) };
 
-  onProgress?.('Searching for companies...');
+  onProgress?.('Running company preview search...');
 
   const data = await clayFetch('actions/run-enrichment', {
     body: {
       workspaceId,
       enrichmentType: COMPANY_PREVIEW_ACTION_KEY,
       options: { sync: true, returnTaskId: true, returnActionMetadata: true },
-      inputs: buildCompanyInputs(filters),
+      inputs: buildCompanyInputs(previewFilters),
     },
   }) as Record<string, unknown>;
 
+  const taskId = (data.taskId as string) || '';
   const result = data.result as Record<string, unknown>;
   const rawCompanies = (result?.companies as Record<string, unknown>[]) || [];
   const companies = rawCompanies.map(parseCompanyPreview);
-  const totalCount = (result?.companyCount as number) || companies.length;
 
-  onProgress?.(`Found ${companies.length} companies (${totalCount} total matches)`);
+  onProgress?.(`Preview complete — ${companies.length} companies`);
+  return { taskId, companies };
+}
 
-  return { companies, totalCount, mode: 'preview' };
+async function fullCompanySearch(
+  filters: ClayCompanySearchFilters,
+  onProgress?: (msg: string) => void
+): Promise<ClayCompany[]> {
+  const workspaceId = getWorkspaceId();
+
+  // Step 1: Create workbook
+  onProgress?.('Step 1/6: Creating workbook...');
+  const wbResp = await clayFetch('workbooks', {
+    body: { workspaceId, name: 'Company Search' },
+  }) as Record<string, unknown>;
+  const workbookId = wbResp.id as string;
+
+  // Step 1b: Create conversation
+  const convResp = await clayFetch(`${workspaceId}/ai-generation/chat-conversation`, {
+    body: {
+      conversationType: 'ai_onboarding',
+      initialSourceState: {
+        sourceType: 'companies',
+        sourceConfig: { type: 'companies', inputs: buildCompanyInputs({}) },
+      },
+    },
+  }) as Record<string, unknown>;
+  const conversationId = convResp.conversationId as string;
+
+  // Step 2: Preview for taskId
+  onProgress?.('Step 2/6: Running preview for task ID...');
+  const { taskId } = await companyPreviewSearch(filters);
+
+  // Step 3: Create CPJ table
+  onProgress?.('Step 3/6: Creating search table...');
+  const tableResp = await clayFetch('sources/create-cpj-table', {
+    body: {
+      workspaceId,
+      workbookName: 'Company Search',
+      workbookId,
+      conversationId,
+      assignedFieldId: 'f_company_search',
+      cpjConfig: {
+        type: 'companies',
+        typeSettings: {
+          name: 'Find companies',
+          iconType: 'Building',
+          actionKey: 'find-lists-of-companies-with-mixrank-source',
+          actionPackageId: ACTION_PACKAGE_ID,
+          previewTextPath: 'name',
+          defaultPreviewText: 'Company',
+          recordsPath: 'companies',
+          idPath: 'clay_company_id',
+          scheduleConfig: { runSettings: 'once' },
+          dedupeOnUniqueIds: true,
+          hasEvaluatedInputs: true,
+          inputs: buildCompanyInputs(filters),
+          previewActionKey: COMPANY_PREVIEW_ACTION_KEY,
+        },
+        basicFields: COMPANY_BASIC_FIELDS,
+        clientSettings: { tableType: 'company' },
+        previewActionTaskId: taskId,
+      },
+    },
+  }) as Record<string, unknown>;
+
+  const tableId = tableResp.tableId as string;
+  const sourceId = tableResp.sourceId as string;
+  let viewId = (tableResp.viewId as string) || '';
+
+  // Step 4: Poll
+  onProgress?.('Step 4/6: Waiting for results...');
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const pollResp = await clayFetch(`sources/${sourceId}/runs?limit=1`) as Record<string, unknown>;
+    const runs = (pollResp.runs as Array<Record<string, unknown>>) || [];
+    if (runs.length > 0) {
+      const status = runs[0].status as string;
+      if (status === 'SUCCESS') { onProgress?.('Search completed'); break; }
+      if (status === 'ERROR' || status === 'FAILED') {
+        throw new Error(`Clay search failed: ${runs[0].message || status}`);
+      }
+      onProgress?.(`  Status: ${status}...`);
+    }
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  if (Date.now() >= deadline) throw new Error('Clay search timed out');
+
+  // Step 5: Fetch record IDs
+  onProgress?.('Step 5/6: Fetching record IDs...');
+  if (!viewId) {
+    const ti = await clayFetch(`tables/${tableId}`) as Record<string, unknown>;
+    const t = (ti.table as Record<string, unknown>) || ti;
+    viewId = (t.defaultViewId as string) || '';
+  }
+  const idsResp = await clayFetch(`tables/${tableId}/views/${viewId}/records/ids`) as Record<string, unknown>;
+  const recordIds = (idsResp.results as string[]) || [];
+
+  // Step 6: Bulk fetch
+  onProgress?.(`Step 6/6: Fetching ${recordIds.length} records...`);
+  const ti = await clayFetch(`tables/${tableId}`) as Record<string, unknown>;
+  const td = (ti.table as Record<string, unknown>) || ti;
+  const fields = (td.fields as Array<Record<string, unknown>>) || [];
+  const fieldMapping: Record<string, string> = {};
+  for (const f of fields) {
+    const name = f.name as string;
+    if (name && COMPANY_FIELD_NAME_MAP[name]) fieldMapping[f.id as string] = COMPANY_FIELD_NAME_MAP[name];
+  }
+
+  const allRecords: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < recordIds.length; i += BULK_FETCH_BATCH_SIZE) {
+    const batch = recordIds.slice(i, i + BULK_FETCH_BATCH_SIZE);
+    const br = await clayFetch(`tables/${tableId}/bulk-fetch-records`, {
+      body: { recordIds: batch, includeExternalContentFieldIds: [] },
+    }) as Record<string, unknown>;
+    allRecords.push(...((br.results as Array<Record<string, unknown>>) || []));
+    if (i + BULK_FETCH_BATCH_SIZE < recordIds.length) await new Promise(r => setTimeout(r, 100));
+  }
+
+  const companies: ClayCompany[] = allRecords.map(record => {
+    const cells = (record.cells as Record<string, Record<string, unknown>>) || {};
+    const c: Record<string, string> = {};
+    for (const [fid, col] of Object.entries(fieldMapping)) {
+      const cell = cells[fid];
+      if (cell) c[col] = (cell.value as string) || '';
+    }
+    return {
+      name: c.name || '', type: c.type || '', size: c.size || '',
+      industry: c.industry || '', country: c.country || '', location: c.location || '',
+      domain: c.domain || '', linkedin_url: c.linkedin_url || '',
+      description: (c.description || '').slice(0, 500), annual_revenue: c.annual_revenue || '',
+    };
+  });
+
+  // Cleanup
+  try { await clayFetch(`tables/${tableId}`, { method: 'DELETE' }); } catch { /* */ }
+
+  return companies;
+}
+
+export async function searchCompanies(
+  filters: ClayCompanySearchFilters,
+  onProgress?: (msg: string) => void
+): Promise<ClayCompanySearchResult> {
+  const limit = filters.limit ?? null;
+  const usePreview = limit !== null && limit <= 50;
+
+  if (usePreview) {
+    const { companies } = await companyPreviewSearch(filters, onProgress);
+    return { companies, totalCount: companies.length, mode: 'preview' };
+  }
+
+  const companies = await fullCompanySearch(filters, onProgress);
+  return { companies, totalCount: companies.length, mode: 'full' };
 }
