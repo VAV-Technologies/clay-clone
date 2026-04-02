@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 
 interface DropdownItem {
@@ -21,31 +22,54 @@ interface DropdownProps {
 
 export function Dropdown({ trigger, items, align = 'left', className }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const updatePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const menuWidth = 160;
+
+    let left = align === 'right' ? rect.right - menuWidth : rect.left;
+    // Clamp to viewport
+    left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
+    const top = rect.bottom + 4;
+
+    setPosition({ top, left });
+  }, [align]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    updatePosition();
+
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        triggerRef.current && !triggerRef.current.contains(event.target as Node) &&
+        menuRef.current && !menuRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [isOpen, updatePosition]);
 
   return (
-    <div ref={dropdownRef} className={cn('relative inline-block', className)} onClick={(e) => e.stopPropagation()}>
+    <div ref={triggerRef} className={cn('relative inline-block', className)} onClick={(e) => e.stopPropagation()}>
       <div onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
 
-      {isOpen && (
+      {isOpen && createPortal(
         <div
+          ref={menuRef}
           className={cn(
-            'absolute z-50 mt-1 min-w-[160px] py-1',
+            'fixed z-[100] min-w-[160px] py-1',
             'bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-glass',
-            'animate-scale-in origin-top',
-            align === 'right' ? 'right-0' : 'left-0'
+            'animate-scale-in origin-top'
           )}
+          style={{ top: position.top, left: position.left }}
+          onClick={(e) => e.stopPropagation()}
         >
           {items.map((item, index) => {
             if (item.divider) {
@@ -77,7 +101,8 @@ export function Dropdown({ trigger, items, align = 'left', className }: Dropdown
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

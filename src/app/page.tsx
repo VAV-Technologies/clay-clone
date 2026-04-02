@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
@@ -57,6 +58,7 @@ function ProjectRow({
   onDelete: () => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
   const isFolder = project.type === 'folder';
 
   return (
@@ -86,8 +88,9 @@ function ProjectRow({
         </div>
       </div>
 
-      <div className="relative">
+      <div>
         <button
+          ref={menuBtnRef}
           onClick={(e) => {
             e.stopPropagation();
             setShowMenu(!showMenu);
@@ -98,29 +101,36 @@ function ProjectRow({
           <MoreVertical className="w-4 h-4 text-white/50" />
         </button>
 
-        {showMenu && (
+        {showMenu && createPortal(
           <>
             <div
-              className="fixed inset-0 z-10"
+              className="fixed inset-0 z-[99]"
               onClick={(e) => {
                 e.stopPropagation();
                 setShowMenu(false);
               }}
             />
-            <div className="absolute right-0 top-full mt-1 z-20 bg-midnight-100 border border-white/10 rounded-lg shadow-xl overflow-hidden min-w-[120px]">
+            <div
+              className="fixed z-[100] bg-midnight-100 border border-white/10 rounded-lg shadow-xl min-w-[120px]"
+              style={{
+                top: (menuBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                right: window.innerWidth - (menuBtnRef.current?.getBoundingClientRect().right ?? 0),
+              }}
+            >
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowMenu(false);
                   onDelete();
                 }}
-                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-white/5 transition-colors"
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-white/5 transition-colors rounded-lg"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
               </button>
             </div>
-          </>
+          </>,
+          document.body
         )}
       </div>
     </div>
@@ -355,7 +365,7 @@ function DashboardContent() {
         </div>
 
         {/* Projects List */}
-        <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl">
           {isLoading ? (
             <div className="p-12 text-center">
               <div className="animate-spin w-8 h-8 border-2 border-lavender border-t-transparent rounded-full mx-auto" />

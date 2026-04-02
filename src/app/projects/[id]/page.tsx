@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Plus, FileSpreadsheet, MoreHorizontal, Trash2, ArrowLeft, Pencil, FolderInput, Folder, ChevronRight } from 'lucide-react';
@@ -51,6 +52,7 @@ function ProjectContent() {
   const [newTableName, setNewTableName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   // Rename modal state
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
@@ -327,9 +329,10 @@ function ProjectContent() {
                   </div>
 
                   {/* Menu button */}
-                  <div className="relative w-10 flex justify-end">
+                  <div className="w-10 flex justify-end">
                     <button
                       type="button"
+                      ref={(el) => { menuBtnRefs.current[table.id] = el; }}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -340,9 +343,21 @@ function ProjectContent() {
                       <MoreHorizontal className="w-4 h-4 text-white/50" />
                     </button>
 
-                    {openMenuId === table.id && (
+                    {openMenuId === table.id && createPortal(
+                      <>
                         <div
-                          className="absolute right-0 top-full mt-1 z-50 min-w-[160px] py-1 bg-midnight-100 border border-white/10 rounded-xl shadow-xl"
+                          className="fixed inset-0 z-[99]"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenMenuId(null);
+                          }}
+                        />
+                        <div
+                          className="fixed z-[100] min-w-[160px] py-1 bg-midnight-100 border border-white/10 rounded-xl shadow-xl"
+                          style={{
+                            top: (menuBtnRefs.current[table.id]?.getBoundingClientRect().bottom ?? 0) + 4,
+                            right: window.innerWidth - (menuBtnRefs.current[table.id]?.getBoundingClientRect().right ?? 0),
+                          }}
                           onClick={(e) => e.stopPropagation()}
                         >
                           <button
@@ -383,6 +398,8 @@ function ProjectContent() {
                             Delete
                           </button>
                         </div>
+                      </>,
+                      document.body
                     )}
                   </div>
                 </div>
