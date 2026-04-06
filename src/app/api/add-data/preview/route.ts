@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { previewPeopleSearch, previewCompanySearch } from '@/lib/clay-api';
 import type { ClaySearchFilters, ClayCompanySearchFilters } from '@/lib/clay-api';
 
+export const runtime = 'nodejs';
+
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
@@ -42,8 +44,7 @@ export async function POST(request: NextRequest) {
       estimatedTotal: result.estimatedTotal,
       previewCount: result.preview.length,
       preview: result.preview,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      _debug: (result as any)._debugKeys || null,
+      _debug: result._debugKeys || null,
     });
   } catch (error) {
     console.error('Preview search error:', error);
