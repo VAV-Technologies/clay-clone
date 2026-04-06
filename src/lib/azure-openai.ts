@@ -185,6 +185,7 @@ export async function generateContent(
     const outputText = data.output_text ||
       data.output?.[0]?.content?.[0]?.text ||
       '';
+    console.log(`[azure] Responses API - output_text length: ${outputText?.length}, output keys: ${JSON.stringify(Object.keys(data))}, output_tokens: ${data.usage?.output_tokens}`);
     return {
       text: outputText,
       inputTokens: data.usage?.input_tokens ?? 0,
@@ -194,8 +195,13 @@ export async function generateContent(
   }
 
   // Standard Chat Completions format
+  const text = data.choices?.[0]?.message?.content || '';
+  console.log(`[azure] Chat Completions - text length: ${text?.length}, model: ${modelId}, keys: ${JSON.stringify(Object.keys(data))}, output_tokens: ${data.usage?.completion_tokens}`);
+  if (!text && data.choices?.length > 0) {
+    console.log(`[azure] Choice finish_reason: ${data.choices[0].finish_reason}, message keys: ${JSON.stringify(Object.keys(data.choices[0].message || {}))}`);
+  }
   return {
-    text: data.choices?.[0]?.message?.content || '',
+    text,
     inputTokens: data.usage?.prompt_tokens ?? 0,
     outputTokens: data.usage?.completion_tokens ?? 0,
     timeTakenMs,
