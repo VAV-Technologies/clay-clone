@@ -403,9 +403,10 @@ export async function previewPeopleSearch(
   domains: string[],
   filters: ClaySearchFilters,
   onProgress?: (msg: string) => void
-): Promise<{ estimatedTotal: number; preview: ClayPerson[] }> {
-  const { people, estimatedTotal } = await previewSearch(domains, filters, onProgress);
-  return { estimatedTotal, preview: people };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<{ estimatedTotal: number; preview: ClayPerson[]; _debugKeys?: any }> {
+  const { people, estimatedTotal, _debugKeys } = await previewSearch(domains, filters, onProgress);
+  return { estimatedTotal, preview: people, _debugKeys };
 }
 
 export async function previewCompanySearch(
@@ -435,28 +436,26 @@ async function previewSearch(
     },
   }) as Record<string, unknown>;
 
-  // Log full response to discover count metadata fields
-  const topKeys = Object.keys(data);
-  console.log('[clay-preview] Response top-level keys:', topKeys);
-  console.log('[clay-preview] actionMetadata:', JSON.stringify(data.actionMetadata));
-  console.log('[clay-preview] metadata:', JSON.stringify(data.metadata));
-  console.log('[clay-preview] resultCount:', data.resultCount, data.result_count);
   const resultObj = data.result as Record<string, unknown> | undefined;
-  if (resultObj) {
-    const resultKeys = Object.keys(resultObj);
-    console.log('[clay-preview] result keys:', resultKeys);
-    console.log('[clay-preview] result.total:', resultObj.total, resultObj.totalCount, resultObj.count, resultObj.result_count);
-  }
+
+  // Build debug info about the Clay response structure
+  const _debugKeys = {
+    topLevel: Object.keys(data),
+    resultKeys: resultObj ? Object.keys(resultObj) : [],
+    actionMetadata: data.actionMetadata,
+    metadata: data.metadata,
+  };
+  // Attach to function result for debugging via API
+  (previewSearch as unknown as Record<string, unknown>)._lastDebug = _debugKeys;
 
   const taskId = (data.taskId as string) || '';
   const rawPeople = (resultObj?.people as Record<string, unknown>[]) || [];
   const people = rawPeople.map(parsePreviewPerson);
 
-  // Extract estimated total from metadata
   const estimatedTotal = extractEstimatedTotal(data) ?? people.length;
 
   onProgress?.(`Preview complete — ${people.length} results (estimated total: ${estimatedTotal})`);
-  return { taskId, people, estimatedTotal };
+  return { taskId, people, estimatedTotal, _debugKeys };
 }
 
 async function fullSearch(
