@@ -40,56 +40,204 @@ Step-by-step playbooks for end-to-end campaign execution. Each workflow shows ex
 | 13 | (Optional) AI personalization | `POST /api/enrichment` + `POST /api/enrichment/run` | Generate personalized intro lines using `{{Full Name}}`, `{{Job Title}}` template vars |
 | 14 | Export | `GET /api/export/csv?tableId=...` | Download as CSV or read as JSON via `GET /api/rows` |
 
-### Workflow 2: "Research these companies and find decision-makers"
+### Workflow 2: "Find [role] people in [location] and get their emails"
 
-When you already have a list of company domains/names:
+**Example:** "Find marketing managers in Singapore and get their emails"
 
-| Step | Action | Endpoint |
-|------|--------|----------|
-| 1 | Create workbook + sheet | `POST /api/projects` + `POST /api/tables` |
-| 2 | Import known companies | `POST /api/rows` or `POST /api/import/csv` |
-| 3 | AI enrich missing data | `POST /api/enrichment` + `POST /api/enrichment/run` (research industry, size, HQ) |
-| 4 | Search people at domains | `POST /api/add-data/search` with `searchType: "people"` + `domains: [...]` |
-| 5 | Create People sheet + import | `POST /api/tables` + `POST /api/columns` + `POST /api/rows` |
-| 6 | Lookup + Find Email + Clean | `POST /api/lookup/run` + `POST /api/find-email/run` + filter/delete |
+Direct people search — no company step needed.
 
-### Workflow 3: "Find [role] people in [location] and get emails"
+| Step | Action | Endpoint | Key Details |
+|------|--------|----------|-------------|
+| 1 | Create workbook | `POST /api/projects` | `{"name":"Singapore Marketing Managers","type":"workbook"}` |
+| 2 | Search people directly | `POST /api/add-data/search` | Omit `domains` field entirely for cross-company search. `{"searchType":"people","filters":{"job_title_keywords":["Marketing Manager","Head of Marketing"],"job_title_mode":"smart","seniority_levels":["manager","director"],"countries_include":["Singapore"],"limit":500}}` |
+| 3 | Create sheet + columns + import | `POST /api/tables` + `POST /api/columns` + `POST /api/rows` | Columns: Full Name, First Name, Last Name, Job Title, Company Domain, Location, LinkedIn. Save column IDs + row IDs |
+| 4 | Find emails | `POST /api/find-email/run` | `{"tableId":"...","rowIds":[...],"inputMode":"full_name","fullNameColumnId":"...","domainColumnId":"..."}` |
+| 5 | Clean up + export | `GET /api/rows?filters=[...]` + `DELETE /api/rows` + `GET /api/export/csv` | Remove empty email rows, export CSV |
 
-Direct people search (no company step needed):
+### Workflow 3: "Find companies matching [criteria]"
 
-| Step | Action | Endpoint |
-|------|--------|----------|
-| 1 | Search people directly | `POST /api/add-data/search` — omit `domains` field for cross-company search |
-| 2 | Create workbook + sheet + columns | `POST /api/projects` + `POST /api/tables` + `POST /api/columns` |
-| 3 | Import people | `POST /api/rows` |
-| 4 | Find emails | `POST /api/find-email/run` |
-| 5 | Clean up + export | Filter empty emails, delete, export CSV |
+**Example:** "Find SaaS companies in Germany with 200+ employees"
 
-### Agent Decision Framework
+Company search only — no people, no emails.
 
-- **Company-first vs People-first:** Request mentions industries, company sizes, revenue → start with company search. Request is about roles/titles → start with people search directly.
-- **When to use Lookup:** Connect data between sheets. Common: pulling company info (industry, size) into a people sheet via matching domain columns.
-- **When to use AI Enrichment:** For data that doesn't exist in Clay — personalized intros, research summaries, lead scoring. Batch mode (`POST /api/enrichment/batch`) for 1000+ rows.
-- **When to use Formula:** Data transformations — extracting domains from emails, combining first+last name, conditional logic. No AI cost, instant.
-- **Monitoring:** Poll `GET /api/jobs/status` for ETAs. Cell-level detail via `GET /api/columns/{id}/progress`.
-- **Error handling:** After email finding, check foundCount. Filter/remove empty email rows before delivering results.
+| Step | Action | Endpoint | Key Details |
+|------|--------|----------|-------------|
+| 1 | Create workbook | `POST /api/projects` | `{"name":"German SaaS Companies","type":"workbook"}` |
+| 2 | Search companies | `POST /api/add-data/search` | `{"searchType":"companies","filters":{"country_names":["Germany"],"industries":["Software Development"],"semantic_description":"SaaS software as a service","minimum_member_count":200,"limit":1000}}` |
+| 3 | Create sheet + columns + import | `POST /api/tables` + `POST /api/columns` + `POST /api/rows` | Columns: Company Name, Domain, Size, Industry, Location, LinkedIn, Description, Revenue |
+| 4 | (Optional) AI enrich | `POST /api/enrichment` + `POST /api/enrichment/run` | Research competitors, tech stack, recent news, funding |
 
-### Data Flow
+### Workflow 4: "I have a list — enrich it and find emails"
+
+**Example:** "Here's my CRM export, fill in missing info and find emails"
+
+| Step | Action | Endpoint | Key Details |
+|------|--------|----------|-------------|
+| 1 | Create workbook + sheet | `POST /api/projects` + `POST /api/tables` | |
+| 2 | Import existing data | `POST /api/import/csv` or `POST /api/rows` | CSV import auto-creates columns from headers |
+| 3 | AI enrich missing fields | `POST /api/enrichment` + `POST /api/enrichment/run` | Use `onlyEmpty: true` to skip rows with existing data |
+| 4 | Find emails for rows missing them | `GET /api/rows?filters=[...]` + `POST /api/find-email/run` | Filter for empty email first, then run finder on those row IDs only |
+| 5 | Export | `GET /api/export/csv?tableId=...` | |
+
+### Workflow 5: "Cross-reference list A with list B"
+
+**Example:** "Match these companies with these contacts by domain"
+
+| Step | Action | Endpoint | Key Details |
+|------|--------|----------|-------------|
+| 1 | Import both datasets | `POST /api/tables` + `POST /api/import/csv` (x2) | Two sheets in the same workbook, each with their own data |
+| 2 | Lookup to connect | `POST /api/lookup/run` (x N) | Run once per field to pull. Match by shared key (domain, email, name). Case-insensitive |
+
+### Workflow 6: "Clean and transform my data"
+
+**Example:** "Extract domains from emails, combine first+last name, tag by company size"
+
+| Step | Action | Endpoint | Formula |
+|------|--------|----------|---------|
+| 1 | Extract domain from email | `POST /api/formula/run` | `{{Email}}?.split("@")[1] \|\| ""` |
+| 2 | Combine first + last name | `POST /api/formula/run` | `[{{First Name}}, {{Last Name}}].filter(Boolean).join(" ")` |
+| 3 | Clean URLs (strip protocol) | `POST /api/formula/run` | `({{Website}} \|\| "").replace(/^https?:\/\//,"").replace(/^www\./,"").replace(/\/.*/,"")` |
+| 4 | Conditional tagging | `POST /api/formula/run` | `Number({{Employees}}) > 500 ? "Enterprise" : Number({{Employees}}) > 50 ? "Mid-Market" : "SMB"` |
+| 5 | AI-generated formula | `POST /api/formula/generate` | `{"description":"what you want","columns":[{"name":"Col","type":"text","sampleValue":"example"}]}` |
+
+---
+
+## Best Practices & Agent Optimization
+
+### 1. Routing: Which workflow to use
+
+| User says | Use workflow |
+|-----------|-------------|
+| Companies + people + emails ("Find SaaS companies in Berlin and get their CTOs' emails") | **Workflow 1** (full pipeline) |
+| People + emails, no company criteria ("Find marketing managers in Singapore") | **Workflow 2** (people-direct) |
+| Companies only ("List fintech companies in London with 100+ employees") | **Workflow 3** (companies only) |
+| Has their own data ("Here's my spreadsheet, enrich it") | **Workflow 4** (enrich existing) |
+| Two datasets to connect ("Match these companies with these contacts") | **Workflow 5** (cross-reference) |
+| Transform/clean data ("Extract domains from emails") | **Workflow 6** (formula) |
+
+Many requests combine workflows. "Find companies in Jakarta, get their CMOs, find emails, write personalized intros" = Workflow 1 + AI enrichment at the end.
+
+### 2. Search Strategy
+
+- **Company search — start specific, then broaden.** Country + industry + size first. If too few results, remove industry or use `semantic_description` (AI-powered fuzzy matching).
+- **People search — always include `seniority_levels`.** Without it, you get everyone from interns to CEOs. "Decision-makers" = `["c-suite","vp","director"]`. "Managers" = `["manager","senior"]`. "Everyone" = omit the filter.
+- **Job titles — use multiple variations.** "CMO" should search `["Chief Marketing Officer","CMO","VP Marketing","Head of Marketing"]`. Set `job_title_mode: "smart"` for fuzzy matching.
+- **People at companies — pass domains, not company names.** The `domains` array scopes search to specific companies. Without it = cross-company search.
+- **`limit_per_company` prevents domination.** If one company has 500 engineers and another has 5, set `limit_per_company: 10` to balance.
+- **Company sizes use comma format.** Always `"501-1,000"` not `"501-1000"`. Valid: `"1"`, `"2-10"`, `"11-50"`, `"51-200"`, `"201-500"`, `"501-1,000"`, `"1,001-5,000"`, `"5,001-10,000"`, `"10,001+"`.
+- **For "50+ employees", use `minimum_member_count: 50`** instead of listing every size range.
+
+### 3. Data Quality
+
+- **Always filter out rows with empty domains before Find Email.** Email finding requires a domain. Rows without one always fail.
+- **Clean domains before use.** Must be bare: `stripe.com` not `https://www.stripe.com/about`. Use Formula to strip protocol/www/paths.
+- **Deduplicate before expensive operations.** Check for duplicate domains/names before running Find Email or AI Enrichment.
+- **After email finding, always clean up.** Filter `is_empty` on Email column and delete those rows.
+- **Validate data at each stage.** After company search: check domain coverage. After people search: verify results for most domains. After email finding: check foundCount vs processedCount.
+
+### 4. Tool Selection
+
+| Tool | Use when | Do NOT use when |
+|------|----------|-----------------|
+| **Add Data (Clay)** | Finding new companies or people | You already have the data |
+| **Find Email** | You have name + company domain | No domain available |
+| **Lookup** | Connecting data between sheets via shared key | Need to search for new data |
+| **AI Enrichment** | Generating new insights (research, personalization) | Data exists somewhere — try Lookup or Clay first |
+| **Batch Enrichment** | 1000+ rows of AI enrichment (cheaper, 1-24hr) | Under 1000 rows — use real-time |
+| **Formula** | Data transformations (split, combine, clean) | Need external data or AI reasoning |
+| **Filters** | Narrowing rows: empty cells, value matching | Need to modify data — use PATCH |
+
+### 5. Operation Order
+
+1. **Always:** workbook → sheet → columns → rows (each step needs the ID from the previous)
+2. **Search BEFORE creating sheets.** Run Clay search first, then create columns based on returned fields.
+3. **Import data BEFORE running Find Email or Enrichment.** These operate on row IDs — rows must exist.
+4. **Lookup requires both sheets to have data.** Import source sheet fully first.
+5. **Clean data BETWEEN steps.** Remove bad rows after company import (no domain), after people import (no name), after email finding (no email).
+6. **AI Enrichment and Formula can run at any time** after rows exist.
+
+### 6. Performance & Timing
+
+| Operation | Speed | Notes |
+|-----------|-------|-------|
+| Company/People search | 30s-5min | 100-1000 results in 30s-2min. 10k+ in ~4-5min. Max 25,000 |
+| Find Email | ~12/sec | 2 concurrent, 100ms delay. 100 rows ≈ 8s. 500 ≈ 40s. 5000 ≈ 7min |
+| Real-time Enrichment | 50-200/min | gpt-5-nano ~200/min, gpt-5-mini ~100/min, gpt-4o ~50/min |
+| Batch Enrichment | 1-24 hours | 50% cheaper than real-time. Use for 1000+ rows |
+| Formula | Instant | 10,000 rows in <2 seconds |
+| Lookup | Instant | In-memory hash map. 100,000 lookups in <1 second |
+
+**Monitoring:** For operations >100 rows, poll `GET /api/jobs/status` every 10-30s. Cell-level detail via `GET /api/columns/{id}/progress`.
+
+### 7. Cost Optimization
+
+- **Use Formula instead of AI when possible.** Extract domains, combine names, clean URLs = free.
+- **Use gpt-5-nano for simple extractions.** Cheapest model. gpt-5-mini for moderate reasoning. gpt-4o only for complex research.
+- **Use Batch Enrichment for large jobs.** 50% cheaper. `POST /api/enrichment/batch` for 1000+ rows.
+- **Filter before enriching.** Remove irrelevant rows BEFORE AI enrichment. Every row costs tokens.
+- **Use `onlyEmpty: true` when re-running.** Skips rows with existing data.
+- **Monitor costs in real-time.** `GET /api/jobs/status` returns `cost.totalSoFar` and `cost.estimatedTotal`. Cancel expensive jobs: `DELETE /api/enrichment/jobs?jobId=...`
+
+### 8. Naming Conventions
+
+- **Workbooks:** Describe the campaign. "Jakarta CMO Campaign", "Series A SaaS Companies Q2"
+- **Sheets:** Describe the data type. "Companies", "People", "CMOs", "Enriched Leads"
+- **Columns:** Clear and specific. "Company Name" not "name". "Company Domain" not "domain"
+- **Standard company columns:** Company Name, Domain, Size, Industry, Country, Location, LinkedIn URL, Description, Annual Revenue
+- **Standard people columns:** First Name, Last Name, Full Name, Job Title, Company Domain, Location, LinkedIn URL, Email, Email Status
+
+### 9. Error Handling
+
+| Problem | Solution |
+|---------|----------|
+| Search returns 0 results | Broaden filters. Remove most restrictive filter. Try `semantic_description` instead |
+| Email finder low success (<50%) | Common for small/local companies. Try AI enrichment to find emails from LinkedIn |
+| AI enrichment errors | Check `GET /api/columns/{id}/progress` for error samples. Common: vague prompt, column typo. Retry: `POST /api/enrichment/retry-cell` |
+| Lookup many unmatched rows | Check matching column format. "www.stripe.com" vs "stripe.com" — clean domains with Formula first |
+| Job appears stuck | Check `GET /api/jobs/status`. No progress for 5+ min → cancel and restart |
+| 500 errors | Check `GET /api/stats` for storage (9GB max). Delete old data if near capacity |
+
+### Data Flow Patterns
 
 ```
-Workbook (container)
-  |
-  +-- Sheet 1: Companies
-  |     Search companies → Import rows → Filter bad data
-  |
-  +-- Sheet 2: People
-  |     Search people at company domains → Import rows
-  |     ← Lookup (pull company fields from Sheet 1)
-  |     → Find Email (Ninjer API)
-  |     → Filter (remove no-email rows)
-  |     → AI Enrich (optional: personalization)
-  |
-  +-- Export: CSV or JSON via API
+FULL PIPELINE (Workflow 1):
+Workbook
+  +-- Sheet: Companies
+  |     Clay search → Import → Filter (remove no-domain)
+  +-- Sheet: People
+        Clay search (at domains) → Import
+        ← Lookup (company data from Sheet 1)
+        → Find Email → Filter (remove no-email)
+        → AI Enrich (optional) → Export
+
+PEOPLE DIRECT (Workflow 2):
+Workbook
+  +-- Sheet: People
+        Clay search (no domains) → Import
+        → Find Email → Filter → Export
+
+COMPANIES ONLY (Workflow 3):
+Workbook
+  +-- Sheet: Companies
+        Clay search → Import → (Optional: AI Enrich) → Export
+
+ENRICH EXISTING (Workflow 4):
+Workbook
+  +-- Sheet: Imported Data
+        CSV Import / API Import
+        → AI Enrich (fill gaps)
+        → Find Email (missing emails)
+        → Export
+
+CROSS-REFERENCE (Workflow 5):
+Workbook
+  +-- Sheet A: Dataset 1
+  +-- Sheet B: Dataset 2
+        ← Lookup (pull fields from Sheet A by shared key)
+
+DATA CLEANING (Workflow 6):
+Any Sheet:
+  Formula: extract, combine, clean, convert, tag
 ```
 
 ---
