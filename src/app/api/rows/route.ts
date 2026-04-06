@@ -2,25 +2,31 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
+import { applyFilters, sortRows } from '@/lib/filter-utils';
+import type { Filter, FilterLogic } from '@/lib/filter-utils';
 
 export const maxDuration = 60;
 
 // GET /api/rows?tableId= - Get rows for a table
-// Optional: rowIds= to filter specific rows (comma-separated)
+// Optional: rowIds= (comma-separated), sortBy=, sortOrder=asc|desc,
+//   filters= (JSON array of {columnId, operator, value}), filterLogic=AND|OR
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const tableId = searchParams.get('tableId');
     const rowIdsParam = searchParams.get('rowIds');
-    // Support up to 100k rows - no artificial limit
     const limit = parseInt(searchParams.get('limit') || '100000');
     const offset = parseInt(searchParams.get('offset') || '0');
+    const sortBy = searchParams.get('sortBy');
+    const sortOrder = (searchParams.get('sortOrder') || 'asc') as 'asc' | 'desc';
+    const filtersParam = searchParams.get('filters');
+    const filterLogic = (searchParams.get('filterLogic') || 'AND') as FilterLogic;
 
     if (!tableId) {
       return NextResponse.json({ error: 'tableId is required' }, { status: 400 });
     }
 
-    // If rowIds provided, filter to only those rows
+    // If rowIds provided, filter to only those rows (no sort/filter support)
     if (rowIdsParam) {
       const rowIds = rowIdsParam.split(',').filter(id => id.trim());
       if (rowIds.length > 0) {
@@ -32,14 +38,49 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const rows = await db
+    // Fetch all rows for the table
+    let rows = await db
       .select()
       .from(schema.rows)
-      .where(eq(schema.rows.tableId, tableId))
-      .limit(limit)
-      .offset(offset);
+      .where(eq(schema.rows.tableId, tableId));
 
-    return NextResponse.json(rows);
+    const totalCount = rows.length;
+    const needsSortOrFilter = sortBy || filtersParam;
+
+    if (needsSortOrFilter) {
+      // Fetch columns for type-aware sort/filter
+      const columns = await db
+        .select()
+        .from(schema.columns)
+        .where(eq(schema.columns.tableId, tableId));
+
+      // Apply filters
+      if (filtersParam) {
+        try {
+          const filters: Filter[] = JSON.parse(filtersParam);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          rows = applyFilters(rows as any, filters, filterLogic, columns) as unknown as typeof rows;
+        } catch {
+          return NextResponse.json({ error: 'Invalid filters JSON' }, { status: 400 });
+        }
+      }
+
+      // Apply sorting
+      if (sortBy) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        rows = sortRows(rows as any, sortBy, sortOrder, columns) as unknown as typeof rows;
+      }
+    }
+
+    const filteredCount = rows.length;
+
+    // Apply pagination after sort/filter
+    rows = rows.slice(offset, offset + limit);
+
+    const response = NextResponse.json(rows);
+    response.headers.set('X-Total-Count', String(totalCount));
+    response.headers.set('X-Filtered-Count', String(filteredCount));
+    return response;
   } catch (error) {
     console.error('Error fetching rows:', error);
     return NextResponse.json({ error: 'Failed to fetch rows' }, { status: 500 });

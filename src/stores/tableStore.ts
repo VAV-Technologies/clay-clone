@@ -1,26 +1,8 @@
 import { create } from 'zustand';
 import type { Table, Column, Row, CellValue } from '@/lib/db/schema';
-
-interface Filter {
-  columnId: string;
-  operator: FilterOperator;
-  value: string | number | [string | number, string | number];
-}
-
-type FilterOperator =
-  | 'equals'
-  | 'not_equals'
-  | 'contains'
-  | 'not_contains'
-  | 'is_empty'
-  | 'is_not_empty'
-  | 'starts_with'
-  | 'ends_with'
-  | 'greater_than'
-  | 'less_than'
-  | 'between';
-
-type FilterLogic = 'AND' | 'OR';
+import { applyFilter as sharedApplyFilter } from '@/lib/filter-utils';
+import type { Filter, FilterOperator, FilterLogic } from '@/lib/filter-utils';
+export type { Filter, FilterOperator, FilterLogic };
 
 interface SheetInfo {
   id: string;
@@ -480,44 +462,5 @@ export const useTableStore = create<TableState>((set, get) => ({
 }));
 
 function applyFilter(row: Row, filter: Filter, columns: Column[]): boolean {
-  const cellValue = row.data[filter.columnId]?.value;
-  const column = columns.find((c) => c.id === filter.columnId);
-
-  if (!column) return true;
-
-  const stringValue = cellValue?.toString().toLowerCase() ?? '';
-  const filterValue = Array.isArray(filter.value)
-    ? filter.value
-    : filter.value?.toString().toLowerCase() ?? '';
-
-  switch (filter.operator) {
-    case 'equals':
-      return stringValue === filterValue;
-    case 'not_equals':
-      return stringValue !== filterValue;
-    case 'contains':
-      return stringValue.includes(filterValue as string);
-    case 'not_contains':
-      return !stringValue.includes(filterValue as string);
-    case 'is_empty':
-      return !cellValue || stringValue === '';
-    case 'is_not_empty':
-      return !!cellValue && stringValue !== '';
-    case 'starts_with':
-      return stringValue.startsWith(filterValue as string);
-    case 'ends_with':
-      return stringValue.endsWith(filterValue as string);
-    case 'greater_than':
-      return Number(cellValue) > Number(filter.value);
-    case 'less_than':
-      return Number(cellValue) < Number(filter.value);
-    case 'between':
-      if (Array.isArray(filter.value)) {
-        const num = Number(cellValue);
-        return num >= Number(filter.value[0]) && num <= Number(filter.value[1]);
-      }
-      return true;
-    default:
-      return true;
-  }
+  return sharedApplyFilter(row as unknown as Parameters<typeof sharedApplyFilter>[0], filter, columns);
 }

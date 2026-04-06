@@ -139,11 +139,45 @@ DELETE /api/columns/{id}
 
 ## 4. Rows
 
-### List Rows
+### List Rows (with Sort, Filter, Pagination)
 ```
 GET /api/rows?tableId={tableId}&limit=1000&offset=0
 ```
-Optional: `rowIds=id1,id2,id3` for specific rows.
+Optional query parameters:
+- `rowIds` — comma-separated IDs for specific rows
+- `sortBy` — column ID to sort by
+- `sortOrder` — `asc` (default) or `desc`
+- `filters` — URL-encoded JSON array of filter objects
+- `filterLogic` — `AND` (default) or `OR`
+- `limit` — max rows returned (default: 100000)
+- `offset` — rows to skip (default: 0)
+
+**Response headers:** `X-Total-Count`, `X-Filtered-Count`
+
+**Filter object format:**
+```json
+[{"columnId": "col-id", "operator": "contains", "value": "stripe"}]
+```
+
+**Filter operators:**
+| Operator | Description | Value |
+|----------|------------|-------|
+| `equals` | Exact match (case-insensitive) | string |
+| `not_equals` | Not equal | string |
+| `contains` | Contains substring | string |
+| `not_contains` | Does not contain | string |
+| `is_empty` | Cell is empty/null | — |
+| `is_not_empty` | Cell has value | — |
+| `starts_with` | Starts with | string |
+| `ends_with` | Ends with | string |
+| `greater_than` | Greater than (numeric) | number |
+| `less_than` | Less than (numeric) | number |
+| `between` | Between range (numeric) | [min, max] |
+
+**Example with sort + filter + pagination:**
+```
+GET /api/rows?tableId=X&filters=[{"columnId":"col-1","operator":"contains","value":"stripe"}]&filterLogic=AND&sortBy=col-2&sortOrder=desc&limit=50&offset=0
+```
 
 **Cell data structure:**
 ```json
@@ -195,45 +229,6 @@ DELETE /api/rows
 ### Delete Single Row
 ```
 DELETE /api/rows/{id}
-```
-
-### Sorting & Filtering
-```
-GET /api/rows?tableId={id}&sortBy={columnId}&sortOrder=asc|desc
-GET /api/rows?tableId={id}&filters=[{"columnId":"col-id","operator":"contains","value":"stripe"}]&filterLogic=AND|OR
-```
-
-Query parameters:
-- `sortBy` — Column ID to sort by
-- `sortOrder` — `asc` (default) or `desc`
-- `filters` — URL-encoded JSON array of filter objects
-- `filterLogic` — `AND` (default) or `OR`
-
-Response includes headers: `X-Total-Count`, `X-Filtered-Count`
-
-Filter object format:
-```json
-{"columnId": "col-id", "operator": "contains", "value": "search term"}
-```
-
-Available operators:
-| Operator | Description | Value |
-|----------|------------|-------|
-| `equals` | Exact match (case-insensitive) | string |
-| `not_equals` | Not equal | string |
-| `contains` | Contains substring | string |
-| `not_contains` | Does not contain | string |
-| `is_empty` | Cell is empty/null | (none) |
-| `is_not_empty` | Cell has value | (none) |
-| `starts_with` | Starts with | string |
-| `ends_with` | Ends with | string |
-| `greater_than` | Greater than (numeric) | number |
-| `less_than` | Less than (numeric) | number |
-| `between` | Between range (numeric) | [min, max] |
-
-Combined example:
-```
-GET /api/rows?tableId=X&filters=[{"columnId":"col-1","operator":"contains","value":"stripe"},{"columnId":"col-2","operator":"is_not_empty"}]&filterLogic=AND&sortBy=col-1&sortOrder=desc&limit=50&offset=0
 ```
 
 ### Bulk Update Rows
