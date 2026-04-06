@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { previewPeopleSearch, previewCompanySearch } from '@/lib/clay-api';
 import type { ClaySearchFilters, ClayCompanySearchFilters } from '@/lib/clay-api';
 
-export const runtime = 'nodejs';
-
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +42,6 @@ export async function POST(request: NextRequest) {
       estimatedTotal: result.estimatedTotal,
       previewCount: result.preview.length,
       preview: result.preview,
-      _debug: result._debugKeys || null,
     });
   } catch (error) {
     console.error('Preview search error:', error);

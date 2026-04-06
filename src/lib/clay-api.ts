@@ -389,6 +389,10 @@ function extractEstimatedTotal(data: Record<string, unknown>): number | null {
   // Try inside result
   const result = data.result as Record<string, unknown> | undefined;
   if (result) {
+    // Clay returns peopleCount / companiesCount in the result
+    if (typeof result.peopleCount === 'number') return result.peopleCount;
+    if (typeof result.companiesCount === 'number') return result.companiesCount;
+    if (typeof result.companyCount === 'number') return result.companyCount;
     if (typeof result.total === 'number') return result.total;
     if (typeof result.totalCount === 'number') return result.totalCount;
     if (typeof result.result_count === 'number') return result.result_count;
@@ -403,10 +407,9 @@ export async function previewPeopleSearch(
   domains: string[],
   filters: ClaySearchFilters,
   onProgress?: (msg: string) => void
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<{ estimatedTotal: number; preview: ClayPerson[]; _debugKeys?: any }> {
-  const { people, estimatedTotal, _debugKeys } = await previewSearch(domains, filters, onProgress);
-  return { estimatedTotal, preview: people, _debugKeys };
+): Promise<{ estimatedTotal: number; preview: ClayPerson[] }> {
+  const { people, estimatedTotal } = await previewSearch(domains, filters, onProgress);
+  return { estimatedTotal, preview: people };
 }
 
 export async function previewCompanySearch(
@@ -438,16 +441,6 @@ async function previewSearch(
 
   const resultObj = data.result as Record<string, unknown> | undefined;
 
-  // Build debug info about the Clay response structure
-  const _debugKeys = {
-    topLevel: Object.keys(data),
-    resultKeys: resultObj ? Object.keys(resultObj) : [],
-    actionMetadata: data.actionMetadata,
-    metadata: data.metadata,
-  };
-  // Attach to function result for debugging via API
-  (previewSearch as unknown as Record<string, unknown>)._lastDebug = _debugKeys;
-
   const taskId = (data.taskId as string) || '';
   const rawPeople = (resultObj?.people as Record<string, unknown>[]) || [];
   const people = rawPeople.map(parsePreviewPerson);
@@ -455,7 +448,7 @@ async function previewSearch(
   const estimatedTotal = extractEstimatedTotal(data) ?? people.length;
 
   onProgress?.(`Preview complete — ${people.length} results (estimated total: ${estimatedTotal})`);
-  return { taskId, people, estimatedTotal, _debugKeys };
+  return { taskId, people, estimatedTotal };
 }
 
 async function fullSearch(
@@ -804,11 +797,7 @@ async function companyPreviewSearch(
     },
   }) as Record<string, unknown>;
 
-  // Log full response to discover count metadata fields
-  console.log('[clay-company-preview] Response top-level keys:', Object.keys(data));
-  console.log('[clay-company-preview] actionMetadata:', JSON.stringify(data.actionMetadata));
   const resultObj = data.result as Record<string, unknown>;
-  if (resultObj) console.log('[clay-company-preview] result keys:', Object.keys(resultObj));
 
   const taskId = (data.taskId as string) || '';
   const rawCompanies = (resultObj?.companies as Record<string, unknown>[]) || [];
