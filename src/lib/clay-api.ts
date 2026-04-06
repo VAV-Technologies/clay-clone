@@ -368,6 +368,54 @@ function getWorkspaceId(): string {
   return wsId;
 }
 
+// Try to extract estimated total count from Clay preview response
+// The field name is unknown until we see the actual response — try common patterns
+function extractEstimatedTotal(data: Record<string, unknown>): number | null {
+  // Try actionMetadata
+  const meta = data.actionMetadata as Record<string, unknown> | undefined;
+  if (meta) {
+    if (typeof meta.resultCount === 'number') return meta.resultCount;
+    if (typeof meta.totalCount === 'number') return meta.totalCount;
+    if (typeof meta.total === 'number') return meta.total;
+    if (typeof meta.estimatedCount === 'number') return meta.estimatedCount;
+    if (typeof meta.count === 'number') return meta.count;
+  }
+
+  // Try top-level
+  if (typeof data.resultCount === 'number') return data.resultCount;
+  if (typeof data.totalCount === 'number') return data.totalCount;
+  if (typeof data.result_count === 'number') return data.result_count;
+
+  // Try inside result
+  const result = data.result as Record<string, unknown> | undefined;
+  if (result) {
+    if (typeof result.total === 'number') return result.total;
+    if (typeof result.totalCount === 'number') return result.totalCount;
+    if (typeof result.result_count === 'number') return result.result_count;
+    if (typeof result.count === 'number') return result.count;
+  }
+
+  return null;
+}
+
+// Exported preview functions for getting estimate before full search
+export async function previewPeopleSearch(
+  domains: string[],
+  filters: ClaySearchFilters,
+  onProgress?: (msg: string) => void
+): Promise<{ estimatedTotal: number; preview: ClayPerson[] }> {
+  const { people, estimatedTotal } = await previewSearch(domains, filters, onProgress);
+  return { estimatedTotal, preview: people };
+}
+
+export async function previewCompanySearch(
+  filters: ClayCompanySearchFilters,
+  onProgress?: (msg: string) => void
+): Promise<{ estimatedTotal: number; preview: ClayCompany[] }> {
+  const { companies, estimatedTotal } = await companyPreviewSearch(filters, onProgress);
+  return { estimatedTotal, preview: companies };
+}
+
 async function previewSearch(
   domains: string[],
   filters: ClaySearchFilters,
@@ -387,12 +435,28 @@ async function previewSearch(
     },
   }) as Record<string, unknown>;
 
+  // Log full response to discover count metadata fields
+  const topKeys = Object.keys(data);
+  console.log('[clay-preview] Response top-level keys:', topKeys);
+  console.log('[clay-preview] actionMetadata:', JSON.stringify(data.actionMetadata));
+  console.log('[clay-preview] metadata:', JSON.stringify(data.metadata));
+  console.log('[clay-preview] resultCount:', data.resultCount, data.result_count);
+  const resultObj = data.result as Record<string, unknown> | undefined;
+  if (resultObj) {
+    const resultKeys = Object.keys(resultObj);
+    console.log('[clay-preview] result keys:', resultKeys);
+    console.log('[clay-preview] result.total:', resultObj.total, resultObj.totalCount, resultObj.count, resultObj.result_count);
+  }
+
   const taskId = (data.taskId as string) || '';
-  const rawPeople = ((data.result as Record<string, unknown>)?.people as Record<string, unknown>[]) || [];
+  const rawPeople = (resultObj?.people as Record<string, unknown>[]) || [];
   const people = rawPeople.map(parsePreviewPerson);
 
-  onProgress?.(`Preview complete — ${people.length} results`);
-  return { taskId, people };
+  // Extract estimated total from metadata
+  const estimatedTotal = extractEstimatedTotal(data) ?? people.length;
+
+  onProgress?.(`Preview complete — ${people.length} results (estimated total: ${estimatedTotal})`);
+  return { taskId, people, estimatedTotal };
 }
 
 async function fullSearch(
@@ -741,13 +805,20 @@ async function companyPreviewSearch(
     },
   }) as Record<string, unknown>;
 
+  // Log full response to discover count metadata fields
+  console.log('[clay-company-preview] Response top-level keys:', Object.keys(data));
+  console.log('[clay-company-preview] actionMetadata:', JSON.stringify(data.actionMetadata));
+  const resultObj = data.result as Record<string, unknown>;
+  if (resultObj) console.log('[clay-company-preview] result keys:', Object.keys(resultObj));
+
   const taskId = (data.taskId as string) || '';
-  const result = data.result as Record<string, unknown>;
-  const rawCompanies = (result?.companies as Record<string, unknown>[]) || [];
+  const rawCompanies = (resultObj?.companies as Record<string, unknown>[]) || [];
   const companies = rawCompanies.map(parseCompanyPreview);
 
-  onProgress?.(`Preview complete — ${companies.length} companies`);
-  return { taskId, companies };
+  const estimatedTotal = extractEstimatedTotal(data) ?? companies.length;
+
+  onProgress?.(`Preview complete — ${companies.length} companies (estimated total: ${estimatedTotal})`);
+  return { taskId, companies, estimatedTotal };
 }
 
 async function fullCompanySearch(
