@@ -169,6 +169,41 @@ export const batchEnrichmentJobs = sqliteTable('batch_enrichment_jobs', {
   completedAt: integer('completed_at', { mode: 'timestamp' }),
 });
 
+// Campaigns - server-side workflow orchestrator
+export const campaigns = sqliteTable('campaigns', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  status: text('status', { enum: ['pending', 'running', 'complete', 'error', 'cancelled'] }).notNull().default('pending'),
+  workbookId: text('workbook_id'),
+  steps: text('steps', { mode: 'json' }).notNull().$type<CampaignStep[]>(),
+  currentStepIndex: integer('current_step_index').notNull().default(0),
+  context: text('context', { mode: 'json' }).$type<CampaignContext>(),
+  error: text('error'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+});
+
+export type CampaignStepType = 'create_workbook' | 'search_companies' | 'search_people' | 'create_sheet' | 'import_rows' | 'filter_rows' | 'find_emails' | 'lookup' | 'enrich' | 'cleanup';
+
+export interface CampaignStep {
+  type: CampaignStepType;
+  params: Record<string, unknown>;
+  status: 'pending' | 'running' | 'complete' | 'error' | 'skipped';
+  result?: Record<string, unknown>;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface CampaignContext {
+  workbookId?: string;
+  sheets: Record<string, { tableId: string; columnIds: Record<string, string> }>;
+  searchResults?: { companies?: unknown[]; people?: unknown[] };
+  rowIds?: Record<string, string[]>;
+  [key: string]: unknown;
+}
+
 // TypeScript types
 export interface EnrichmentDatapoint {
   key: string;
@@ -211,4 +246,6 @@ export type EnrichmentJob = typeof enrichmentJobs.$inferSelect;
 export type NewEnrichmentJob = typeof enrichmentJobs.$inferInsert;
 export type BatchEnrichmentJob = typeof batchEnrichmentJobs.$inferSelect;
 export type NewBatchEnrichmentJob = typeof batchEnrichmentJobs.$inferInsert;
+export type Campaign = typeof campaigns.$inferSelect;
+export type NewCampaign = typeof campaigns.$inferInsert;
 

@@ -175,6 +175,21 @@ function runLocalMigrations(sqlite: Database.Database) {
       completed_at INTEGER
     );
 
+    -- Campaigns table (server-side workflow orchestrator)
+    CREATE TABLE IF NOT EXISTS campaigns (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      workbook_id TEXT,
+      steps TEXT NOT NULL,
+      current_step_index INTEGER NOT NULL DEFAULT 0,
+      context TEXT,
+      error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      completed_at INTEGER
+    );
+
   `);
 }
 

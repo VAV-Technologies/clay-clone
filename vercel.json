@@ -1,2 +1,5 @@
 {
+  "crons": [
+    { "path": "/api/cron/process-campaigns", "schedule": "* * * * *" }
+  ]
 }
