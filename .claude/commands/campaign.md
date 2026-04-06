@@ -76,7 +76,25 @@ curl -X POST -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/j
 - Always add cleanup step after find_emails to remove contacts without emails
 - Import source must match: "companies" for company search results, "people" for people search results
 
+## CRITICAL RULE: Always preview first
+
+Before submitting any campaign, you MUST:
+
+1. Run a preview for each search step:
+   ```bash
+   curl -X POST -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+     $BASE_URL/api/add-data/preview \
+     -d '{"searchType":"people","filters":{...},"limit":5}'
+   ```
+2. Show the user the estimated total: "Found ~22,545 matching executives."
+3. Ask: "How many do you want me to fetch? All 22,545, or a specific number?"
+4. WAIT for the user's answer before proceeding
+5. Only then submit the campaign with the confirmed limit
+
+Never skip this step. Never assume the user wants all results.
+
 ## Do NOT:
+- Run a full search without previewing and confirming the count first
 - Poll or wait for the campaign to complete
 - Try to execute steps yourself via curl
 - The server handles everything automatically via cron (every 1 minute)
