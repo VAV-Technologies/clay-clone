@@ -15,6 +15,85 @@ curl -H "Authorization: Bearer YOUR_API_KEY" https://dataflow-pi.vercel.app/api/
 
 ---
 
+## AI Agent Workflow Guide
+
+Step-by-step playbooks for end-to-end campaign execution. Each workflow shows exactly which endpoints to call, in what order, with what data.
+
+### Workflow 1: "Find companies in [location] with [criteria] and get [role] emails"
+
+**Example:** "Build a list of companies in Jakarta with 50+ employees and get me each of their CMOs' emails"
+
+| Step | Action | Endpoint | Key Details |
+|------|--------|----------|-------------|
+| 1 | Create workbook | `POST /api/projects` | `{"name":"Campaign Name","type":"workbook"}` → save `id` as workbookId |
+| 2 | Search companies | `POST /api/add-data/search` | `{"searchType":"companies","filters":{"country_names":["Indonesia"],"locations":["Jakarta"],"minimum_member_count":50,"limit":1000}}` |
+| 3 | Create Sheet 1: Companies | `POST /api/tables` | `{"projectId":"WORKBOOK_ID","name":"Companies"}` → save tableId |
+| 4 | Add columns | `POST /api/columns` (x N) | Create: Company Name, Domain, Size, Industry, Location, LinkedIn. Save all column IDs |
+| 5 | Import company data | `POST /api/rows` | Map search results to column IDs: `{"tableId":"...","rows":[{"COL_ID":{"value":"data"}}]}` |
+| 6 | Remove companies without domains | `GET /api/rows?filters=[...]` then `DELETE /api/rows` | Filter: `[{"columnId":"DOMAIN_COL","operator":"is_empty"}]`, delete those rows |
+| 7 | Search people (CMOs) | `POST /api/add-data/search` | `{"searchType":"people","domains":["domain1.com",...],"filters":{"job_title_keywords":["CMO","Chief Marketing Officer"],"job_title_mode":"smart","seniority_levels":["c-suite","vp"],"limit_per_company":3}}` |
+| 8 | Create Sheet 2: People | `POST /api/tables` | `{"projectId":"WORKBOOK_ID","name":"CMOs"}` |
+| 9 | Add columns + import people | `POST /api/columns` + `POST /api/rows` | Columns: Full Name, First Name, Last Name, Job Title, Company Domain, Location, LinkedIn |
+| 10 | Lookup company info | `POST /api/lookup/run` | Pull Industry, Size from Companies sheet into People sheet by matching Domain columns |
+| 11 | Find emails | `POST /api/find-email/run` | `{"tableId":"PEOPLE_TABLE","rowIds":[...],"inputMode":"full_name","fullNameColumnId":"...","domainColumnId":"..."}` |
+| 12 | Clean up | `GET /api/rows?filters=[...]` + `DELETE /api/rows` | Remove rows where Email is empty |
+| 13 | (Optional) AI personalization | `POST /api/enrichment` + `POST /api/enrichment/run` | Generate personalized intro lines using `{{Full Name}}`, `{{Job Title}}` template vars |
+| 14 | Export | `GET /api/export/csv?tableId=...` | Download as CSV or read as JSON via `GET /api/rows` |
+
+### Workflow 2: "Research these companies and find decision-makers"
+
+When you already have a list of company domains/names:
+
+| Step | Action | Endpoint |
+|------|--------|----------|
+| 1 | Create workbook + sheet | `POST /api/projects` + `POST /api/tables` |
+| 2 | Import known companies | `POST /api/rows` or `POST /api/import/csv` |
+| 3 | AI enrich missing data | `POST /api/enrichment` + `POST /api/enrichment/run` (research industry, size, HQ) |
+| 4 | Search people at domains | `POST /api/add-data/search` with `searchType: "people"` + `domains: [...]` |
+| 5 | Create People sheet + import | `POST /api/tables` + `POST /api/columns` + `POST /api/rows` |
+| 6 | Lookup + Find Email + Clean | `POST /api/lookup/run` + `POST /api/find-email/run` + filter/delete |
+
+### Workflow 3: "Find [role] people in [location] and get emails"
+
+Direct people search (no company step needed):
+
+| Step | Action | Endpoint |
+|------|--------|----------|
+| 1 | Search people directly | `POST /api/add-data/search` — omit `domains` field for cross-company search |
+| 2 | Create workbook + sheet + columns | `POST /api/projects` + `POST /api/tables` + `POST /api/columns` |
+| 3 | Import people | `POST /api/rows` |
+| 4 | Find emails | `POST /api/find-email/run` |
+| 5 | Clean up + export | Filter empty emails, delete, export CSV |
+
+### Agent Decision Framework
+
+- **Company-first vs People-first:** Request mentions industries, company sizes, revenue → start with company search. Request is about roles/titles → start with people search directly.
+- **When to use Lookup:** Connect data between sheets. Common: pulling company info (industry, size) into a people sheet via matching domain columns.
+- **When to use AI Enrichment:** For data that doesn't exist in Clay — personalized intros, research summaries, lead scoring. Batch mode (`POST /api/enrichment/batch`) for 1000+ rows.
+- **When to use Formula:** Data transformations — extracting domains from emails, combining first+last name, conditional logic. No AI cost, instant.
+- **Monitoring:** Poll `GET /api/jobs/status` for ETAs. Cell-level detail via `GET /api/columns/{id}/progress`.
+- **Error handling:** After email finding, check foundCount. Filter/remove empty email rows before delivering results.
+
+### Data Flow
+
+```
+Workbook (container)
+  |
+  +-- Sheet 1: Companies
+  |     Search companies → Import rows → Filter bad data
+  |
+  +-- Sheet 2: People
+  |     Search people at company domains → Import rows
+  |     ← Lookup (pull company fields from Sheet 1)
+  |     → Find Email (Ninjer API)
+  |     → Filter (remove no-email rows)
+  |     → AI Enrich (optional: personalization)
+  |
+  +-- Export: CSV or JSON via API
+```
+
+---
+
 ## 1. Folders & Workbooks
 
 ### List All Projects

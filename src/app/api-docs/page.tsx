@@ -89,6 +89,44 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+function WorkflowStep({ step, title, description, endpoint, curl, notes }: {
+  step: number; title: string; description: string; endpoint?: string; curl?: string; notes?: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border border-white/[0.08] rounded-lg overflow-hidden">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left">
+        <span className="w-7 h-7 rounded-full bg-lavender/20 text-lavender text-xs font-bold flex items-center justify-center flex-shrink-0">{step}</span>
+        <span className="text-sm text-white font-medium flex-1">{title}</span>
+        {endpoint && <code className="text-xs text-white/40 font-mono hidden sm:block">{endpoint}</code>}
+        <ChevronDown className={`w-4 h-4 text-white/30 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="border-t border-white/[0.08] p-4 space-y-3 bg-white/[0.01]">
+          <p className="text-sm text-white/60">{description}</p>
+          {curl && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-white/40 font-medium">API Call</span>
+                <CopyButton text={curl} />
+              </div>
+              <pre className="text-xs text-emerald-400/80 bg-black/20 rounded-lg p-3 overflow-x-auto font-mono whitespace-pre-wrap">{curl}</pre>
+            </div>
+          )}
+          {notes && notes.length > 0 && (
+            <div className="space-y-1">
+              <span className="text-xs text-white/40 font-medium">Agent Notes</span>
+              <ul className="text-xs text-white/50 space-y-1">
+                {notes.map((n, i) => <li key={i} className="flex gap-2"><span className="text-lavender/60">-</span>{n}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function APIDocsPage() {
   const router = useRouter();
   const H = `Authorization: Bearer YOUR_API_KEY`;
@@ -118,6 +156,236 @@ export default function APIDocsPage() {
           <pre className="text-xs text-emerald-400/80 bg-black/20 rounded-lg p-3 font-mono">
 {`curl -H "${H}" ${B}/api/stats`}
           </pre>
+        </div>
+
+        {/* AI Agent Workflow Guide */}
+        <div className="mt-8 space-y-4">
+          <div className="p-4 bg-lavender/5 border border-lavender/15 rounded-xl space-y-2">
+            <h2 className="text-lg font-semibold text-white">AI Agent Workflow Guide</h2>
+            <p className="text-sm text-white/50">Step-by-step playbooks for end-to-end campaign execution. Each workflow shows exactly which endpoints to call, in what order, with what data. Designed so an AI agent can mechanically execute a full campaign from a natural language request.</p>
+          </div>
+
+          {/* Workflow 1: Company → People → Emails */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-white/80 mt-6 mb-2">Workflow: &quot;Find companies in [location] with [criteria] and get [role] emails&quot;</h3>
+            <p className="text-xs text-white/40 mb-3">Example: &quot;Build a list of companies in Jakarta with 50+ employees and get me each of their CMOs&apos; emails&quot;</p>
+
+            <WorkflowStep step={1} title="Create a workbook" endpoint="POST /api/projects"
+              description="Create a new workbook to hold all sheets for this campaign."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/projects \\\n  -d '{"name":"Jakarta CMO Campaign","type":"workbook"}'`}
+              notes={['Save the returned id as workbookId — you need it for every sheet you create']} />
+
+            <WorkflowStep step={2} title="Search for companies" endpoint="POST /api/add-data/search"
+              description="Search Clay for companies matching the criteria. All filters are optional — combine as needed."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/add-data/search \\\n  -d '{"searchType":"companies","filters":{"country_names":["Indonesia"],"locations":["Jakarta"],"minimum_member_count":50,"limit":1000}}'`}
+              notes={[
+                'Response: { companies: [...], totalCount, mode }',
+                'Each company has: name, domain, size, industry, country, location, linkedin_url, description, annual_revenue',
+                'Company sizes use comma format: "501-1,000" not "501-1000"',
+                'Use minimum_member_count for "50+ employees" (more precise than size ranges)',
+                'limit defaults to 25000 max. Set lower for faster searches',
+              ]} />
+
+            <WorkflowStep step={3} title="Create Sheet 1: Companies" endpoint="POST /api/tables"
+              description="Create a sheet inside the workbook for company data."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/tables \\\n  -d '{"projectId":"WORKBOOK_ID","name":"Companies"}'`}
+              notes={[
+                'Save the returned table id as companiesTableId',
+                'Sheet starts empty — add columns next',
+              ]} />
+
+            <WorkflowStep step={4} title="Add columns to Companies sheet" endpoint="POST /api/columns"
+              description="Create columns for each company field you want to store. Call once per column."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/columns \\\n  -d '{"tableId":"COMPANIES_TABLE_ID","name":"Company Name","type":"text"}'\n\n# Repeat for: Domain (url), Size (text), Industry (text), Location (text), LinkedIn (url), Description (text)`}
+              notes={[
+                'Save every column id — you need them to import data and for lookup later',
+                'The Domain column is critical — it links companies to people',
+                'Column types: text, number, email, url, date',
+              ]} />
+
+            <WorkflowStep step={5} title="Import company data into sheet" endpoint="POST /api/rows"
+              description="Map the search results into rows. Each row's data is keyed by column ID."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/rows \\\n  -d '{"tableId":"COMPANIES_TABLE_ID","rows":[{"COL_NAME_ID":{"value":"PT Maju Jaya"},"COL_DOMAIN_ID":{"value":"majujaya.id"},"COL_SIZE_ID":{"value":"501-1,000"}}]}'`}
+              notes={[
+                'Send all companies in one bulk call (up to 100k rows)',
+                'Cell format: { "columnId": { "value": "data" } }',
+                'Save returned row IDs for filtering later',
+              ]} />
+
+            <WorkflowStep step={6} title="Filter out companies without domains" endpoint="GET /api/rows + DELETE /api/rows"
+              description="Find rows where Domain is empty and delete them — they're useless for email finding."
+              curl={`# Step 1: Get rows with empty domain\ncurl -H "${H}" "${B}/api/rows?tableId=COMPANIES_TABLE_ID&filters=%5B%7B%22columnId%22%3A%22COL_DOMAIN_ID%22%2C%22operator%22%3A%22is_empty%22%7D%5D"\n\n# Step 2: Delete those rows\ncurl -X DELETE -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/rows \\\n  -d '{"ids":["row-1","row-2"],"tableId":"COMPANIES_TABLE_ID"}'`}
+              notes={[
+                'filters param is URL-encoded JSON: [{"columnId":"...","operator":"is_empty"}]',
+                'Collect the IDs from the filtered response, then bulk delete',
+                'This ensures every remaining company has a domain for people search',
+              ]} />
+
+            <WorkflowStep step={7} title="Search for people (CMOs) at those companies" endpoint="POST /api/add-data/search"
+              description="Search Clay for people matching the role at the company domains from Step 5."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/add-data/search \\\n  -d '{"searchType":"people","domains":["majujaya.id","other.co.id"],"filters":{"job_title_keywords":["Chief Marketing Officer","CMO","VP Marketing","Head of Marketing"],"job_title_mode":"smart","seniority_levels":["c-suite","vp","director"],"limit":1000,"limit_per_company":3}}'`}
+              notes={[
+                'Pass ALL company domains from Step 5 in the domains array',
+                'Use job_title_mode: "smart" for fuzzy matching (catches variations)',
+                'limit_per_company prevents one large company from dominating results',
+                'Response: { people: [...], totalCount, mode }',
+                'Each person has: first_name, last_name, full_name, job_title, company_domain, location, linkedin_url',
+              ]} />
+
+            <WorkflowStep step={8} title="Create Sheet 2: People" endpoint="POST /api/tables"
+              description="Create a second sheet in the same workbook for the people data."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/tables \\\n  -d '{"projectId":"WORKBOOK_ID","name":"CMOs"}'`}
+              notes={[
+                'Save as peopleTableId',
+                'Add columns: First Name (text), Last Name (text), Full Name (text), Job Title (text), Company Domain (url), Location (text), LinkedIn (url)',
+                'The Company Domain column must contain clean domains (no https://, no www.)',
+              ]} />
+
+            <WorkflowStep step={9} title="Add columns + import people data" endpoint="POST /api/columns + POST /api/rows"
+              description="Create columns for each person field, then import all people as rows."
+              curl={`# Create columns (one call each)\ncurl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/columns \\\n  -d '{"tableId":"PEOPLE_TABLE_ID","name":"Full Name","type":"text"}'\n# ... repeat for: First Name, Last Name, Job Title, Company Domain, Location, LinkedIn\n\n# Import rows\ncurl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/rows \\\n  -d '{"tableId":"PEOPLE_TABLE_ID","rows":[{"COL_FULLNAME":{"value":"Budi Santoso"},"COL_DOMAIN":{"value":"majujaya.id"},"COL_TITLE":{"value":"CMO"}}]}'`}
+              notes={[
+                'Save all column IDs — especially Full Name, Company Domain (needed for email finder)',
+                'Save all returned row IDs (needed for email finder)',
+              ]} />
+
+            <WorkflowStep step={10} title="Use Lookup to pull company info into People sheet" endpoint="POST /api/lookup/run"
+              description="VLOOKUP: match Company Domain in People sheet against Domain in Companies sheet, pull in Industry, Size, etc."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/lookup/run \\\n  -d '{"tableId":"PEOPLE_TABLE_ID","sourceTableId":"COMPANIES_TABLE_ID","inputColumnId":"PEOPLE_DOMAIN_COL","matchColumnId":"COMPANIES_DOMAIN_COL","returnColumnId":"COMPANIES_INDUSTRY_COL","newColumnName":"Company Industry"}'`}
+              notes={[
+                'Run this once per field you want to pull (Industry, Size, etc.)',
+                'Matching is case-insensitive and trims whitespace',
+                'Creates a new column in the People sheet if newColumnName is provided',
+                'Or writes to targetColumnId if you already created the column',
+              ]} />
+
+            <WorkflowStep step={11} title="Find emails for all people" endpoint="POST /api/find-email/run"
+              description="Use Ninjer API to find professional emails for each person using their name + company domain."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/find-email/run \\\n  -d '{"tableId":"PEOPLE_TABLE_ID","rowIds":["row-1","row-2"],"inputMode":"full_name","fullNameColumnId":"COL_FULLNAME","domainColumnId":"COL_DOMAIN"}'`}
+              notes={[
+                'inputMode: "full_name" uses one column, "first_last" uses separate first/last name columns',
+                'domainColumnId must point to clean domains (no protocol, no www)',
+                'Processes 2 concurrent requests with 100ms delay. 90s timeout per call',
+                'Automatically creates "Email" and "Email Status" columns if not specified',
+                'Or pass emailColumnId / emailStatusColumnId to use existing columns',
+                'Response: { processedCount, foundCount, errorCount }',
+                'For large lists (500+ rows), this can take several minutes',
+              ]} />
+
+            <WorkflowStep step={12} title="Clean up: remove rows without emails" endpoint="GET /api/rows + DELETE /api/rows"
+              description="Filter out people where email wasn't found, leaving only actionable contacts."
+              curl={`# Get rows where Email is empty\ncurl -H "${H}" "${B}/api/rows?tableId=PEOPLE_TABLE_ID&filters=%5B%7B%22columnId%22%3A%22EMAIL_COL_ID%22%2C%22operator%22%3A%22is_empty%22%7D%5D"\n\n# Delete them\ncurl -X DELETE -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/rows \\\n  -d '{"ids":["row-3","row-7"],"tableId":"PEOPLE_TABLE_ID"}'`}
+              notes={[
+                'Final table now has: Name, Title, Company, Domain, Email — ready for outreach',
+                'Alternatively, filter for email status "found" only to get highest confidence matches',
+              ]} />
+
+            <WorkflowStep step={13} title="(Optional) AI enrich for personalization" endpoint="POST /api/enrichment/run"
+              description="Use AI to generate personalized intro lines, research notes, or any custom data point for each contact."
+              curl={`# First create enrichment config\ncurl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/enrichment \\\n  -d '{"name":"Personalized Intro","model":"gpt-5-mini","prompt":"Write a 1-sentence personalized cold email opener for {{Full Name}}, who is {{Job Title}} at a company in the {{Company Industry}} industry. Reference their role specifically.","inputColumns":["FULLNAME_COL","TITLE_COL","INDUSTRY_COL"],"outputFormat":"text","temperature":0.8}'\n\n# Then run it\ncurl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/enrichment/run \\\n  -d '{"configId":"CONFIG_ID","tableId":"PEOPLE_TABLE_ID","targetColumnId":"INTRO_COL","rowIds":["row-1","row-2"]}'`}
+              notes={[
+                'Use {{Column Name}} syntax in prompts to reference row data',
+                'Models: gpt-5-mini (fast/cheap), gpt-4.1-mini (balanced), gpt-4o (best quality)',
+                'Monitor progress: GET /api/jobs/status or GET /api/columns/{id}/progress',
+                'For large batches (1000+), use POST /api/enrichment/batch for async processing',
+              ]} />
+
+            <WorkflowStep step={14} title="Export final list" endpoint="GET /api/export/csv"
+              description="Download the final email list as CSV, or read all rows via API."
+              curl={`# Export as CSV file\ncurl -H "${H}" "${B}/api/export/csv?tableId=PEOPLE_TABLE_ID" -o cmo-emails.csv\n\n# Or get as JSON\ncurl -H "${H}" "${B}/api/rows?tableId=PEOPLE_TABLE_ID"`}
+              notes={[
+                'CSV includes all visible columns',
+                'JSON response includes full cell data with status metadata',
+              ]} />
+          </div>
+
+          {/* Workflow 2: Domain-first research */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-white/80 mt-6 mb-2">Workflow: &quot;Research these companies and find decision-makers&quot;</h3>
+            <p className="text-xs text-white/40 mb-3">When you already have a list of company domains/names and need to find the right people + emails.</p>
+
+            <WorkflowStep step={1} title="Create workbook + Companies sheet" endpoint="POST /api/projects + POST /api/tables"
+              description="Create workspace, then a sheet with columns: Company Name, Domain, plus any other fields."
+              notes={['Same as Workflow 1, Steps 1-4']} />
+
+            <WorkflowStep step={2} title="Import known company list" endpoint="POST /api/rows"
+              description="Bulk import your existing company data (from CSV, CRM export, etc.)."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/rows \\\n  -d '{"tableId":"TABLE_ID","rows":[{"COL_NAME":{"value":"Stripe"},"COL_DOMAIN":{"value":"stripe.com"}}]}'`}
+              notes={['If importing from CSV: POST /api/import/csv with {tableId, data: [...], columnMapping: {...}}']} />
+
+            <WorkflowStep step={3} title="AI enrich to fill missing data" endpoint="POST /api/enrichment/run"
+              description="Use AI to research each company and fill in missing fields (industry, size, HQ location, etc.)."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/enrichment \\\n  -d '{"name":"Company Research","model":"gpt-5-mini","prompt":"Research {{Company Name}} ({{Domain}}). Return their industry, approximate employee count, and headquarters city.","inputColumns":["NAME_COL","DOMAIN_COL"],"outputColumns":["Industry","Employee Count","HQ City"],"outputFormat":"json","temperature":0.3}'`}
+              notes={[
+                'outputColumns creates new columns automatically with extracted data',
+                'Use POST /api/enrichment/extract-datapoint to pull specific fields into their own columns',
+                'Low temperature (0.3) for factual research, higher (0.8) for creative writing',
+              ]} />
+
+            <WorkflowStep step={4} title="Find decision-makers at each company" endpoint="POST /api/add-data/search"
+              description="Search for people at the domains, filtered by role/seniority."
+              notes={['Same as Workflow 1, Steps 7-9. Pass domains from your company list, filter by job title/seniority.']} />
+
+            <WorkflowStep step={5} title="Lookup + Find Email + Clean up" endpoint="Multiple"
+              description="Pull company data into people sheet via Lookup, find emails via Ninjer, remove rows without emails."
+              notes={['Same as Workflow 1, Steps 10-12']} />
+          </div>
+
+          {/* Workflow 3: People search only */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-white/80 mt-6 mb-2">Workflow: &quot;Find [role] people in [location/industry] and get their emails&quot;</h3>
+            <p className="text-xs text-white/40 mb-3">When you don&apos;t need companies first — just search for people directly across all companies.</p>
+
+            <WorkflowStep step={1} title="Search people directly (no domains)" endpoint="POST /api/add-data/search"
+              description="Search Clay for people without passing domains — searches across all companies."
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/add-data/search \\\n  -d '{"searchType":"people","filters":{"job_title_keywords":["CTO","VP Engineering"],"seniority_levels":["c-suite","vp"],"countries_include":["United States"],"company_sizes":["51-200","201-500"],"company_industries_include":["Software Development"],"limit":500}}'`}
+              notes={[
+                'Omit "domains" field entirely (or pass empty array) for cross-company search',
+                'Results include company_domain for each person — use it for email finding',
+                'Combine seniority + title + location + industry for precise targeting',
+              ]} />
+
+            <WorkflowStep step={2} title="Create sheet, import, find emails" endpoint="Multiple"
+              description="Create workbook/sheet, import people, run email finder."
+              notes={[
+                'Create workbook: POST /api/projects',
+                'Create sheet + columns: POST /api/tables, POST /api/columns',
+                'Import people: POST /api/rows',
+                'Find emails: POST /api/find-email/run',
+                'Clean up empty emails: GET /api/rows (filter) + DELETE /api/rows',
+              ]} />
+          </div>
+
+          {/* Key decision points */}
+          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+            <h3 className="text-sm font-semibold text-white">Agent Decision Framework</h3>
+            <div className="text-xs text-white/50 space-y-2">
+              <p><span className="text-white/70 font-medium">Company-first vs People-first:</span> If the request mentions specific industries, company sizes, revenue, or locations as primary criteria → start with company search. If the request is about specific roles/titles with optional company criteria → start with people search directly.</p>
+              <p><span className="text-white/70 font-medium">When to use Lookup:</span> Any time you have data in one sheet that needs to be connected to another. Common: pulling company info (industry, size) into a people sheet via matching domain columns.</p>
+              <p><span className="text-white/70 font-medium">When to use AI Enrichment:</span> For data that doesn&apos;t exist in Clay or databases — personalized intros, company research summaries, lead scoring, custom data extraction. Use batch mode for 1000+ rows.</p>
+              <p><span className="text-white/70 font-medium">When to use Formula:</span> For data transformations — extracting domains from emails, combining first+last name, cleaning URLs, conditional logic. No AI cost, runs instantly.</p>
+              <p><span className="text-white/70 font-medium">Monitoring long operations:</span> For any operation on 100+ rows, poll GET /api/jobs/status for ETAs and progress. For cell-level detail, use GET /api/columns/{'{id}'}/progress.</p>
+              <p><span className="text-white/70 font-medium">Error handling:</span> After email finding, always check foundCount vs processedCount. Filter and remove rows with empty emails before delivering results. Retry failed cells with POST /api/enrichment/retry-cell.</p>
+            </div>
+          </div>
+
+          {/* Data flow diagram */}
+          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+            <h3 className="text-sm font-semibold text-white">Data Flow Summary</h3>
+            <pre className="text-xs text-white/50 font-mono leading-relaxed">{`Workbook (container)
+  |
+  +-- Sheet 1: Companies
+  |     Search companies → Import rows → Filter bad data
+  |
+  +-- Sheet 2: People
+  |     Search people at company domains → Import rows
+  |     ← Lookup (pull company fields from Sheet 1)
+  |     → Find Email (Ninjer API)
+  |     → Filter (remove no-email rows)
+  |     → AI Enrich (optional: personalization, research)
+  |
+  +-- Export: CSV or JSON via API`}</pre>
+          </div>
         </div>
 
         {/* Folders & Workbooks */}
