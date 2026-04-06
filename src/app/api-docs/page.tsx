@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Copy, Check, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Copy, Check, ChevronDown, Download, Terminal } from 'lucide-react';
 
 const BASE_URL = typeof window !== 'undefined' ? window.location.origin : 'https://dataflow-pi.vercel.app';
 
@@ -140,22 +140,74 @@ export default function APIDocsPage() {
           <button onClick={() => router.push('/')} className="text-white/70 hover:text-white transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-xl font-bold">DataFlow API Documentation</h1>
+          <h1 className="text-xl font-bold flex-1">DataFlow API Documentation</h1>
+          <button
+            onClick={() => {
+              fetch('/api/docs/download').then(r => r.blob()).then(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = 'DATAFLOW-API-REFERENCE.md'; a.click();
+                URL.revokeObjectURL(url);
+              });
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-sm text-white/70 hover:text-white transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download MD</span>
+          </button>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-8 space-y-2">
-        {/* Auth */}
+        {/* Auth + API Key */}
         <div className="p-4 bg-lavender/10 border border-lavender/20 rounded-xl space-y-3">
-          <h2 className="text-lg font-semibold text-white">Authentication</h2>
-          <p className="text-sm text-white/60">All requests require a Bearer token:</p>
+          <h2 className="text-lg font-semibold text-white">Authentication &amp; API Key</h2>
+          <p className="text-sm text-white/60">All API requests require a Bearer token in the Authorization header:</p>
           <div className="flex items-center gap-2">
             <pre className="text-sm text-lavender bg-black/20 rounded-lg px-3 py-2 font-mono flex-1">Authorization: Bearer YOUR_API_KEY</pre>
             <CopyButton text="Authorization: Bearer YOUR_API_KEY" />
           </div>
+          <div className="text-sm text-white/50 space-y-2 pt-1">
+            <p className="text-white/70 font-medium text-xs">Where to get your API key:</p>
+            <div className="space-y-1 text-xs">
+              <p>1. Set the <code className="text-lavender/80 bg-black/20 px-1.5 py-0.5 rounded">DATAFLOW_API_KEY</code> environment variable in your <code className="text-lavender/80 bg-black/20 px-1.5 py-0.5 rounded">.env.local</code> file:</p>
+              <pre className="text-emerald-400/80 bg-black/20 rounded-lg p-2 font-mono">DATAFLOW_API_KEY=your-secret-key-here</pre>
+              <p>2. For production (Vercel), set it via CLI: <code className="text-lavender/80 bg-black/20 px-1.5 py-0.5 rounded">vercel env add DATAFLOW_API_KEY</code></p>
+              <p>3. Use any string as your key — there is no signup. You define the key, the API checks it.</p>
+            </div>
+          </div>
           <pre className="text-xs text-emerald-400/80 bg-black/20 rounded-lg p-3 font-mono">
-{`curl -H "${H}" ${B}/api/stats`}
+{`# Test your key:\ncurl -H "${H}" ${B}/api/stats`}
           </pre>
+        </div>
+
+        {/* Claude Code Launcher */}
+        <div className="p-4 bg-emerald-500/5 border border-emerald-500/15 rounded-xl space-y-3">
+          <div className="flex items-center gap-2">
+            <Terminal className="w-5 h-5 text-emerald-400" />
+            <h2 className="text-lg font-semibold text-white">Use with Claude Code</h2>
+          </div>
+          <p className="text-sm text-white/50">Launch Claude Code with the full DataFlow API context pre-loaded. Just describe what you want and it executes the campaign end-to-end.</p>
+          <div className="space-y-2">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-white/40 font-medium">Slash command (from the project directory)</span>
+                <CopyButton text='/campaign Find companies in Jakarta with 50+ employees and get their CMOs&apos; emails' />
+              </div>
+              <pre className="text-xs text-emerald-400/80 bg-black/20 rounded-lg p-3 font-mono">/campaign Find companies in Jakarta with 50+ employees and get their CMOs&apos; emails</pre>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-white/40 font-medium">Or launch directly from terminal</span>
+                <CopyButton text='claude "/campaign Find SaaS companies in Berlin with 200+ employees, get their VP Sales, and find emails"' />
+              </div>
+              <pre className="text-xs text-emerald-400/80 bg-black/20 rounded-lg p-3 font-mono">claude &quot;/campaign Find SaaS companies in Berlin with 200+ employees, get their VP Sales, and find emails&quot;</pre>
+            </div>
+          </div>
+          <div className="text-xs text-white/40 space-y-1 pt-1">
+            <p>The <code className="text-emerald-400/60 bg-black/20 px-1 py-0.5 rounded">/campaign</code> command is defined in <code className="text-emerald-400/60 bg-black/20 px-1 py-0.5 rounded">.claude/commands/campaign.md</code> — it reads the full API reference, picks the right workflow, and executes step by step via curl.</p>
+            <p>Works with: company search, people search, email finding, AI enrichment, data cleaning, cross-sheet lookup, CSV export — the full pipeline.</p>
+          </div>
         </div>
 
         {/* AI Agent Workflow Guide */}

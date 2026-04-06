@@ -44,6 +44,7 @@ next-env.d.ts
 .idea
 .vscode
 .claude/
+!.claude/commands/
 
 # Service account
 service-account.json
