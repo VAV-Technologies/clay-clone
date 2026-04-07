@@ -139,10 +139,10 @@ function WorkbookContent() {
               <button
                 onClick={() => setIsAiArcDataOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-violet-300/70 hover:text-violet-200 hover:bg-violet-500/10 transition-colors"
-                title="Add AI Arc Data"
+                title="Add AI Ark Data"
               >
                 <UserPlus className="w-4 h-4" />
-                <span>Add AI Arc Data</span>
+                <span>Add AI Ark Data</span>
               </button>
             </div>
           </div>

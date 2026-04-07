@@ -1,4 +1,4 @@
-// AI Arc People & Company Search API Client
+// AI Ark People & Company Search API Client
 // Docs: https://docs.ai-ark.com/
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -166,7 +166,7 @@ async function aiArcFetch(
         const errBody = await response.json().catch(() => ({}));
         const msg = (errBody as Record<string, string>).error
           || (errBody as Record<string, string>).message
-          || `AI Arc API error: ${response.status}`;
+          || `AI Ark API error: ${response.status}`;
         throw new Error(msg);
       }
 
@@ -174,14 +174,14 @@ async function aiArcFetch(
       return text ? JSON.parse(text) : {};
     } catch (err) {
       lastError = err as Error;
-      if (attempt < MAX_RETRIES - 1 && !(err as Error).message?.includes('AI Arc API error')) {
+      if (attempt < MAX_RETRIES - 1 && !(err as Error).message?.includes('AI Ark API error')) {
         await sleep(RETRY_BACKOFF[attempt]);
         continue;
       }
     }
   }
 
-  throw lastError || new Error('AI Arc API request failed');
+  throw lastError || new Error('AI Ark API request failed');
 }
 
 // ─── Filter Builders ────────────────────────────────────────────────────────

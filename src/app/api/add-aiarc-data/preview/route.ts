@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       preview: result.preview,
     });
   } catch (error) {
-    console.error('AI Arc preview error:', error);
+    console.error('AI Ark preview error:', error);
     const msg = error instanceof Error ? error.message : 'Preview failed';
     return NextResponse.json({ error: msg }, { status: 500 });
   }
