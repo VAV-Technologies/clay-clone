@@ -29,6 +29,7 @@ export interface AiArcPeopleFilters {
   companyDomain?: string[];
   companyName?: string[];
   industries?: string[];
+  industriesExclude?: string[];
   employeeSize?: { start: number; end: number }[];
   accountLocation?: string[];
   technology?: string[];
@@ -43,6 +44,7 @@ export interface AiArcCompanyFilters {
   domain?: string[];
   name?: string[];
   industries?: string[];
+  industriesExclude?: string[];
   employeeSize?: { start: number; end: number }[];
   location?: string[];
   technology?: string[];
@@ -213,6 +215,17 @@ async function aiArcFetch(
   throw lastError || new Error('AI Ark API request failed');
 }
 
+// ─── Title Post-Filter ──────────────────────────────────────────────────────
+// AI Ark's WORD mode splits multi-word titles into individual words, causing
+// false positives (e.g., "Director" from "Board of Directors"). This function
+// does case-insensitive phrase matching after fetching to remove noise.
+
+function titleMatchesAny(title: string, keywords: string[]): boolean {
+  if (!title || !keywords.length) return true; // No filter = pass all
+  const t = title.toLowerCase();
+  return keywords.some(kw => t.includes(kw.toLowerCase()));
+}
+
 // ─── Filter Builders ────────────────────────────────────────────────────────
 
 function buildPeopleBody(
@@ -231,8 +244,15 @@ function buildPeopleBody(
   if (filters.companyName?.length) {
     account.name = { any: { include: { mode: 'SMART', content: filters.companyName } } };
   }
-  if (filters.industries?.length) {
-    account.industries = { any: { include: { mode: 'SMART', content: filters.industries } } };
+  if (filters.industries?.length || filters.industriesExclude?.length) {
+    const ind: Record<string, unknown> = { any: {} };
+    if (filters.industries?.length) {
+      (ind.any as Record<string, unknown>).include = { mode: 'SMART', content: filters.industries };
+    }
+    if (filters.industriesExclude?.length) {
+      (ind.any as Record<string, unknown>).exclude = { mode: 'WORD', content: filters.industriesExclude };
+    }
+    account.industries = ind;
   }
   if (filters.employeeSize?.length) {
     account.employeeSize = { type: 'RANGE', range: filters.employeeSize };
@@ -316,8 +336,15 @@ function buildCompanyBody(
   if (filters.name?.length) {
     account.name = { any: { include: { mode: 'SMART', content: filters.name } } };
   }
-  if (filters.industries?.length) {
-    account.industries = { any: { include: { mode: 'SMART', content: filters.industries } } };
+  if (filters.industries?.length || filters.industriesExclude?.length) {
+    const ind: Record<string, unknown> = { any: {} };
+    if (filters.industries?.length) {
+      (ind.any as Record<string, unknown>).include = { mode: 'SMART', content: filters.industries };
+    }
+    if (filters.industriesExclude?.length) {
+      (ind.any as Record<string, unknown>).exclude = { mode: 'WORD', content: filters.industriesExclude };
+    }
+    account.industries = ind;
   }
   if (filters.employeeSize?.length) {
     account.employeeSize = { type: 'RANGE', range: filters.employeeSize };
@@ -531,65 +558,67 @@ async function searchPeopleMultiTitle(
   const titles = filters.titleKeywords || [];
   const seen = new Set<string>();
   const results: AiArcPerson[] = [];
-  let totalEstimate = 0;
+  let apiTotal = 0;
 
-  onProgress?.(`Searching ${titles.length} title keywords with deduplication...`);
+  onProgress?.(`Searching ${titles.length} title keywords with deduplication + post-filter...`);
 
   for (let t = 0; t < titles.length; t++) {
     if (results.length >= limit) break;
 
     const title = titles[t];
     const singleFilters = { ...filters, titleKeywords: [title] };
-    const remaining = limit - results.length;
 
-    onProgress?.(`[${t + 1}/${titles.length}] Searching "${title}"... (${results.length} unique so far)`);
+    onProgress?.(`[${t + 1}/${titles.length}] Searching "${title}"... (${results.length} matched so far)`);
 
-    // First page to get totalElements
-    const pageSize = Math.min(remaining, MAX_PAGE_SIZE);
+    // Fetch all pages for this title (over-fetch to account for post-filter loss)
+    const pageSize = MAX_PAGE_SIZE;
     const body = buildPeopleBody(singleFilters, 0, pageSize);
     const firstPage = await aiArcFetch('/people', { body }) as Record<string, unknown>;
 
     const titleTotal = (firstPage.totalElements as number) || 0;
     const totalPages = (firstPage.totalPages as number) || 1;
-    if (t === 0) totalEstimate = titleTotal; // Use first title's count as base estimate
+    apiTotal += titleTotal;
 
     const firstContent = ((firstPage.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
 
-    // Deduplicate and add
+    // Deduplicate + post-filter by title phrase match
     for (const person of firstContent) {
-      if (person.id && !seen.has(person.id)) {
+      if (person.id && !seen.has(person.id) && titleMatchesAny(person.title, titles)) {
         seen.add(person.id);
         results.push(person);
+      } else if (person.id) {
+        seen.add(person.id); // Still track ID to avoid re-checking in later titles
       }
     }
 
-    // Paginate if needed and we still need more
-    if (results.length < limit && totalPages > 1) {
-      const pagesNeeded = Math.min(Math.ceil(remaining / pageSize), totalPages);
+    // Paginate through all pages for this title
+    for (let page = 1; page < totalPages; page++) {
+      if (results.length >= limit) break;
 
-      for (let page = 1; page < pagesNeeded; page++) {
-        if (results.length >= limit) break;
+      const pageBody = buildPeopleBody(singleFilters, page, pageSize);
+      const pageData = await aiArcFetch('/people', { body: pageBody }) as Record<string, unknown>;
+      const content = ((pageData.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
 
-        const pageBody = buildPeopleBody(singleFilters, page, pageSize);
-        const pageData = await aiArcFetch('/people', { body: pageBody }) as Record<string, unknown>;
-        const content = ((pageData.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
-
-        for (const person of content) {
-          if (person.id && !seen.has(person.id)) {
-            seen.add(person.id);
-            results.push(person);
-          }
+      for (const person of content) {
+        if (person.id && !seen.has(person.id) && titleMatchesAny(person.title, titles)) {
+          seen.add(person.id);
+          results.push(person);
+        } else if (person.id) {
+          seen.add(person.id);
         }
+      }
 
-        if (content.length < pageSize) break;
-        if (results.length >= limit) break;
+      if (content.length < pageSize) break;
+
+      if (page % 10 === 0) {
+        onProgress?.(`  "${title}" page ${page + 1}/${totalPages}... (${results.length} matched)`);
       }
     }
 
-    onProgress?.(`  "${title}": ${titleTotal} total, ${results.length} unique after dedup`);
+    onProgress?.(`  "${title}": ${titleTotal} API results, ${results.length} matched after filter`);
   }
 
-  onProgress?.(`Search complete — ${results.length} unique results (${seen.size} deduplicated)`);
+  onProgress?.(`Search complete — ${results.length} results (filtered from ${seen.size} API results)`);
   return { items: results.slice(0, limit), totalCount: results.length };
 }
 
@@ -599,6 +628,8 @@ async function searchPeopleSingle(
   onProgress?: (msg: string) => void
 ): Promise<AiArcSearchResult<AiArcPerson>> {
   onProgress?.('Starting people search...');
+  const titleKws = filters.titleKeywords || [];
+  const hasPostFilter = titleKws.length > 0;
 
   const pageSize = Math.min(limit, MAX_PAGE_SIZE);
   const body = buildPeopleBody(filters, 0, pageSize);
@@ -606,31 +637,39 @@ async function searchPeopleSingle(
 
   const totalElements = (firstPage.totalElements as number) || 0;
   const totalPages = (firstPage.totalPages as number) || 1;
-  const firstContent = ((firstPage.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
+  let firstContent = ((firstPage.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
 
-  onProgress?.(`Found ${totalElements} total results. Fetching page 1/${Math.min(Math.ceil(limit / pageSize), totalPages)}...`);
-
-  if (firstContent.length >= limit || totalPages <= 1) {
-    return { items: firstContent.slice(0, limit), totalCount: totalElements };
+  if (hasPostFilter) {
+    firstContent = firstContent.filter(p => titleMatchesAny(p.title, titleKws));
   }
 
+  onProgress?.(`Found ${totalElements} API results. Fetching page 1/${totalPages}... (${firstContent.length} matched)`);
+
   const allItems = [...firstContent];
-  const pagesNeeded = Math.min(Math.ceil(limit / pageSize), totalPages);
+  // Fetch all pages when post-filtering (we need to over-fetch)
+  const pagesNeeded = hasPostFilter ? totalPages : Math.min(Math.ceil(limit / pageSize), totalPages);
 
   for (let page = 1; page < pagesNeeded; page++) {
-    onProgress?.(`Fetching page ${page + 1}/${pagesNeeded}... (${allItems.length} so far)`);
+    if (allItems.length >= limit) break;
 
     const pageBody = buildPeopleBody(filters, page, pageSize);
     const pageData = await aiArcFetch('/people', { body: pageBody }) as Record<string, unknown>;
-    const content = ((pageData.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
+    let content = ((pageData.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
+
+    if (hasPostFilter) {
+      content = content.filter(p => titleMatchesAny(p.title, titleKws));
+    }
     allItems.push(...content);
 
-    if (content.length < pageSize) break;
-    if (allItems.length >= limit) break;
+    if (((pageData.content as unknown[]) || []).length < pageSize) break;
+
+    if (page % 10 === 0) {
+      onProgress?.(`Fetching page ${page + 1}/${pagesNeeded}... (${allItems.length} matched)`);
+    }
   }
 
-  onProgress?.(`Search complete — ${allItems.length} results fetched`);
-  return { items: allItems.slice(0, limit), totalCount: totalElements };
+  onProgress?.(`Search complete — ${allItems.length} results${hasPostFilter ? ' after title filter' : ''}`);
+  return { items: allItems.slice(0, limit), totalCount: hasPostFilter ? allItems.length : totalElements };
 }
 
 export async function searchCompanies(

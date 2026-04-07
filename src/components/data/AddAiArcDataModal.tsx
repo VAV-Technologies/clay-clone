@@ -232,6 +232,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
   const [companyDomain, setCompanyDomain] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [industries, setIndustries] = useState('');
+  const [industriesExclude, setIndustriesExclude] = useState('');
   const [employeeSizes, setEmployeeSizes] = useState<string[]>([]);
   const [accountLocation, setAccountLocation] = useState('');
   const [technology, setTechnology] = useState('');
@@ -242,6 +243,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
   const [cDomain, setCDomain] = useState('');
   const [cName, setCName] = useState('');
   const [cIndustries, setCIndustries] = useState('');
+  const [cIndustriesExclude, setCIndustriesExclude] = useState('');
   const [cSizes, setCSizes] = useState<string[]>([]);
   const [cLocation, setCLocation] = useState('');
   const [cTechnology, setCTechnology] = useState('');
@@ -293,13 +295,13 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
   // People filter counts
   const jobCount = countActive(titleKeywords, seniority, departments);
   const pLocationCount = countActive(contactLocation, accountLocation);
-  const pCompanyCount = countActive(companyDomain, companyName, industries, employeeSizes);
+  const pCompanyCount = countActive(companyDomain, companyName, industries, industriesExclude, employeeSizes);
   const pSkillCount = countActive(skills, certifications, schoolNames, pLanguages);
   const pProfileCount = countActive(fullName, linkedinUrl);
 
   // Company filter counts
   const cIdentCount = countActive(cDomain, cName, cLookalike);
-  const cIndustryCount = countActive(cIndustries);
+  const cIndustryCount = countActive(cIndustries, cIndustriesExclude);
   const cSizeCount = countActive(cSizes);
   const cLocCount = countActive(cLocation);
   const cTechCount = countActive(cTechnology, cKeywords);
@@ -322,6 +324,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
     if (companyDomain.trim()) filters.companyDomain = splitCSV(companyDomain);
     if (companyName.trim()) filters.companyName = splitCSV(companyName);
     if (industries.trim()) filters.industries = splitCSV(industries);
+    if (industriesExclude.trim()) filters.industriesExclude = splitCSV(industriesExclude);
     if (employeeSizes.length) filters.employeeSize = sizesToRanges(employeeSizes);
     if (accountLocation.trim()) filters.accountLocation = splitCSV(accountLocation);
     if (technology.trim()) filters.technology = splitCSV(technology);
@@ -335,6 +338,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
     if (cDomain.trim()) filters.domain = splitCSV(cDomain);
     if (cName.trim()) filters.name = splitCSV(cName);
     if (cIndustries.trim()) filters.industries = splitCSV(cIndustries);
+    if (cIndustriesExclude.trim()) filters.industriesExclude = splitCSV(cIndustriesExclude);
     if (cSizes.length) filters.employeeSize = sizesToRanges(cSizes);
     if (cLocation.trim()) filters.location = splitCSV(cLocation);
     if (cTechnology.trim()) filters.technology = splitCSV(cTechnology);
@@ -591,6 +595,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
                   <TextFilterInput label="Company Domain" value={companyDomain} onChange={setCompanyDomain} placeholder="google.com, stripe.com..." />
                   <TextFilterInput label="Company Name" value={companyName} onChange={setCompanyName} placeholder="Google, Stripe..." />
                   <TextFilterInput label="Industries" value={industries} onChange={setIndustries} placeholder="Technology, Finance..." />
+                  <TextFilterInput label="Exclude Industries" value={industriesExclude} onChange={setIndustriesExclude} placeholder="Government, Non-profit..." />
                   <div>
                     <label className="text-xs text-white/50 mb-1 block">Employee Size</label>
                     <SizeCheckboxGroup selected={employeeSizes} onChange={setEmployeeSizes} />
@@ -631,6 +636,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
                 {/* Industry */}
                 <FilterSection title="Industry" count={cIndustryCount}>
                   <TextFilterInput label="Industries" value={cIndustries} onChange={setCIndustries} placeholder="Technology, Retail, Healthcare..." />
+                  <TextFilterInput label="Exclude Industries" value={cIndustriesExclude} onChange={setCIndustriesExclude} placeholder="Government, Non-profit..." />
                 </FilterSection>
 
                 {/* Size */}
