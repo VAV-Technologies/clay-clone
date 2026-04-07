@@ -106,11 +106,45 @@ export interface AiArcSearchResult<T> {
 }
 
 // ─── Rate Limiting ──────────────────────────────────────────────────────────
+// AI Ark limits: 5 req/s, 300 req/min, 18,000 req/hour
+// We enforce both per-request gap (210ms) AND a sliding window for 300/min
 
 let lastRequestTime = 0;
+const requestTimestamps: number[] = []; // Sliding window for per-minute tracking
+const MAX_PER_MINUTE = 280; // Stay under 300 with buffer
+const MINUTE_MS = 60_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function enforceRateLimit(): Promise<void> {
+  const now = Date.now();
+
+  // Per-request gap: 210ms minimum between calls
+  const elapsed = now - lastRequestTime;
+  if (elapsed < MIN_REQUEST_GAP_MS) {
+    await sleep(MIN_REQUEST_GAP_MS - elapsed);
+  }
+
+  // Per-minute window: if we've hit 280 calls in the last 60s, wait
+  const cutoff = Date.now() - MINUTE_MS;
+  // Remove timestamps older than 1 minute
+  while (requestTimestamps.length > 0 && requestTimestamps[0] < cutoff) {
+    requestTimestamps.shift();
+  }
+
+  if (requestTimestamps.length >= MAX_PER_MINUTE) {
+    // Wait until the oldest request in the window expires
+    const waitMs = requestTimestamps[0] + MINUTE_MS - Date.now() + 100; // +100ms buffer
+    if (waitMs > 0) {
+      console.log(`[aiarc] Rate limit: ${requestTimestamps.length} calls in last 60s, waiting ${Math.ceil(waitMs / 1000)}s...`);
+      await sleep(waitMs);
+    }
+  }
+
+  lastRequestTime = Date.now();
+  requestTimestamps.push(Date.now());
 }
 
 // ─── HTTP Client ────────────────────────────────────────────────────────────
@@ -130,13 +164,8 @@ async function aiArcFetch(
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    // Enforce rate limit
-    const now = Date.now();
-    const elapsed = now - lastRequestTime;
-    if (elapsed < MIN_REQUEST_GAP_MS) {
-      await sleep(MIN_REQUEST_GAP_MS - elapsed);
-    }
-    lastRequestTime = Date.now();
+    // Enforce rate limits (per-request gap + per-minute window)
+    await enforceRateLimit();
 
     try {
       const response = await fetch(url, {
