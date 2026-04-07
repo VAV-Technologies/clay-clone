@@ -214,7 +214,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
   const abortRef = useRef<AbortController | null>(null);
 
   // Step state
-  const [step, setStep] = useState<'configure' | 'searching' | 'results'>('configure');
+  const [step, setStep] = useState<'configure' | 'previewing' | 'preview' | 'searching' | 'results'>('configure');
   const [searchType, setSearchType] = useState<'people' | 'companies'>('people');
 
   // People filters
@@ -253,6 +253,8 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
   const [searchStatus, setSearchStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [estimatedTotal, setEstimatedTotal] = useState<number | null>(null);
+  const [previewPeople, setPreviewPeople] = useState<AiArcPerson[]>([]);
+  const [previewCompanies, setPreviewCompanies] = useState<AiArcCompany[]>([]);
   const [peopleResults, setPeopleResults] = useState<AiArcPerson[]>([]);
   const [companyResults, setCompanyResults] = useState<AiArcCompany[]>([]);
 
@@ -261,6 +263,8 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
     if (!isOpen) {
       setStep('configure');
       setError(null);
+      setPreviewPeople([]);
+      setPreviewCompanies([]);
       setPeopleResults([]);
       setCompanyResults([]);
       setSearchStatus('');
@@ -343,7 +347,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
   // ─── Search ───────────────────────────────────────────────────────────────
 
   const handleSearch = async () => {
-    setStep('searching');
+    setStep('previewing');
     setError(null);
     setSearchStatus('Running preview to estimate results...');
 
@@ -351,9 +355,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
       abortRef.current = new AbortController();
       const isCompany = searchType === 'companies';
       const filters = isCompany ? buildCompanyFilters() : buildPeopleFilters();
-      const searchLimit = isCompany ? (toNum(cLimit) ?? 50) : (toNum(limit) ?? 50);
 
-      // Step 1: Preview to get estimated total
       const previewRes = await fetch('/api/add-aiarc-data/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -376,9 +378,37 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
         return;
       }
 
-      // Step 2: Full search
-      const fetchCount = Math.min(searchLimit, total);
-      setSearchStatus(`Found ~${total.toLocaleString()} results. Fetching ${fetchCount.toLocaleString()}...`);
+      // Store preview samples
+      if (isCompany) {
+        setPreviewCompanies(preview.preview || []);
+      } else {
+        setPreviewPeople(preview.preview || []);
+      }
+
+      // Show preview step — user decides whether to proceed
+      setStep('preview');
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        setStep('configure');
+        return;
+      }
+      setError((err as Error).message);
+      setStep('configure');
+    }
+  };
+
+  const handleFetchAll = async () => {
+    setStep('searching');
+    setError(null);
+
+    try {
+      abortRef.current = new AbortController();
+      const isCompany = searchType === 'companies';
+      const filters = isCompany ? buildCompanyFilters() : buildPeopleFilters();
+      const searchLimit = isCompany ? (toNum(cLimit) ?? 50) : (toNum(limit) ?? 50);
+      const fetchCount = Math.min(searchLimit, estimatedTotal || searchLimit);
+
+      setSearchStatus(`Fetching ${fetchCount.toLocaleString()} results...`);
 
       const searchRes = await fetch('/api/add-aiarc-data/search', {
         method: 'POST',
@@ -401,11 +431,11 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
       setStep('results');
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
-        setStep('configure');
+        setStep('preview');
         return;
       }
       setError((err as Error).message);
-      setStep('configure');
+      setStep('preview');
     }
   };
 
@@ -634,14 +664,6 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
               </div>
             )}
 
-            {/* Estimated total from previous preview */}
-            {estimatedTotal !== null && (
-              <div className="flex items-center gap-2 p-2 bg-white/5 border border-white/10 rounded-lg">
-                <Search className="w-4 h-4 text-white/40" />
-                <span className="text-xs text-white/50">Previous estimate: ~{estimatedTotal.toLocaleString()} results</span>
-              </div>
-            )}
-
             {/* Search Button */}
             <GlassButton variant="primary" className="w-full" onClick={handleSearch}>
               <Search className="w-4 h-4 mr-1.5" />
@@ -650,11 +672,108 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
           </div>
         )}
 
-        {/* ─── Step 2: Searching ──────────────────────────────────── */}
+        {/* ─── Step 1b: Previewing (loading) ────────────────────── */}
+        {step === 'previewing' && (
+          <div className="p-8 flex flex-col items-center justify-center gap-4">
+            <Loader2 className="w-10 h-10 text-violet-400 animate-spin" />
+            <p className="text-white/70 text-center">Estimating results...</p>
+            <p className="text-xs text-white/40 text-center">This usually takes a few seconds</p>
+            <GlassButton variant="ghost" size="sm" onClick={handleCancel}>Cancel</GlassButton>
+          </div>
+        )}
+
+        {/* ─── Step 2: Preview (confirmation) ────────────────────── */}
+        {step === 'preview' && (() => {
+          const isCompany = searchType === 'companies';
+          const previewItems = isCompany ? previewCompanies : previewPeople;
+          const searchLimit = isCompany ? (toNum(cLimit) ?? 50) : (toNum(limit) ?? 50);
+          const fetchCount = Math.min(searchLimit, estimatedTotal || searchLimit);
+          const label = isCompany ? 'Companies' : 'People';
+
+          return (
+            <div className="p-4 space-y-4">
+              {/* Estimated total banner */}
+              <div className="flex items-center gap-3 p-4 bg-violet-500/10 border border-violet-500/20 rounded-lg">
+                <Search className="w-6 h-6 text-violet-400 flex-shrink-0" />
+                <div>
+                  <p className="text-lg font-semibold text-white">
+                    ~{(estimatedTotal || 0).toLocaleString()} {label}
+                  </p>
+                  <p className="text-xs text-white/50">match your filters</p>
+                </div>
+              </div>
+
+              {/* Preview table */}
+              {previewItems.length > 0 && (
+                <div className="border border-white/10 rounded-lg overflow-hidden">
+                  <p className="px-3 py-2 text-xs text-white/50 bg-white/[0.03] border-b border-white/10">
+                    Sample preview ({previewItems.length} of ~{(estimatedTotal || 0).toLocaleString()})
+                  </p>
+                  <div className="overflow-x-auto max-h-52">
+                    <table className="w-full text-sm">
+                      <thead className="bg-white/[0.02]">
+                        {isCompany ? (
+                          <tr>
+                            <th className="text-left px-3 py-1.5 text-xs font-medium text-white/50">Company</th>
+                            <th className="text-left px-3 py-1.5 text-xs font-medium text-white/50">Industry</th>
+                            <th className="text-left px-3 py-1.5 text-xs font-medium text-white/50">HQ</th>
+                            <th className="text-left px-3 py-1.5 text-xs font-medium text-white/50">Staff</th>
+                          </tr>
+                        ) : (
+                          <tr>
+                            <th className="text-left px-3 py-1.5 text-xs font-medium text-white/50">Name</th>
+                            <th className="text-left px-3 py-1.5 text-xs font-medium text-white/50">Title</th>
+                            <th className="text-left px-3 py-1.5 text-xs font-medium text-white/50">Company</th>
+                            <th className="text-left px-3 py-1.5 text-xs font-medium text-white/50">Location</th>
+                          </tr>
+                        )}
+                      </thead>
+                      <tbody className="divide-y divide-white/[0.05]">
+                        {isCompany
+                          ? previewCompanies.map((c, i) => (
+                              <tr key={i} className="hover:bg-white/[0.02]">
+                                <td className="px-3 py-1.5 text-white/80">{c.name}</td>
+                                <td className="px-3 py-1.5 text-white/60">{c.industry}</td>
+                                <td className="px-3 py-1.5 text-white/60">{c.headquarter_city}</td>
+                                <td className="px-3 py-1.5 text-white/60">{c.staff_total || c.staff_range}</td>
+                              </tr>
+                            ))
+                          : previewPeople.map((p, i) => (
+                              <tr key={i} className="hover:bg-white/[0.02]">
+                                <td className="px-3 py-1.5 text-white/80">{p.full_name || `${p.first_name} ${p.last_name}`}</td>
+                                <td className="px-3 py-1.5 text-white/60">{p.title || p.headline}</td>
+                                <td className="px-3 py-1.5 text-white/60">{p.company_name}</td>
+                                <td className="px-3 py-1.5 text-white/60">{p.location || p.city}</td>
+                              </tr>
+                            ))
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex gap-2 pt-2">
+                <GlassButton variant="ghost" onClick={() => setStep('configure')}>Back to Filters</GlassButton>
+                <GlassButton
+                  variant="primary"
+                  className="flex-1"
+                  onClick={handleFetchAll}
+                >
+                  <Search className="w-4 h-4 mr-1" />
+                  Fetch {fetchCount.toLocaleString()} {label}
+                </GlassButton>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ─── Step 3: Searching (full fetch) ────────────────────── */}
         {step === 'searching' && (
           <div className="p-8 flex flex-col items-center justify-center gap-4">
             <Loader2 className="w-10 h-10 text-violet-400 animate-spin" />
-            <p className="text-white/70 text-center">{searchStatus || 'Searching...'}</p>
+            <p className="text-white/70 text-center">{searchStatus || 'Fetching results...'}</p>
             <p className="text-xs text-white/40 text-center">Large searches may take up to a minute due to rate limits</p>
             <GlassButton variant="ghost" size="sm" onClick={handleCancel}>Cancel</GlassButton>
           </div>
