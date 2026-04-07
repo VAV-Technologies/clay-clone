@@ -253,9 +253,11 @@ function buildPeopleBody(
     contact.language = { any: { include: { mode: 'SMART', content: filters.languages } } };
   }
   if (filters.titleKeywords?.length) {
-    const mode = filters.titleMode || 'SMART';
-    contact.current = {
-      title: { any: { include: { mode, content: filters.titleKeywords } } },
+    const mode = filters.titleMode || 'WORD';
+    contact.experience = {
+      current: {
+        title: { any: { include: { mode, content: filters.titleKeywords } } },
+      },
     };
   }
 
@@ -410,6 +412,41 @@ export async function previewPeopleSearch(
   filters: AiArcPeopleFilters,
   onProgress?: (msg: string) => void
 ): Promise<{ estimatedTotal: number; preview: AiArcPerson[] }> {
+  const titles = filters.titleKeywords || [];
+
+  // Multi-title: run individual previews, deduplicate samples, sum estimates
+  if (titles.length > 1) {
+    onProgress?.(`Running preview for ${titles.length} title keywords...`);
+
+    const seen = new Set<string>();
+    const allPreviews: AiArcPerson[] = [];
+    let maxSingleTotal = 0;
+
+    for (const title of titles) {
+      const singleFilters = { ...filters, titleKeywords: [title] };
+      const body = buildPeopleBody(singleFilters, 0, 20);
+      const data = await aiArcFetch('/people', { body }) as Record<string, unknown>;
+
+      const content = (data.content as Record<string, unknown>[]) || [];
+      const titleTotal = (data.totalElements as number) || 0;
+      if (titleTotal > maxSingleTotal) maxSingleTotal = titleTotal;
+
+      for (const raw of content) {
+        const person = parseAiArcPerson(raw);
+        if (person.id && !seen.has(person.id)) {
+          seen.add(person.id);
+          allPreviews.push(person);
+        }
+      }
+    }
+
+    // Estimate: use the largest single-title count as the baseline
+    // (actual deduplicated total will be determined during full search)
+    onProgress?.(`Preview complete — ${allPreviews.length} unique samples (largest title group: ~${maxSingleTotal.toLocaleString()})`);
+    return { estimatedTotal: maxSingleTotal, preview: allPreviews.slice(0, 20) };
+  }
+
+  // Single title or no title filter
   onProgress?.('Running preview search...');
 
   const body = buildPeopleBody(filters, 0, 20);
@@ -447,9 +484,93 @@ export async function searchPeople(
   limit: number,
   onProgress?: (msg: string) => void
 ): Promise<AiArcSearchResult<AiArcPerson>> {
+  // Multi-title dedup: if multiple title keywords, search each separately
+  // and deduplicate by person ID to avoid inflated results and duplicate credits
+  const titles = filters.titleKeywords || [];
+  if (titles.length > 1) {
+    return searchPeopleMultiTitle(filters, limit, onProgress);
+  }
+
+  return searchPeopleSingle(filters, limit, onProgress);
+}
+
+async function searchPeopleMultiTitle(
+  filters: AiArcPeopleFilters,
+  limit: number,
+  onProgress?: (msg: string) => void
+): Promise<AiArcSearchResult<AiArcPerson>> {
+  const titles = filters.titleKeywords || [];
+  const seen = new Set<string>();
+  const results: AiArcPerson[] = [];
+  let totalEstimate = 0;
+
+  onProgress?.(`Searching ${titles.length} title keywords with deduplication...`);
+
+  for (let t = 0; t < titles.length; t++) {
+    if (results.length >= limit) break;
+
+    const title = titles[t];
+    const singleFilters = { ...filters, titleKeywords: [title] };
+    const remaining = limit - results.length;
+
+    onProgress?.(`[${t + 1}/${titles.length}] Searching "${title}"... (${results.length} unique so far)`);
+
+    // First page to get totalElements
+    const pageSize = Math.min(remaining, MAX_PAGE_SIZE);
+    const body = buildPeopleBody(singleFilters, 0, pageSize);
+    const firstPage = await aiArcFetch('/people', { body }) as Record<string, unknown>;
+
+    const titleTotal = (firstPage.totalElements as number) || 0;
+    const totalPages = (firstPage.totalPages as number) || 1;
+    if (t === 0) totalEstimate = titleTotal; // Use first title's count as base estimate
+
+    const firstContent = ((firstPage.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
+
+    // Deduplicate and add
+    for (const person of firstContent) {
+      if (person.id && !seen.has(person.id)) {
+        seen.add(person.id);
+        results.push(person);
+      }
+    }
+
+    // Paginate if needed and we still need more
+    if (results.length < limit && totalPages > 1) {
+      const pagesNeeded = Math.min(Math.ceil(remaining / pageSize), totalPages);
+
+      for (let page = 1; page < pagesNeeded; page++) {
+        if (results.length >= limit) break;
+
+        const pageBody = buildPeopleBody(singleFilters, page, pageSize);
+        const pageData = await aiArcFetch('/people', { body: pageBody }) as Record<string, unknown>;
+        const content = ((pageData.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
+
+        for (const person of content) {
+          if (person.id && !seen.has(person.id)) {
+            seen.add(person.id);
+            results.push(person);
+          }
+        }
+
+        if (content.length < pageSize) break;
+        if (results.length >= limit) break;
+      }
+    }
+
+    onProgress?.(`  "${title}": ${titleTotal} total, ${results.length} unique after dedup`);
+  }
+
+  onProgress?.(`Search complete — ${results.length} unique results (${seen.size} deduplicated)`);
+  return { items: results.slice(0, limit), totalCount: results.length };
+}
+
+async function searchPeopleSingle(
+  filters: AiArcPeopleFilters,
+  limit: number,
+  onProgress?: (msg: string) => void
+): Promise<AiArcSearchResult<AiArcPerson>> {
   onProgress?.('Starting people search...');
 
-  // First page
   const pageSize = Math.min(limit, MAX_PAGE_SIZE);
   const body = buildPeopleBody(filters, 0, pageSize);
   const firstPage = await aiArcFetch('/people', { body }) as Record<string, unknown>;
@@ -464,7 +585,6 @@ export async function searchPeople(
     return { items: firstContent.slice(0, limit), totalCount: totalElements };
   }
 
-  // Fetch remaining pages
   const allItems = [...firstContent];
   const pagesNeeded = Math.min(Math.ceil(limit / pageSize), totalPages);
 
@@ -476,7 +596,7 @@ export async function searchPeople(
     const content = ((pageData.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
     allItems.push(...content);
 
-    if (content.length < pageSize) break; // No more results
+    if (content.length < pageSize) break;
     if (allItems.length >= limit) break;
   }
 
