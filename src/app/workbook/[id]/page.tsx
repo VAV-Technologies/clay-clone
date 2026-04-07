@@ -12,6 +12,7 @@ import { CSVImportModal } from '@/components/import/CSVImportModal';
 import { EnrichmentPanel } from '@/components/enrichment/EnrichmentPanel';
 import { FormulaPanel } from '@/components/formula/FormulaPanel';
 import { AddDataModal } from '@/components/data/AddDataModal';
+import { AddAiArcDataModal } from '@/components/data/AddAiArcDataModal';
 import { useTableStore } from '@/stores/tableStore';
 
 const AnimatedBackground = dynamic(
@@ -35,6 +36,7 @@ function WorkbookContent() {
   const [isFormulaOpen, setIsFormulaOpen] = useState(false);
   const [editFormulaColumnId, setEditFormulaColumnId] = useState<string | null>(null);
   const [isAddDataOpen, setIsAddDataOpen] = useState(false);
+  const [isAiArcDataOpen, setIsAiArcDataOpen] = useState(false);
 
   // Load workbook on mount
   useEffect(() => {
@@ -129,10 +131,18 @@ function WorkbookContent() {
               <button
                 onClick={() => setIsAddDataOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                title="Add Data"
+                title="Add Clay Data"
               >
                 <UserPlus className="w-4 h-4" />
-                <span>Add Data</span>
+                <span>Add Clay Data</span>
+              </button>
+              <button
+                onClick={() => setIsAiArcDataOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-violet-300/70 hover:text-violet-200 hover:bg-violet-500/10 transition-colors"
+                title="Add AI Arc Data"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Add AI Arc Data</span>
               </button>
             </div>
           </div>
@@ -182,6 +192,14 @@ function WorkbookContent() {
             tableId={tableId}
             workbookId={workbookId}
             onComplete={() => setIsAddDataOpen(false)}
+          />
+
+          <AddAiArcDataModal
+            isOpen={isAiArcDataOpen}
+            onClose={() => setIsAiArcDataOpen(false)}
+            tableId={tableId}
+            workbookId={workbookId}
+            onComplete={() => setIsAiArcDataOpen(false)}
           />
         </>
       )}

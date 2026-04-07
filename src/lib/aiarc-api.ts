@@ -1,0 +1,537 @@
+// AI Arc People & Company Search API Client
+// Docs: https://docs.ai-ark.com/
+
+// ─── Constants ──────────────────────────────────────────────────────────────
+
+const AI_ARC_BASE = 'https://api.ai-ark.com/api/developer-portal/v1';
+const MAX_PAGE_SIZE = 100;
+const MIN_REQUEST_GAP_MS = 210; // 5 req/s = 200ms + 10ms buffer
+const MAX_RETRIES = 3;
+const RETRY_BACKOFF = [1000, 2000, 4000];
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+export interface AiArcPeopleFilters {
+  // Contact-level (person)
+  fullName?: string;
+  linkedinUrl?: string;
+  contactLocation?: string[];
+  seniority?: string[];
+  departments?: string[];
+  skills?: string[];
+  certifications?: string[];
+  schoolNames?: string[];
+  languages?: string[];
+  titleKeywords?: string[];
+  titleMode?: 'SMART' | 'WORD' | 'EXACT';
+
+  // Account-level (company context)
+  companyDomain?: string[];
+  companyName?: string[];
+  industries?: string[];
+  employeeSize?: { start: number; end: number }[];
+  accountLocation?: string[];
+  technology?: string[];
+  revenue?: { start: number; end: number }[];
+
+  // Results
+  limit?: number;
+}
+
+export interface AiArcCompanyFilters {
+  lookalikeDomains?: string[];
+  domain?: string[];
+  name?: string[];
+  industries?: string[];
+  employeeSize?: { start: number; end: number }[];
+  location?: string[];
+  technology?: string[];
+  fundingType?: string[];
+  fundingTotalMin?: number;
+  fundingTotalMax?: number;
+  revenueMin?: number;
+  revenueMax?: number;
+  foundedYearMin?: number;
+  foundedYearMax?: number;
+  keywords?: string[];
+
+  // Results
+  limit?: number;
+}
+
+export interface AiArcPerson {
+  id: string;
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  headline: string;
+  title: string;
+  linkedin_url: string;
+  twitter_url: string;
+  country: string;
+  city: string;
+  location: string;
+  company_name: string;
+  company_domain: string;
+  company_industry: string;
+  seniority: string;
+  skills: string;
+  open_to_work: boolean;
+}
+
+export interface AiArcCompany {
+  id: string;
+  name: string;
+  legal_name: string;
+  description: string;
+  industry: string;
+  website: string;
+  domain: string;
+  linkedin_url: string;
+  staff_total: number;
+  staff_range: string;
+  founded_year: number;
+  funding_type: string;
+  funding_total: string;
+  headquarter_city: string;
+  headquarter_state: string;
+  technologies: string;
+  email: string;
+  phone: string;
+}
+
+export interface AiArcSearchResult<T> {
+  items: T[];
+  totalCount: number;
+}
+
+// ─── Rate Limiting ──────────────────────────────────────────────────────────
+
+let lastRequestTime = 0;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ─── HTTP Client ────────────────────────────────────────────────────────────
+
+async function aiArcFetch(
+  path: string,
+  options: { method?: string; body?: unknown } = {}
+): Promise<unknown> {
+  const apiKey = process.env.AI_ARC_API_KEY;
+  if (!apiKey) {
+    throw new Error('AI_ARC_API_KEY environment variable is required');
+  }
+
+  const url = `${AI_ARC_BASE}${path}`;
+  const method = options.method || (options.body ? 'POST' : 'GET');
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    // Enforce rate limit
+    const now = Date.now();
+    const elapsed = now - lastRequestTime;
+    if (elapsed < MIN_REQUEST_GAP_MS) {
+      await sleep(MIN_REQUEST_GAP_MS - elapsed);
+    }
+    lastRequestTime = Date.now();
+
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-TOKEN': apiKey,
+        },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+
+      // Rate limited — retry with backoff
+      if (response.status === 429 && attempt < MAX_RETRIES - 1) {
+        console.log(`[aiarc] Rate limited, retrying in ${RETRY_BACKOFF[attempt]}ms...`);
+        await sleep(RETRY_BACKOFF[attempt]);
+        continue;
+      }
+
+      // Server error — retry with backoff
+      if (response.status >= 500 && attempt < MAX_RETRIES - 1) {
+        console.log(`[aiarc] Server error ${response.status}, retrying...`);
+        await sleep(RETRY_BACKOFF[attempt]);
+        continue;
+      }
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        const msg = (errBody as Record<string, string>).error
+          || (errBody as Record<string, string>).message
+          || `AI Arc API error: ${response.status}`;
+        throw new Error(msg);
+      }
+
+      const text = await response.text();
+      return text ? JSON.parse(text) : {};
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt < MAX_RETRIES - 1 && !(err as Error).message?.includes('AI Arc API error')) {
+        await sleep(RETRY_BACKOFF[attempt]);
+        continue;
+      }
+    }
+  }
+
+  throw lastError || new Error('AI Arc API request failed');
+}
+
+// ─── Filter Builders ────────────────────────────────────────────────────────
+
+function buildPeopleBody(
+  filters: AiArcPeopleFilters,
+  page: number,
+  size: number
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { page, size };
+
+  // Account-level filters (company context)
+  const account: Record<string, unknown> = {};
+
+  if (filters.companyDomain?.length) {
+    account.domain = { any: { include: filters.companyDomain } };
+  }
+  if (filters.companyName?.length) {
+    account.name = { any: { include: { mode: 'SMART', content: filters.companyName } } };
+  }
+  if (filters.industries?.length) {
+    account.industries = { any: { include: { mode: 'SMART', content: filters.industries } } };
+  }
+  if (filters.employeeSize?.length) {
+    account.employeeSize = { type: 'RANGE', range: filters.employeeSize };
+  }
+  if (filters.accountLocation?.length) {
+    account.location = { any: { include: filters.accountLocation } };
+  }
+  if (filters.technology?.length) {
+    account.technologies = { any: { include: { mode: 'SMART', content: filters.technology } } };
+  }
+  if (filters.revenue?.length) {
+    account.revenue = { type: 'RANGE', range: filters.revenue };
+  }
+
+  if (Object.keys(account).length > 0) {
+    body.account = account;
+  }
+
+  // Contact-level filters (person)
+  const contact: Record<string, unknown> = {};
+
+  if (filters.fullName) {
+    contact.fullName = { any: { include: { mode: 'SMART', content: [filters.fullName] } } };
+  }
+  if (filters.linkedinUrl) {
+    contact.linkedin = { any: { include: [filters.linkedinUrl] } };
+  }
+  if (filters.contactLocation?.length) {
+    contact.location = { any: { include: filters.contactLocation } };
+  }
+  if (filters.seniority?.length) {
+    contact.seniority = { any: { include: filters.seniority } };
+  }
+  if (filters.departments?.length) {
+    contact.departmentAndFunction = { any: { include: filters.departments } };
+  }
+  if (filters.skills?.length) {
+    contact.skill = { any: { include: { mode: 'SMART', content: filters.skills } } };
+  }
+  if (filters.certifications?.length) {
+    contact.certification = { any: { include: { mode: 'SMART', content: filters.certifications } } };
+  }
+  if (filters.schoolNames?.length) {
+    contact.education = { school: { any: { include: filters.schoolNames } } };
+  }
+  if (filters.languages?.length) {
+    contact.language = { any: { include: { mode: 'SMART', content: filters.languages } } };
+  }
+  if (filters.titleKeywords?.length) {
+    const mode = filters.titleMode || 'SMART';
+    contact.current = {
+      title: { any: { include: { mode, content: filters.titleKeywords } } },
+    };
+  }
+
+  if (Object.keys(contact).length > 0) {
+    body.contact = contact;
+  }
+
+  return body;
+}
+
+function buildCompanyBody(
+  filters: AiArcCompanyFilters,
+  page: number,
+  size: number
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { page, size };
+
+  if (filters.lookalikeDomains?.length) {
+    body.lookalikeDomains = filters.lookalikeDomains.slice(0, 5); // max 5
+  }
+
+  const account: Record<string, unknown> = {};
+
+  if (filters.domain?.length) {
+    account.domain = { any: { include: filters.domain } };
+  }
+  if (filters.name?.length) {
+    account.name = { any: { include: { mode: 'SMART', content: filters.name } } };
+  }
+  if (filters.industries?.length) {
+    account.industries = { any: { include: { mode: 'SMART', content: filters.industries } } };
+  }
+  if (filters.employeeSize?.length) {
+    account.employeeSize = { type: 'RANGE', range: filters.employeeSize };
+  }
+  if (filters.location?.length) {
+    account.location = { any: { include: filters.location } };
+  }
+  if (filters.technology?.length) {
+    account.technologies = { any: { include: { mode: 'SMART', content: filters.technology } } };
+  }
+  if (filters.keywords?.length) {
+    account.keyword = { any: { include: { content: filters.keywords } } };
+  }
+  if (filters.fundingType?.length) {
+    account.funding = { type: filters.fundingType };
+  }
+  if (filters.fundingTotalMin != null || filters.fundingTotalMax != null) {
+    const existing = (account.funding as Record<string, unknown>) || {};
+    existing.totalAmount = {
+      start: filters.fundingTotalMin ?? 0,
+      end: filters.fundingTotalMax ?? 999999999999,
+    };
+    account.funding = existing;
+  }
+  if (filters.revenueMin != null || filters.revenueMax != null) {
+    account.revenue = {
+      type: 'RANGE',
+      range: [{ start: filters.revenueMin ?? 0, end: filters.revenueMax ?? 999999999999 }],
+    };
+  }
+  if (filters.foundedYearMin != null || filters.foundedYearMax != null) {
+    account.foundedYear = {
+      type: 'RANGE',
+      range: { start: filters.foundedYearMin ?? 1800, end: filters.foundedYearMax ?? 2030 },
+    };
+  }
+
+  if (Object.keys(account).length > 0) {
+    body.account = account;
+  }
+
+  return body;
+}
+
+// ─── Response Parsers ───────────────────────────────────────────────────────
+
+function parseAiArcPerson(raw: Record<string, unknown>): AiArcPerson {
+  const profile = (raw.profile as Record<string, unknown>) || {};
+  const link = (raw.link as Record<string, unknown>) || {};
+  const loc = (raw.location as Record<string, unknown>) || {};
+  const company = (raw.company as Record<string, unknown>) || {};
+  const companySummary = (company.summary as Record<string, unknown>) || {};
+  const companyLink = (company.link as Record<string, unknown>) || {};
+  const dept = (raw.department as Record<string, unknown>) || {};
+  const badges = (raw.member_badges as Record<string, unknown>) || {};
+  const skills = (raw.skills as string[]) || [];
+
+  return {
+    id: (raw.id as string) || '',
+    first_name: (profile.first_name as string) || '',
+    last_name: (profile.last_name as string) || '',
+    full_name: (profile.full_name as string) || '',
+    headline: (profile.headline as string) || '',
+    title: (profile.title as string) || '',
+    linkedin_url: (link.linkedin as string) || '',
+    twitter_url: (link.twitter as string) || '',
+    country: (loc.country as string) || '',
+    city: (loc.city as string) || '',
+    location: (loc.default as string) || (loc.short as string) || '',
+    company_name: (companySummary.name as string) || '',
+    company_domain: (companyLink.domain as string) || '',
+    company_industry: (companySummary.industry as string) || (raw.industry as string) || '',
+    seniority: (dept.seniority as string) || '',
+    skills: skills.slice(0, 10).join(', '),
+    open_to_work: !!(badges.open_to_work),
+  };
+}
+
+function parseAiArcCompany(raw: Record<string, unknown>): AiArcCompany {
+  const summary = (raw.summary as Record<string, unknown>) || {};
+  const link = (raw.link as Record<string, unknown>) || {};
+  const contact = (raw.contact as Record<string, unknown>) || {};
+  const phone = (contact.phone as Record<string, unknown>) || {};
+  const financial = (raw.financial as Record<string, unknown>) || {};
+  const funding = (financial.funding as Record<string, unknown>) || {};
+  const location = (raw.location as Record<string, unknown>) || {};
+  const hq = (location.headquarter as Record<string, unknown>) || {};
+  const staff = (summary.staff as Record<string, unknown>) || {};
+  const staffRange = (staff.range as Record<string, unknown>) || {};
+  const techs = (raw.technologies as string[]) || [];
+
+  const totalAmount = funding.total_amount as number | undefined;
+
+  return {
+    id: (raw.id as string) || '',
+    name: (summary.name as string) || '',
+    legal_name: (summary.legal_name as string) || '',
+    description: ((summary.description as string) || '').slice(0, 500),
+    industry: (summary.industry as string) || '',
+    website: (link.website as string) || '',
+    domain: (link.domain as string) || '',
+    linkedin_url: (link.linkedin as string) || '',
+    staff_total: (staff.total as number) || 0,
+    staff_range: staffRange.start && staffRange.end
+      ? `${staffRange.start}-${staffRange.end}`
+      : '',
+    founded_year: (summary.founded_year as number) || 0,
+    funding_type: (funding.type as string) || '',
+    funding_total: totalAmount ? `$${(totalAmount / 1e6).toFixed(1)}M` : '',
+    headquarter_city: (hq.city as string) || '',
+    headquarter_state: (hq.state as string) || '',
+    technologies: techs.slice(0, 15).join(', '),
+    email: (contact.email as string) || '',
+    phone: (phone.sanitized as string) || (phone.raw as string) || '',
+  };
+}
+
+// ─── Preview Functions ──────────────────────────────────────────────────────
+
+export async function previewPeopleSearch(
+  filters: AiArcPeopleFilters,
+  onProgress?: (msg: string) => void
+): Promise<{ estimatedTotal: number; preview: AiArcPerson[] }> {
+  onProgress?.('Running preview search...');
+
+  const body = buildPeopleBody(filters, 0, 20);
+  const data = await aiArcFetch('/people', { body }) as Record<string, unknown>;
+
+  const content = (data.content as Record<string, unknown>[]) || [];
+  const totalElements = (data.totalElements as number) || 0;
+  const preview = content.map(parseAiArcPerson);
+
+  onProgress?.(`Preview complete — ${preview.length} results (estimated total: ${totalElements})`);
+  return { estimatedTotal: totalElements, preview };
+}
+
+export async function previewCompanySearch(
+  filters: AiArcCompanyFilters,
+  onProgress?: (msg: string) => void
+): Promise<{ estimatedTotal: number; preview: AiArcCompany[] }> {
+  onProgress?.('Running preview search...');
+
+  const body = buildCompanyBody(filters, 0, 20);
+  const data = await aiArcFetch('/companies', { body }) as Record<string, unknown>;
+
+  const content = (data.content as Record<string, unknown>[]) || [];
+  const totalElements = (data.totalElements as number) || 0;
+  const preview = content.map(parseAiArcCompany);
+
+  onProgress?.(`Preview complete — ${preview.length} results (estimated total: ${totalElements})`);
+  return { estimatedTotal: totalElements, preview };
+}
+
+// ─── Full Search (Paginated) ────────────────────────────────────────────────
+
+export async function searchPeople(
+  filters: AiArcPeopleFilters,
+  limit: number,
+  onProgress?: (msg: string) => void
+): Promise<AiArcSearchResult<AiArcPerson>> {
+  onProgress?.('Starting people search...');
+
+  // First page
+  const pageSize = Math.min(limit, MAX_PAGE_SIZE);
+  const body = buildPeopleBody(filters, 0, pageSize);
+  const firstPage = await aiArcFetch('/people', { body }) as Record<string, unknown>;
+
+  const totalElements = (firstPage.totalElements as number) || 0;
+  const totalPages = (firstPage.totalPages as number) || 1;
+  const firstContent = ((firstPage.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
+
+  onProgress?.(`Found ${totalElements} total results. Fetching page 1/${Math.min(Math.ceil(limit / pageSize), totalPages)}...`);
+
+  if (firstContent.length >= limit || totalPages <= 1) {
+    return { items: firstContent.slice(0, limit), totalCount: totalElements };
+  }
+
+  // Fetch remaining pages
+  const allItems = [...firstContent];
+  const pagesNeeded = Math.min(Math.ceil(limit / pageSize), totalPages);
+
+  for (let page = 1; page < pagesNeeded; page++) {
+    onProgress?.(`Fetching page ${page + 1}/${pagesNeeded}... (${allItems.length} so far)`);
+
+    const pageBody = buildPeopleBody(filters, page, pageSize);
+    const pageData = await aiArcFetch('/people', { body: pageBody }) as Record<string, unknown>;
+    const content = ((pageData.content as Record<string, unknown>[]) || []).map(parseAiArcPerson);
+    allItems.push(...content);
+
+    if (content.length < pageSize) break; // No more results
+    if (allItems.length >= limit) break;
+  }
+
+  onProgress?.(`Search complete — ${allItems.length} results fetched`);
+  return { items: allItems.slice(0, limit), totalCount: totalElements };
+}
+
+export async function searchCompanies(
+  filters: AiArcCompanyFilters,
+  limit: number,
+  onProgress?: (msg: string) => void
+): Promise<AiArcSearchResult<AiArcCompany>> {
+  onProgress?.('Starting company search...');
+
+  const pageSize = Math.min(limit, MAX_PAGE_SIZE);
+  const body = buildCompanyBody(filters, 0, pageSize);
+  const firstPage = await aiArcFetch('/companies', { body }) as Record<string, unknown>;
+
+  const totalElements = (firstPage.totalElements as number) || 0;
+  const totalPages = (firstPage.totalPages as number) || 1;
+  const firstContent = ((firstPage.content as Record<string, unknown>[]) || []).map(parseAiArcCompany);
+
+  onProgress?.(`Found ${totalElements} total companies. Fetching page 1/${Math.min(Math.ceil(limit / pageSize), totalPages)}...`);
+
+  if (firstContent.length >= limit || totalPages <= 1) {
+    return { items: firstContent.slice(0, limit), totalCount: totalElements };
+  }
+
+  const allItems = [...firstContent];
+  const pagesNeeded = Math.min(Math.ceil(limit / pageSize), totalPages);
+
+  for (let page = 1; page < pagesNeeded; page++) {
+    onProgress?.(`Fetching page ${page + 1}/${pagesNeeded}... (${allItems.length} so far)`);
+
+    const pageBody = buildCompanyBody(filters, page, pageSize);
+    const pageData = await aiArcFetch('/companies', { body: pageBody }) as Record<string, unknown>;
+    const content = ((pageData.content as Record<string, unknown>[]) || []).map(parseAiArcCompany);
+    allItems.push(...content);
+
+    if (content.length < pageSize) break;
+    if (allItems.length >= limit) break;
+  }
+
+  onProgress?.(`Search complete — ${allItems.length} companies fetched`);
+  return { items: allItems.slice(0, limit), totalCount: totalElements };
+}
+
+// ─── Credits ────────────────────────────────────────────────────────────────
+
+export async function fetchCredits(): Promise<unknown> {
+  return aiArcFetch('/payments/credits');
+}
+
+// ─── Config Check ───────────────────────────────────────────────────────────
+
+export function isConfigured(): boolean {
+  return !!process.env.AI_ARC_API_KEY;
+}
