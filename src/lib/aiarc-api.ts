@@ -219,11 +219,49 @@ async function aiArcFetch(
 // AI Ark's WORD mode splits multi-word titles into individual words, causing
 // false positives (e.g., "Director" from "Board of Directors"). This function
 // does case-insensitive phrase matching after fetching to remove noise.
+// It also expands common abbreviations (CEO ↔ Chief Executive Officer) so
+// both forms match, replicating the platform's semantic matching behavior.
+
+const TITLE_EXPANSIONS: Record<string, string[]> = {
+  'ceo': ['chief executive officer'],
+  'chief executive officer': ['ceo'],
+  'coo': ['chief operating officer', 'chief operations officer'],
+  'chief operating officer': ['coo'],
+  'chief operations officer': ['coo'],
+  'cfo': ['chief financial officer'],
+  'chief financial officer': ['cfo'],
+  'cto': ['chief technology officer'],
+  'chief technology officer': ['cto'],
+  'cmo': ['chief marketing officer'],
+  'chief marketing officer': ['cmo'],
+  'cio': ['chief information officer'],
+  'chief information officer': ['cio'],
+  'chro': ['chief human resources officer'],
+  'chief human resources officer': ['chro'],
+  'co-founder': ['cofounder'],
+  'cofounder': ['co-founder'],
+  'president': ['president'],
+  'board of directors': ['board of directors'],
+};
+
+function expandTitleKeywords(keywords: string[]): string[] {
+  const expanded = new Set<string>();
+  for (const kw of keywords) {
+    const lower = kw.toLowerCase();
+    expanded.add(lower);
+    const alts = TITLE_EXPANSIONS[lower];
+    if (alts) {
+      for (const alt of alts) expanded.add(alt);
+    }
+  }
+  return Array.from(expanded);
+}
 
 function titleMatchesAny(title: string, keywords: string[]): boolean {
   if (!title || !keywords.length) return true; // No filter = pass all
   const t = title.toLowerCase();
-  return keywords.some(kw => t.includes(kw.toLowerCase()));
+  const expanded = expandTitleKeywords(keywords);
+  return expanded.some(kw => t.includes(kw));
 }
 
 // ─── Filter Builders ────────────────────────────────────────────────────────
