@@ -14,6 +14,7 @@ interface FindEmailPanelProps {
 export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
   const { currentTable, columns, rows, selectedRows, updateCell, addColumn, fetchTable } = useTableStore();
 
+  const [provider, setProvider] = useState<'ninjer' | 'trykitt'>('ninjer');
   const [inputMode, setInputMode] = useState<'full_name' | 'first_last'>('full_name');
   const [fullNameColumnId, setFullNameColumnId] = useState('');
   const [firstNameColumnId, setFirstNameColumnId] = useState('');
@@ -127,7 +128,8 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     for (let i = 0; i < rowIds.length; i += BATCH_SIZE) {
       const batch = rowIds.slice(i, i + BATCH_SIZE);
 
-      const response = await fetch('/api/find-email/run', {
+      const endpoint = provider === 'trykitt' ? '/api/find-email/trykitt' : '/api/find-email/run';
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -222,6 +224,35 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Provider Toggle */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-white/70">Provider</label>
+          <div className="flex rounded-lg border border-white/10 overflow-hidden">
+            <button
+              onClick={() => setProvider('ninjer')}
+              className={cn(
+                'flex-1 px-3 py-2 text-sm transition-colors border-r border-white/10',
+                provider === 'ninjer'
+                  ? 'bg-cyan-500/20 text-white'
+                  : 'bg-white/5 text-white/50 hover:text-white'
+              )}
+            >
+              Ninjer
+            </button>
+            <button
+              onClick={() => setProvider('trykitt')}
+              className={cn(
+                'flex-1 px-3 py-2 text-sm transition-colors',
+                provider === 'trykitt'
+                  ? 'bg-cyan-500/20 text-white'
+                  : 'bg-white/5 text-white/50 hover:text-white'
+              )}
+            >
+              TryKitt
+            </button>
+          </div>
+        </div>
+
         {/* Input Mode Toggle */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-white/70">Input Mode</label>
