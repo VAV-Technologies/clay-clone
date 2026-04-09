@@ -13,6 +13,7 @@ import { EnrichmentPanel } from '@/components/enrichment/EnrichmentPanel';
 import { FormulaPanel } from '@/components/formula/FormulaPanel';
 import { AddDataModal } from '@/components/data/AddDataModal';
 import { AddAiArcDataModal } from '@/components/data/AddAiArcDataModal';
+import { AddWattdataModal } from '@/components/data/AddWattdataModal';
 import { useTableStore } from '@/stores/tableStore';
 
 const AnimatedBackground = dynamic(
@@ -37,6 +38,7 @@ function WorkbookContent() {
   const [editFormulaColumnId, setEditFormulaColumnId] = useState<string | null>(null);
   const [isAddDataOpen, setIsAddDataOpen] = useState(false);
   const [isAiArcDataOpen, setIsAiArcDataOpen] = useState(false);
+  const [isWattdataOpen, setIsWattdataOpen] = useState(false);
 
   // Load workbook on mount
   useEffect(() => {
@@ -144,6 +146,14 @@ function WorkbookContent() {
                 <UserPlus className="w-4 h-4" />
                 <span>Add AI Ark Data</span>
               </button>
+              <button
+                onClick={() => setIsWattdataOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-emerald-300/70 hover:text-emerald-200 hover:bg-emerald-500/10 transition-colors"
+                title="Add Wattdata"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Add Wattdata</span>
+              </button>
             </div>
           </div>
 
@@ -200,6 +210,14 @@ function WorkbookContent() {
             tableId={tableId}
             workbookId={workbookId}
             onComplete={() => setIsAiArcDataOpen(false)}
+          />
+
+          <AddWattdataModal
+            isOpen={isWattdataOpen}
+            onClose={() => setIsWattdataOpen(false)}
+            tableId={tableId}
+            workbookId={workbookId}
+            onComplete={() => setIsWattdataOpen(false)}
           />
         </>
       )}
