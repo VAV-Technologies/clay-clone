@@ -18,6 +18,8 @@ import {
 import { cn } from '@/lib/utils';
 import { GlassButton, GlassCard } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
+import { ConditionSection } from '@/components/shared/ConditionSection';
+import { applyFilter, type FilterOperator, type RowLike } from '@/lib/filter-utils';
 import { getBatchModels } from '@/lib/azure-batch';
 
 interface BatchEnrichmentPanelProps {
@@ -60,6 +62,11 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
   const [outputColumns, setOutputColumns] = useState<string[]>([]);
   const [newOutputColumn, setNewOutputColumn] = useState('');
   const [model, setModel] = useState('gpt-4.1-mini');
+
+  // Run condition
+  const [condColumnId, setCondColumnId] = useState('');
+  const [condOperator, setCondOperator] = useState<FilterOperator>('is_empty');
+  const [condValue, setCondValue] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -321,10 +328,17 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
 
       const newColumn = await columnResponse.json();
 
-      // Determine which rows to process
-      const rowIdsToProcess = selectedRows.size > 0
+      // Determine which rows to process (with optional condition filter)
+      let rowIdsToProcess = selectedRows.size > 0
         ? Array.from(selectedRows)
         : rows.map(r => r.id);
+      if (condColumnId) {
+        const filter = { columnId: condColumnId, operator: condOperator, value: condValue };
+        rowIdsToProcess = rowIdsToProcess.filter(id => {
+          const row = rows.find(r => r.id === id);
+          return row ? applyFilter(row as unknown as RowLike, filter, columns) : false;
+        });
+      }
 
       // Submit batch job
       const batchResponse = await fetch('/api/enrichment/batch', {
@@ -833,6 +847,22 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
             <p className="text-sm text-red-400">{error}</p>
           </div>
         )}
+      </div>
+
+      {/* Run Condition */}
+      <div className="px-4 pb-2">
+        <ConditionSection
+          columns={columns}
+          columnId={condColumnId}
+          operator={condOperator}
+          value={condValue}
+          onColumnChange={setCondColumnId}
+          onOperatorChange={setCondOperator}
+          onValueChange={setCondValue}
+          onClear={() => { setCondColumnId(''); setCondOperator('is_empty'); setCondValue(''); }}
+          matchCount={condColumnId ? rows.filter(r => applyFilter(r as unknown as RowLike, { columnId: condColumnId, operator: condOperator, value: condValue }, columns)).length : rows.length}
+          totalCount={selectedRows.size > 0 ? selectedRows.size : rows.length}
+        />
       </div>
 
       {/* Footer */}

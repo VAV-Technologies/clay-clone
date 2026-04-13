@@ -24,7 +24,7 @@ interface CellValue {
   [key: string]: unknown;
 }
 
-interface RowLike {
+export interface RowLike {
   data: Record<string, CellValue>;
   [key: string]: unknown;
 }

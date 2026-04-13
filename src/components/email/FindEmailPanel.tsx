@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Mail, X, Play, TestTube, AlertCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassButton } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
+import { ConditionSection } from '@/components/shared/ConditionSection';
+import { applyFilter, type FilterOperator, type RowLike } from '@/lib/filter-utils';
 
 interface FindEmailPanelProps {
   isOpen: boolean;
@@ -20,6 +22,11 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
   const [firstNameColumnId, setFirstNameColumnId] = useState('');
   const [lastNameColumnId, setLastNameColumnId] = useState('');
   const [domainColumnId, setDomainColumnId] = useState('');
+
+  // Run condition
+  const [condColumnId, setCondColumnId] = useState('');
+  const [condOperator, setCondOperator] = useState<FilterOperator>('is_empty');
+  const [condValue, setCondValue] = useState('');
 
   const [isRunning, setIsRunning] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -65,7 +72,23 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
   }, [isOpen, columns]);
 
   const tableId = currentTable?.id;
-  const rowCount = selectedRows.size > 0 ? selectedRows.size : rows.length;
+  const baseRowCount = selectedRows.size > 0 ? selectedRows.size : rows.length;
+
+  // Compute condition-filtered row count
+  const { conditionMatchCount, conditionFilteredIds } = useMemo(() => {
+    const baseIds = selectedRows.size > 0 ? Array.from(selectedRows) : rows.map(r => r.id);
+    if (!condColumnId) {
+      return { conditionMatchCount: baseIds.length, conditionFilteredIds: baseIds };
+    }
+    const filter = { columnId: condColumnId, operator: condOperator, value: condValue };
+    const filtered = baseIds.filter(id => {
+      const row = rows.find(r => r.id === id);
+      return row ? applyFilter(row as unknown as RowLike, filter, columns) : false;
+    });
+    return { conditionMatchCount: filtered.length, conditionFilteredIds: filtered };
+  }, [rows, selectedRows, columns, condColumnId, condOperator, condValue]);
+
+  const rowCount = condColumnId ? conditionMatchCount : baseRowCount;
 
   const canRun = (() => {
     if (!domainColumnId) return false;
@@ -181,9 +204,9 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
   const handleRun = async () => {
     setIsRunning(true);
     try {
-      const rowIds = selectedRows.size > 0
-        ? Array.from(selectedRows)
-        : rows.map(r => r.id);
+      const rowIds = condColumnId ? conditionFilteredIds : (
+        selectedRows.size > 0 ? Array.from(selectedRows) : rows.map(r => r.id)
+      );
       await processRows(rowIds);
     } catch (err) {
       setError((err as Error).message);
@@ -407,6 +430,22 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
         )}
       </div>
 
+      {/* Run Condition */}
+      <div className="px-4 pb-2">
+        <ConditionSection
+          columns={columns}
+          columnId={condColumnId}
+          operator={condOperator}
+          value={condValue}
+          onColumnChange={setCondColumnId}
+          onOperatorChange={setCondOperator}
+          onValueChange={setCondValue}
+          onClear={() => { setCondColumnId(''); setCondOperator('is_empty'); setCondValue(''); }}
+          matchCount={conditionMatchCount}
+          totalCount={baseRowCount}
+        />
+      </div>
+
       {/* Footer */}
       <div className="p-4 border-t border-white/10 space-y-2">
         <GlassButton
@@ -425,13 +464,15 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
           variant="primary"
           className="w-full"
           onClick={handleRun}
-          disabled={!canRun || isRunning || isTesting || rows.length === 0}
+          disabled={!canRun || isRunning || isTesting || rowCount === 0}
           loading={isRunning}
         >
           <Play className="w-4 h-4 mr-1" />
-          {selectedRows.size > 0
-            ? `Find Emails (${selectedRows.size} Selected)`
-            : 'Find Emails'}
+          {condColumnId
+            ? `Find Emails (${rowCount.toLocaleString()} matching)`
+            : selectedRows.size > 0
+              ? `Find Emails (${selectedRows.size} Selected)`
+              : `Find Emails (${rows.length.toLocaleString()})`}
         </GlassButton>
       </div>
     </div>

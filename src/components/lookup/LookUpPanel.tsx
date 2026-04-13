@@ -5,6 +5,8 @@ import { Link2, X, Play, AlertCircle, Check, Loader2, ArrowRight } from 'lucide-
 import { cn } from '@/lib/utils';
 import { GlassButton } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
+import { ConditionSection } from '@/components/shared/ConditionSection';
+import { type FilterOperator } from '@/lib/filter-utils';
 import type { Column } from '@/lib/db/schema';
 
 interface LookUpPanelProps {
@@ -28,6 +30,11 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
 
   // Output
   const [newColumnName, setNewColumnName] = useState('');
+
+  // Run condition
+  const [condColumnId, setCondColumnId] = useState('');
+  const [condOperator, setCondOperator] = useState<FilterOperator>('is_empty');
+  const [condValue, setCondValue] = useState('');
 
   // State
   const [isRunning, setIsRunning] = useState(false);
@@ -100,18 +107,22 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
       if (!colRes.ok) throw new Error('Failed to create column');
       const newCol = await colRes.json();
 
-      // 2. Run the lookup
+      // 2. Run the lookup (with optional condition)
+      const lookupBody: Record<string, unknown> = {
+        tableId,
+        sourceTableId: sourceSheetId,
+        inputColumnId,
+        matchColumnId,
+        returnColumnId,
+        targetColumnId: newCol.id,
+      };
+      if (condColumnId) {
+        lookupBody.condition = { columnId: condColumnId, operator: condOperator, value: condValue };
+      }
       const lookupRes = await fetch('/api/lookup/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tableId,
-          sourceTableId: sourceSheetId,
-          inputColumnId,
-          matchColumnId,
-          returnColumnId,
-          targetColumnId: newCol.id,
-        }),
+        body: JSON.stringify(lookupBody),
       });
 
       if (!lookupRes.ok) {
@@ -249,6 +260,22 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Run Condition */}
+      <div className="px-4 pb-2">
+        <ConditionSection
+          columns={columns}
+          columnId={condColumnId}
+          operator={condOperator}
+          value={condValue}
+          onColumnChange={setCondColumnId}
+          onOperatorChange={setCondOperator}
+          onValueChange={setCondValue}
+          onClear={() => { setCondColumnId(''); setCondOperator('is_empty'); setCondValue(''); }}
+          matchCount={0}
+          totalCount={0}
+        />
       </div>
 
       {/* Footer */}

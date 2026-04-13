@@ -21,6 +21,8 @@ import {
 import { cn } from '@/lib/utils';
 import { GlassButton, GlassCard } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
+import { ConditionSection } from '@/components/shared/ConditionSection';
+import { applyFilter, type FilterOperator, type RowLike } from '@/lib/filter-utils';
 import type { Row, CellValue } from '@/lib/db/schema';
 
 interface EnrichmentPanelProps {
@@ -62,6 +64,11 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
   const [costLimitEnabled, setCostLimitEnabled] = useState(false);
   const [maxCostPerRow, setMaxCostPerRow] = useState(0.01); // $0.01 default
   const [runOnEmpty, setRunOnEmpty] = useState(false);
+
+  // Run condition
+  const [condColumnId, setCondColumnId] = useState('');
+  const [condOperator, setCondOperator] = useState<FilterOperator>('is_empty');
+  const [condValue, setCondValue] = useState('');
 
   const [isRunning, setIsRunning] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -557,8 +564,15 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         addColumn(newColumn);
       }
 
-      // Determine which rows to run on
-      const rowIdsToEnrich = selectedRows.size > 0 ? Array.from(selectedRows) : rows.map(r => r.id);
+      // Determine which rows to run on (with optional condition filter)
+      let rowIdsToEnrich = selectedRows.size > 0 ? Array.from(selectedRows) : rows.map(r => r.id);
+      if (condColumnId) {
+        const filter = { columnId: condColumnId, operator: condOperator, value: condValue };
+        rowIdsToEnrich = rowIdsToEnrich.filter(id => {
+          const row = rows.find(r => r.id === id);
+          return row ? applyFilter(row as unknown as RowLike, filter, columns) : false;
+        });
+      }
 
       // Set total progress
       setProgress({ completed: 0, total: rowIdsToEnrich.length });
@@ -1013,6 +1027,20 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             Loading configuration...
           </div>
         )}
+        {/* Run Condition */}
+        <ConditionSection
+          columns={columns}
+          columnId={condColumnId}
+          operator={condOperator}
+          value={condValue}
+          onColumnChange={setCondColumnId}
+          onOperatorChange={setCondOperator}
+          onValueChange={setCondValue}
+          onClear={() => { setCondColumnId(''); setCondOperator('is_empty'); setCondValue(''); }}
+          matchCount={condColumnId ? rows.filter(r => applyFilter(r as unknown as RowLike, { columnId: condColumnId, operator: condOperator, value: condValue }, columns)).length : rows.length}
+          totalCount={selectedRows.size > 0 ? selectedRows.size : rows.length}
+        />
+
         {/* Test/Retry buttons row */}
         <div className="flex gap-2">
           <GlassButton

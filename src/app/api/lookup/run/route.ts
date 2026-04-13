@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
+import { applyFilter, type Filter } from '@/lib/filter-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,7 @@ export async function POST(request: NextRequest) {
       matchColumnId,
       returnColumnId,
       targetColumnId,
+      condition,
     } = await request.json();
 
     if (!tableId || !sourceTableId || !inputColumnId || !matchColumnId || !returnColumnId || !targetColumnId) {
@@ -33,8 +35,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. Fetch all rows from current table
-    const currentRows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, tableId));
+    // 2. Fetch all rows from current table and apply optional condition filter
+    const allCurrentRows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, tableId));
+    const currentColumns = await db.select().from(schema.columns).where(eq(schema.columns.tableId, tableId));
+
+    let currentRows = allCurrentRows;
+    if (condition && condition.columnId && condition.operator) {
+      const filter: Filter = { columnId: condition.columnId, operator: condition.operator, value: condition.value || '' };
+      currentRows = allCurrentRows.filter(row => applyFilter(row as unknown as Parameters<typeof applyFilter>[0], filter, currentColumns));
+      console.log(`[lookup] Condition applied: ${allCurrentRows.length} → ${currentRows.length} rows`);
+    }
 
     let matchedCount = 0;
     let unmatchedCount = 0;
