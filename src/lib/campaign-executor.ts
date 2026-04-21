@@ -213,9 +213,7 @@ export async function executeStep(
       const rowIds = rows.map(r => r.id);
 
       // Call the find-email endpoint internally via fetch
-      const baseUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.NEXTAUTH_URL || 'http://localhost:3000';
+      const baseUrl = process.env.APP_URL || 'http://localhost:3000';
       const apiKey = process.env.DATAFLOW_API_KEY;
 
       const response = await fetch(`${baseUrl}/api/find-email/run`, {
@@ -255,9 +253,7 @@ export async function executeStep(
       const source = context.sheets?.[sourceSheet];
       if (!target || !source) throw new Error(`Sheets not found: target=${targetSheet}, source=${sourceSheet}`);
 
-      const baseUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.NEXTAUTH_URL || 'http://localhost:3000';
+      const baseUrl = process.env.APP_URL || 'http://localhost:3000';
       const apiKey = process.env.DATAFLOW_API_KEY;
 
       const response = await fetch(`${baseUrl}/api/lookup/run`, {
@@ -283,9 +279,7 @@ export async function executeStep(
       const sheet = context.sheets?.[sheetName];
       if (!sheet) throw new Error(`Sheet "${sheetName}" not found`);
 
-      const baseUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.NEXTAUTH_URL || 'http://localhost:3000';
+      const baseUrl = process.env.APP_URL || 'http://localhost:3000';
       const apiKey = process.env.DATAFLOW_API_KEY;
 
       // Create enrichment config
