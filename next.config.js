@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const ACA_URL = 'https://dataflow.delightfulbeach-10f489d6.eastus2.azurecontainerapps.io';
+
 const nextConfig = {
   output: 'standalone',
   webpack: (config) => {
@@ -7,19 +9,24 @@ const nextConfig = {
     });
     return config;
   },
-  // Skip ESLint during builds (run separately if needed)
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // Skip TypeScript errors during builds (needed for db union type)
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Allow large request bodies for server actions (50MB limit)
   experimental: {
     serverActions: {
       bodySizeLimit: '50mb',
     },
+  },
+  async rewrites() {
+    if (!process.env.VERCEL) return [];
+    return {
+      beforeFiles: [
+        { source: '/api/:path*', destination: `${ACA_URL}/api/:path*` },
+      ],
+    };
   },
 };
 
