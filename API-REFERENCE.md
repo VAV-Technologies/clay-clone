@@ -717,22 +717,146 @@ Same response format as `GET /api/formula/run?jobId=`.
 
 ## 8. Find Email
 
-### Find Emails for Rows
-```
-POST /api/find-email/run
-```
+Three providers, all sharing the same request shape and writing into `emailColumnId` (the address) and `emailStatusColumnId` (a human-readable status). Pick a provider by URL.
+
+| Provider | Endpoint | Mode | Notes |
+|----------|----------|------|-------|
+| Ninjer | `POST /api/find-email/run` | sync | Original provider, 90s/row worst case |
+| TryKitt | `POST /api/find-email/trykitt` | sync | Realtime mode |
+| AI Ark | `POST /api/find-email/ai-ark` | **async via webhook** | Returns immediately; emails arrive 1-2 min later |
+
+### Common request body
 ```json
 {
   "tableId": "table-id",
   "rowIds": ["row-1", "row-2"],
   "inputMode": "full_name",
   "fullNameColumnId": "name-col-id",
+  "firstNameColumnId": "first-col-id",
+  "lastNameColumnId": "last-col-id",
   "domainColumnId": "domain-col-id",
   "emailColumnId": "email-output-col-id",
   "emailStatusColumnId": "status-output-col-id"
 }
 ```
-Uses Ninjer API. 2 concurrent requests, 100ms delay. 90s timeout per call.
+`inputMode` is `"full_name"` or `"first_last"`. Provide `fullNameColumnId` for the first, or `firstNameColumnId` + `lastNameColumnId` for the second. `domainColumnId` is required either way.
+
+### Common response shape
+```json
+{
+  "results": [{"rowId": "...", "success": true, "email": "...", "status": "found"}],
+  "processedCount": 2,
+  "foundCount": 1,
+  "errorCount": 0
+}
+```
+Status strings: `found`, `not_found`, `catch_all` (Ninjer), `skipped` (missing inputs), `error`. AI Ark adds `submitted` and `VALID`/`INVALID`/`CATCH_ALL` as the final cell value (see below).
+
+---
+
+### Provider 1: Ninjer
+
+```
+POST /api/find-email/run
+```
+2 concurrent requests, 100ms delay between batches. 90s timeout per row. Returns when every row has a final result.
+
+### Provider 2: TryKitt
+
+```
+POST /api/find-email/trykitt
+```
+Same request body. Same concurrency/timeout. Uses TryKitt's `realtime: true` mode under the hood, so each call blocks until the result is available.
+
+### Provider 3: AI Ark (async)
+
+```
+POST /api/find-email/ai-ark
+```
+
+AI Ark email-finding is webhook-based. The endpoint does **two** AI Ark calls per row:
+
+1. `POST /people` — search filtered by full name + domain to grab a `personId` and the response's `trackId`.
+2. `POST /people/email-finder` — submit `{ webhook, trackId, ids:[personId] }` so AI Ark will POST results back later.
+
+The `trackId` expires within minutes of the search, so search and email-finder must happen back-to-back. Best-match selection prefers an exact (case-insensitive) full-name match in the search results, falling back to the first result.
+
+**Per-row outcomes:**
+- `submitted` — queued at AI Ark; cell flips to `status: "processing"`, value `submitted`. Real result arrives via webhook.
+- `not_found` — AI Ark search returned 0 matches for this name+domain; no email-finder call made.
+- `skipped` — name or domain cell was empty.
+- `error` — search or submission failed; details logged as `[ai-ark] Row X failed: ...`.
+
+**Response shape (note `async: true` and that `foundCount` is always 0 — true count is unknown until the webhook fires):**
+```json
+{
+  "results": [{"rowId": "...", "success": true, "email": null, "status": "submitted"}],
+  "processedCount": 1,
+  "foundCount": 0,
+  "submittedCount": 1,
+  "notFoundCount": 0,
+  "skippedCount": 0,
+  "errorCount": 0,
+  "async": true,
+  "message": "1 email(s) submitted to AI Ark — results arrive in 1-2 minutes via webhook."
+}
+```
+
+**Configuration (env vars):**
+- `AI_ARC_API_KEY` — AI Ark developer-portal token (sent as `X-TOKEN` header).
+- `CRON_SECRET` — HMAC key used to sign webhook URLs. Already used by other features.
+- `PUBLIC_BASE_URL` — public HTTPS origin AI Ark can reach (e.g. `https://dataflow-pi.vercel.app`). Required when running behind a reverse proxy (Vercel→ACA), because `request.nextUrl.origin` inside the proxied container is the internal URL and AI Ark rejects it as `webhook is invalid`. Falls back to `request.nextUrl.origin` when unset.
+
+#### The webhook callback (AI Ark calls this; you don't)
+
+```
+POST /api/find-email/ai-ark/webhook?tableId=...&rowId=...&emailColId=...&statusColId=...&token=...
+```
+
+- The query string carries the cell coordinates plus an HMAC token computed as `HMAC-SHA256(tableId:rowId:emailColId:statusColId, CRON_SECRET)`. The handler verifies the token before writing — anyone can hit the URL but only AI Ark (or whoever holds `CRON_SECRET`) can land an email in a cell.
+- The path is exempt from the bearer-auth middleware (AI Ark doesn't have your `DATAFLOW_API_KEY`); HMAC verification replaces it.
+- Always returns `200 {"ok": true}` even on parse errors so AI Ark doesn't retry forever. Failures are logged as `[ai-ark webhook] ...`.
+- `GET` returns a small JSON health probe.
+
+**AI Ark webhook payload shape (verified live):**
+```json
+{
+  "trackId": "879e3ec0-...",
+  "state": "DONE",
+  "statistics": {"found": 1, "total": 1},
+  "data": [
+    {
+      "input": {"domain": "airbnb.com", "firstname": "Brian", "lastname": "Chesky"},
+      "output": [
+        {
+          "address": "brian.chesky@airbnb.com",
+          "status": "VALID",
+          "domainType": "CATCH_ALL",
+          "found": true,
+          "free": true,
+          "generic": false,
+          "mx": {"found": true, "provider": "g-suite", "record": "aspmx.l.google.com"},
+          "subStatus": "EMPTY"
+        }
+      ],
+      "refId": "...",
+      "state": "DONE"
+    }
+  ]
+}
+```
+
+The handler walks `data[].output[]` and writes the first `address` into `emailColumnId`. The corresponding `status` (`VALID`, `INVALID`, `CATCH_ALL`, etc.) is written to `emailStatusColumnId`. If no address is present, the cell is set to empty with status `not_found (<state>)`.
+
+#### End-to-end timing
+
+- Submission → returns within a few seconds per row (rate-limited by AI Ark to 5 req/s).
+- Webhook callback → typically 60-90 seconds after submission, can be longer under load.
+- `foundCount` in the synchronous response is always 0 — poll `GET /api/rows` or refresh the UI to see the final emails.
+
+#### Cost
+
+Two AI Ark API calls per row (one search + one email-finder submit). The webhook callback itself is free. AI Ark credits — check `GET https://api.ai-ark.com/api/developer-portal/v1/payments/credits` (sent as `X-TOKEN: $AI_ARC_API_KEY`) for the live balance.
 
 ---
 
