@@ -14,18 +14,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassButton, GlassInput, Dropdown, ContextMenu } from '@/components/ui';
-import { useProjectStore } from '@/stores/projectStore';
-
-interface ProjectWithChildren {
-  id: string;
-  name: string;
-  parentId: string | null;
-  type: 'folder' | 'workbook' | 'table';
-  createdAt: Date;
-  updatedAt: Date;
-  children?: ProjectWithChildren[];
-  tables?: { id: string; name: string }[];
-}
+import { useProjectStore, type ProjectWithChildren } from '@/stores/projectStore';
+import { MovePickerModal, type MovePickerTarget } from './MovePickerModal';
 
 export function Sidebar() {
   const router = useRouter();
@@ -36,10 +26,15 @@ export function Sidebar() {
     isLoading,
     selectProject,
     toggleFolder,
+    expandFolder,
     fetchProjects,
     addProject,
     updateProject,
+    moveProject,
     deleteProject,
+    updateTable,
+    removeTable,
+    moveTable,
   } = useProjectStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,6 +42,9 @@ export function Sidebar() {
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [editingTableId, setEditingTableId] = useState<string | null>(null);
+  const [editingTableName, setEditingTableName] = useState('');
+  const [movePickerTarget, setMovePickerTarget] = useState<MovePickerTarget | null>(null);
 
   useEffect(() => {
     fetchProjects();
@@ -104,6 +102,85 @@ export function Sidebar() {
     }
   };
 
+  const handleMoveProject = async (id: string, newParentId: string | null) => {
+    try {
+      const response = await fetch(`/api/projects/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parentId: newParentId }),
+      });
+      if (response.ok) {
+        moveProject(id, newParentId);
+        if (newParentId) expandFolder(newParentId);
+      }
+    } catch (error) {
+      console.error('Failed to move project:', error);
+    }
+  };
+
+  const handleRenameTable = async (tableId: string) => {
+    if (!editingTableName.trim()) {
+      setEditingTableId(null);
+      setEditingTableName('');
+      return;
+    }
+    try {
+      const response = await fetch(`/api/tables/${tableId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editingTableName }),
+      });
+      if (response.ok) {
+        updateTable(tableId, { name: editingTableName });
+        setEditingTableId(null);
+        setEditingTableName('');
+      }
+    } catch (error) {
+      console.error('Failed to rename sheet:', error);
+    }
+  };
+
+  const handleDeleteTable = async (tableId: string) => {
+    try {
+      const response = await fetch(`/api/tables/${tableId}`, { method: 'DELETE' });
+      if (response.ok) {
+        removeTable(tableId);
+      }
+    } catch (error) {
+      console.error('Failed to delete sheet:', error);
+    }
+  };
+
+  const handleMoveTable = async (tableId: string, fromProjectId: string, toProjectId: string) => {
+    try {
+      const response = await fetch(`/api/tables/${tableId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: toProjectId }),
+      });
+      if (response.ok) {
+        moveTable(tableId, fromProjectId, toProjectId);
+        expandFolder(toProjectId);
+      }
+    } catch (error) {
+      console.error('Failed to move sheet:', error);
+    }
+  };
+
+  const handleMovePickerSelect = (destinationId: string | null) => {
+    if (!movePickerTarget) return;
+    if (movePickerTarget.kind === 'project') {
+      if (destinationId !== movePickerTarget.currentParentId) {
+        handleMoveProject(movePickerTarget.id, destinationId);
+      }
+    } else {
+      if (destinationId && destinationId !== movePickerTarget.currentProjectId) {
+        handleMoveTable(movePickerTarget.id, movePickerTarget.currentProjectId, destinationId);
+      }
+    }
+    setMovePickerTarget(null);
+  };
+
   const filteredProjects = searchQuery
     ? filterProjects(projects, searchQuery)
     : projects;
@@ -145,6 +222,8 @@ export function Sidebar() {
                 expandedFolders={expandedFolders}
                 editingId={editingId}
                 editingName={editingName}
+                editingTableId={editingTableId}
+                editingTableName={editingTableName}
                 onSelect={selectProject}
                 onToggle={toggleFolder}
                 onStartEdit={(id, name) => {
@@ -155,6 +234,18 @@ export function Sidebar() {
                 onCancelEdit={() => setEditingId(null)}
                 setEditingName={setEditingName}
                 onDelete={handleDelete}
+                onStartEditTable={(tableId, name) => {
+                  setEditingTableId(tableId);
+                  setEditingTableName(name);
+                }}
+                onSaveEditTable={handleRenameTable}
+                onCancelEditTable={() => {
+                  setEditingTableId(null);
+                  setEditingTableName('');
+                }}
+                setEditingTableName={setEditingTableName}
+                onDeleteTable={handleDeleteTable}
+                onOpenMovePicker={setMovePickerTarget}
                 onNavigate={(path) => router.push(path)}
               />
             ))}
@@ -200,6 +291,13 @@ export function Sidebar() {
           New Workbook
         </GlassButton>
       </div>
+
+      <MovePickerModal
+        target={movePickerTarget}
+        projects={projects}
+        onClose={() => setMovePickerTarget(null)}
+        onMove={handleMovePickerSelect}
+      />
     </aside>
   );
 }
@@ -210,6 +308,8 @@ interface ProjectItemProps {
   expandedFolders: Set<string>;
   editingId: string | null;
   editingName: string;
+  editingTableId: string | null;
+  editingTableName: string;
   depth?: number;
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
@@ -218,6 +318,12 @@ interface ProjectItemProps {
   onCancelEdit: () => void;
   setEditingName: (name: string) => void;
   onDelete: (id: string) => void;
+  onStartEditTable: (tableId: string, name: string) => void;
+  onSaveEditTable: (tableId: string) => void;
+  onCancelEditTable: () => void;
+  setEditingTableName: (name: string) => void;
+  onDeleteTable: (tableId: string) => void;
+  onOpenMovePicker: (target: MovePickerTarget) => void;
   onNavigate: (path: string) => void;
 }
 
@@ -227,6 +333,8 @@ function ProjectItem({
   expandedFolders,
   editingId,
   editingName,
+  editingTableId,
+  editingTableName,
   depth = 0,
   onSelect,
   onToggle,
@@ -235,6 +343,12 @@ function ProjectItem({
   onCancelEdit,
   setEditingName,
   onDelete,
+  onStartEditTable,
+  onSaveEditTable,
+  onCancelEditTable,
+  setEditingTableName,
+  onDeleteTable,
+  onOpenMovePicker,
   onNavigate,
 }: ProjectItemProps) {
   const isExpanded = expandedFolders.has(project.id);
@@ -249,6 +363,17 @@ function ProjectItem({
       label: 'Rename',
       onClick: () => onStartEdit(project.id, project.name),
       shortcut: 'F2',
+    },
+    {
+      label: 'Move to…',
+      onClick: () =>
+        onOpenMovePicker({
+          kind: 'project',
+          id: project.id,
+          name: project.name,
+          type: project.type === 'folder' ? 'folder' : 'workbook',
+          currentParentId: project.parentId,
+        }),
     },
     { divider: true, label: '', onClick: () => {} },
     {
@@ -349,6 +474,8 @@ function ProjectItem({
                 expandedFolders={expandedFolders}
                 editingId={editingId}
                 editingName={editingName}
+                editingTableId={editingTableId}
+                editingTableName={editingTableName}
                 depth={depth + 1}
                 onSelect={onSelect}
                 onToggle={onToggle}
@@ -357,27 +484,90 @@ function ProjectItem({
                 onCancelEdit={onCancelEdit}
                 setEditingName={setEditingName}
                 onDelete={onDelete}
+                onStartEditTable={onStartEditTable}
+                onSaveEditTable={onSaveEditTable}
+                onCancelEditTable={onCancelEditTable}
+                setEditingTableName={setEditingTableName}
+                onDeleteTable={onDeleteTable}
+                onOpenMovePicker={onOpenMovePicker}
                 onNavigate={onNavigate}
               />
             ))}
 
-            {/* Tables */}
-            {project.tables?.map((table) => (
-              <div
-                key={table.id}
-                className={cn(
-                  'flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer',
-                  'text-white/60 hover:bg-white/5 hover:text-white',
-                  'transition-colors duration-150'
-                )}
-                style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}
-                onClick={() => onNavigate(`/table/${table.id}`)}
-              >
-                <span className="w-4" />
-                <FileSpreadsheet className="w-4 h-4 text-lavender/50" />
-                <span className="truncate text-sm">{table.name}</span>
-              </div>
-            ))}
+            {/* Tables (sheets) */}
+            {project.tables?.map((table) => {
+              const isEditingTable = editingTableId === table.id;
+              const tableMenuItems = [
+                {
+                  label: 'Rename',
+                  onClick: () => onStartEditTable(table.id, table.name),
+                  shortcut: 'F2',
+                },
+                {
+                  label: 'Move to…',
+                  onClick: () =>
+                    onOpenMovePicker({
+                      kind: 'sheet',
+                      id: table.id,
+                      name: table.name,
+                      currentProjectId: project.id,
+                    }),
+                },
+                { divider: true, label: '', onClick: () => {} },
+                {
+                  label: 'Delete',
+                  onClick: () => onDeleteTable(table.id),
+                  danger: true,
+                },
+              ];
+
+              return (
+                <ContextMenu key={table.id} items={tableMenuItems}>
+                  <div
+                    className={cn(
+                      'group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer',
+                      'text-white/60 hover:bg-white/5 hover:text-white',
+                      'transition-colors duration-150'
+                    )}
+                    style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}
+                    onClick={() => {
+                      if (!isEditingTable) onNavigate(`/table/${table.id}`);
+                    }}
+                  >
+                    <span className="w-4" />
+                    <FileSpreadsheet className="w-4 h-4 text-lavender/50" />
+                    {isEditingTable ? (
+                      <input
+                        autoFocus
+                        value={editingTableName}
+                        onChange={(e) => setEditingTableName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') onSaveEditTable(table.id);
+                          if (e.key === 'Escape') onCancelEditTable();
+                        }}
+                        onBlur={() => onSaveEditTable(table.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-1 bg-white/10 border border-lavender/50 rounded px-1 text-sm outline-none"
+                      />
+                    ) : (
+                      <span className="flex-1 truncate text-sm">{table.name}</span>
+                    )}
+                    <Dropdown
+                      align="right"
+                      trigger={
+                        <button
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-1 opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded transition-opacity"
+                        >
+                          <MoreHorizontal className="w-3 h-3" />
+                        </button>
+                      }
+                      items={tableMenuItems}
+                    />
+                  </div>
+                </ContextMenu>
+              );
+            })}
           </>
         )}
       </div>
