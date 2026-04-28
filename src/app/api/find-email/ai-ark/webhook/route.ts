@@ -22,30 +22,50 @@ function verifyToken(parts: string[], token: string): boolean {
   }
 }
 
-// AI Ark's webhook payload schema isn't fully documented; handle the shapes
-// we've seen plus likely variants. Returns the first email + status string.
+// AI Ark's webhook payload (verified live):
+//   { trackId, state, statistics, data: [
+//       { input:{...}, output: [{ address, status, found, ... }], refId, state }
+//   ] }
+// Email lives at data[].output[].address. Status comes from output[].status
+// (e.g. VALID, INVALID, CATCH_ALL...). We pick the first valid address found.
 function extractEmail(body: unknown): { email: string; status: string } {
   const root = (body && typeof body === 'object') ? (body as Record<string, unknown>) : {};
 
-  // Direct shape: { email, status } or { email }
-  const direct = (root.email as string) || (root.work_email as string) || '';
-  if (direct) return { email: direct, status: (root.status as string) || 'found' };
-
-  // Array shapes seen on similar APIs:
-  // { results: [{ email, ... }] } | { items: [...] } | { emails: [...] } | { data: [...] }
-  const arrays = ['results', 'items', 'emails', 'data', 'people', 'content'];
-  for (const key of arrays) {
-    const arr = root[key];
-    if (Array.isArray(arr) && arr.length > 0) {
-      const first = (arr[0] && typeof arr[0] === 'object') ? (arr[0] as Record<string, unknown>) : {};
-      const email = (first.email as string) || (first.work_email as string) || '';
-      if (email) return { email, status: (first.status as string) || (root.state as string) || 'found' };
+  // Walk data[].output[] — the documented AI Ark shape.
+  const data = root.data;
+  if (Array.isArray(data)) {
+    for (const entry of data) {
+      const e = (entry && typeof entry === 'object') ? (entry as Record<string, unknown>) : {};
+      const output = e.output;
+      if (Array.isArray(output)) {
+        for (const o of output) {
+          const oo = (o && typeof o === 'object') ? (o as Record<string, unknown>) : {};
+          const addr = (oo.address as string) || (oo.email as string) || '';
+          if (addr) {
+            const status = (oo.status as string) || 'found';
+            return { email: addr, status };
+          }
+        }
+      }
     }
   }
 
-  // No email anywhere → not found
+  // Defensive fallbacks in case AI Ark changes the shape.
+  const direct = (root.email as string) || (root.address as string) || (root.work_email as string) || '';
+  if (direct) return { email: direct, status: (root.status as string) || 'found' };
+
+  for (const key of ['results', 'items', 'emails', 'people', 'content']) {
+    const arr = root[key];
+    if (Array.isArray(arr) && arr.length > 0) {
+      const first = (arr[0] && typeof arr[0] === 'object') ? (arr[0] as Record<string, unknown>) : {};
+      const email = (first.email as string) || (first.address as string) || '';
+      if (email) return { email, status: (first.status as string) || 'found' };
+    }
+  }
+
+  // Nothing found — return not_found and surface the API state for visibility.
   const state = (root.state as string) || '';
-  return { email: '', status: state.toLowerCase() === 'completed' ? 'not_found' : (state || 'not_found') };
+  return { email: '', status: state ? `not_found (${state.toLowerCase()})` : 'not_found' };
 }
 
 async function handleCallback(request: NextRequest) {
