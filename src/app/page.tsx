@@ -13,9 +13,12 @@ import {
   Sparkles,
   Trash2,
   HardDrive,
+  Pencil,
+  FolderInput,
 } from 'lucide-react';
-import { ToastProvider, useToast } from '@/components/ui';
+import { ToastProvider, useToast, Modal, GlassButton, GlassInput } from '@/components/ui';
 import { NewItemModal } from '@/components/modals/NewItemModal';
+import { MovePickerModal, type MovePickerTarget } from '@/components/sidebar/MovePickerModal';
 import { useProjectStore } from '@/stores/projectStore';
 import { cn } from '@/lib/utils';
 
@@ -49,10 +52,14 @@ function formatRelativeTime(dateInput: string | Date): string {
 function ProjectRow({
   project,
   onClick,
+  onRename,
+  onMove,
   onDelete,
 }: {
   project: Project;
   onClick: () => void;
+  onRename: () => void;
+  onMove: () => void;
   onDelete: () => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
@@ -109,7 +116,7 @@ function ProjectRow({
               }}
             />
             <div
-              className="fixed z-[100] bg-midnight-100 border border-white/10 rounded-lg shadow-xl min-w-[120px]"
+              className="fixed z-[100] bg-midnight-100 border border-white/10 rounded-lg shadow-xl min-w-[160px] py-1"
               style={{
                 top: (menuBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
                 right: window.innerWidth - (menuBtnRef.current?.getBoundingClientRect().right ?? 0),
@@ -119,9 +126,32 @@ function ProjectRow({
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowMenu(false);
+                  onRename();
+                }}
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-white/80 hover:bg-white/5 transition-colors"
+              >
+                <Pencil className="w-4 h-4" />
+                Rename
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMenu(false);
+                  onMove();
+                }}
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-white/80 hover:bg-white/5 transition-colors"
+              >
+                <FolderInput className="w-4 h-4" />
+                Move to folder
+              </button>
+              <div className="my-1 border-t border-white/10" />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMenu(false);
                   onDelete();
                 }}
-                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-white/5 transition-colors rounded-lg"
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
@@ -153,11 +183,24 @@ interface StorageStats {
 function DashboardContent() {
   const router = useRouter();
   const toast = useToast();
-  const { projects, fetchProjects, deleteProject, isLoading } = useProjectStore();
+  const {
+    projects,
+    fetchProjects,
+    deleteProject,
+    updateProject,
+    moveProject,
+    isLoading,
+  } = useProjectStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewModal, setShowNewModal] = useState<'folder' | 'table' | null>(null);
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
+
+  const [renameTarget, setRenameTarget] = useState<Project | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [isRenaming, setIsRenaming] = useState(false);
+
+  const [movePickerTarget, setMovePickerTarget] = useState<MovePickerTarget | null>(null);
 
   // Fetch projects on mount
   useEffect(() => {
@@ -239,6 +282,74 @@ function DashboardContent() {
       }
     } catch (error) {
       toast.error('Failed to delete item');
+    }
+  };
+
+  const openRename = (project: Project) => {
+    setRenameTarget(project);
+    setRenameValue(project.name);
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!renameTarget) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed || trimmed === renameTarget.name) {
+      setRenameTarget(null);
+      return;
+    }
+    setIsRenaming(true);
+    try {
+      const response = await fetch(`/api/projects/${renameTarget.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (response.ok) {
+        updateProject(renameTarget.id, { name: trimmed });
+        toast.success('Renamed');
+        setRenameTarget(null);
+      } else {
+        toast.error('Failed to rename');
+      }
+    } catch (error) {
+      toast.error('Failed to rename');
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  const openMove = (project: Project) => {
+    setMovePickerTarget({
+      kind: 'project',
+      id: project.id,
+      name: project.name,
+      type: project.type === 'folder' ? 'folder' : 'workbook',
+      currentParentId: project.parentId ?? null,
+    });
+  };
+
+  const handleMoveSubmit = async (destinationId: string | null) => {
+    if (!movePickerTarget || movePickerTarget.kind !== 'project') return;
+    if (destinationId === movePickerTarget.currentParentId) {
+      setMovePickerTarget(null);
+      return;
+    }
+    try {
+      const response = await fetch(`/api/projects/${movePickerTarget.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parentId: destinationId }),
+      });
+      if (response.ok) {
+        moveProject(movePickerTarget.id, destinationId);
+        toast.success(destinationId ? 'Moved to folder' : 'Moved to root');
+      } else {
+        toast.error('Failed to move');
+      }
+    } catch (error) {
+      toast.error('Failed to move');
+    } finally {
+      setMovePickerTarget(null);
     }
   };
 
@@ -369,6 +480,8 @@ function DashboardContent() {
                   key={project.id}
                   project={project}
                   onClick={() => handleOpenProject(project)}
+                  onRename={() => openRename(project)}
+                  onMove={() => openMove(project)}
                   onDelete={() => handleDelete(project)}
                 />
               ))}
@@ -383,6 +496,44 @@ function DashboardContent() {
         isOpen={!!showNewModal}
         onClose={() => setShowNewModal(null)}
         onCreate={handleCreate}
+      />
+
+      <Modal
+        isOpen={!!renameTarget}
+        onClose={() => setRenameTarget(null)}
+        title={`Rename ${renameTarget?.type === 'folder' ? 'folder' : 'workbook'}`}
+      >
+        <div className="space-y-4">
+          <GlassInput
+            placeholder="New name"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleRenameSubmit();
+            }}
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <GlassButton variant="ghost" onClick={() => setRenameTarget(null)}>
+              Cancel
+            </GlassButton>
+            <GlassButton
+              variant="primary"
+              onClick={handleRenameSubmit}
+              loading={isRenaming}
+              disabled={!renameValue.trim()}
+            >
+              Rename
+            </GlassButton>
+          </div>
+        </div>
+      </Modal>
+
+      <MovePickerModal
+        target={movePickerTarget}
+        projects={projects}
+        onClose={() => setMovePickerTarget(null)}
+        onMove={handleMoveSubmit}
       />
 
     </div>
