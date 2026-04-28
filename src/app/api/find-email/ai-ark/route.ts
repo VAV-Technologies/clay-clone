@@ -65,7 +65,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'CRON_SECRET not configured (used to sign webhook URLs)' }, { status: 500 });
     }
 
-    const origin = request.nextUrl.origin;
+    // Prefer explicit PUBLIC_BASE_URL — inside ACA, request.nextUrl.origin
+    // reflects the internal/rewritten URL and AI Ark rejects it.
+    const origin =
+      process.env.PUBLIC_BASE_URL?.replace(/\/$/, '') ||
+      request.nextUrl.origin;
+    console.log(`[ai-ark] webhook origin: ${origin} (PUBLIC_BASE_URL=${process.env.PUBLIC_BASE_URL ? 'set' : 'unset'})`);
     if (!origin.startsWith('https://')) {
       console.warn(`[ai-ark] Origin "${origin}" is not HTTPS — AI Ark webhooks will not reach localhost.`);
     }
@@ -124,6 +129,7 @@ export async function POST(request: NextRequest) {
         }
 
         const webhook = buildWebhookUrl(origin, tableId, row.id, emailColumnId, emailStatusColumnId);
+        console.log(`[ai-ark] row ${row.id} webhook: ${webhook}`);
         await submitEmailFinder(webhook, match.trackId, [match.personId]);
 
         const updatedData = {
