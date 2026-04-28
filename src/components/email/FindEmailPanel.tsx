@@ -16,7 +16,7 @@ interface FindEmailPanelProps {
 export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
   const { currentTable, columns, rows, selectedRows, updateCell, addColumn, fetchTable } = useTableStore();
 
-  const [provider, setProvider] = useState<'ninjer' | 'trykitt'>('ninjer');
+  const [provider, setProvider] = useState<'ninjer' | 'trykitt' | 'ai_ark'>('ninjer');
   const [inputMode, setInputMode] = useState<'full_name' | 'first_last'>('full_name');
   const [fullNameColumnId, setFullNameColumnId] = useState('');
   const [firstNameColumnId, setFirstNameColumnId] = useState('');
@@ -33,7 +33,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
   const [progress, setProgress] = useState({ completed: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
   const [resultSummary, setResultSummary] = useState<{
-    found: number; catchAll: number; notFound: number; errors: number; skipped: number;
+    found: number; catchAll: number; notFound: number; errors: number; skipped: number; submitted: number;
   } | null>(null);
 
   // Auto-detect columns on open
@@ -145,13 +145,18 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
 
     setProgress({ completed: 0, total: rowIds.length });
 
-    const summary = { found: 0, catchAll: 0, notFound: 0, errors: 0, skipped: 0 };
+    const summary = { found: 0, catchAll: 0, notFound: 0, errors: 0, skipped: 0, submitted: 0 };
     const BATCH_SIZE = 20;
 
     for (let i = 0; i < rowIds.length; i += BATCH_SIZE) {
       const batch = rowIds.slice(i, i + BATCH_SIZE);
 
-      const endpoint = provider === 'trykitt' ? '/api/find-email/trykitt' : '/api/find-email/run';
+      const endpoint =
+        provider === 'trykitt'
+          ? '/api/find-email/trykitt'
+          : provider === 'ai_ark'
+            ? '/api/find-email/ai-ark'
+            : '/api/find-email/run';
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -177,13 +182,21 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
 
       // Update local cells from results
       for (const result of data.results) {
+        // 'submitted' is the async AI Ark case — leave the cell in 'processing'
+        // until the webhook fires and the next fetchTable picks up the result.
+        const cellStatus: 'complete' | 'error' | 'processing' =
+          result.status === 'submitted'
+            ? 'processing'
+            : result.success
+              ? 'complete'
+              : 'error';
         updateCell(result.rowId, emailColId, {
           value: result.email || '',
-          status: result.success ? 'complete' : 'error',
+          status: cellStatus,
         });
         updateCell(result.rowId, statusColId, {
           value: result.status,
-          status: result.success ? 'complete' : 'error',
+          status: cellStatus,
         });
 
         // Track summary
@@ -191,6 +204,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
         else if (result.status === 'catch_all') summary.catchAll++;
         else if (result.status === 'not_found') summary.notFound++;
         else if (result.status === 'skipped') summary.skipped++;
+        else if (result.status === 'submitted') summary.submitted++;
         else if (result.status === 'error') summary.errors++;
       }
 
@@ -265,7 +279,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
             <button
               onClick={() => setProvider('trykitt')}
               className={cn(
-                'flex-1 px-3 py-2 text-sm transition-colors',
+                'flex-1 px-3 py-2 text-sm transition-colors border-r border-white/10',
                 provider === 'trykitt'
                   ? 'bg-cyan-500/20 text-white'
                   : 'bg-white/5 text-white/50 hover:text-white'
@@ -273,7 +287,23 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
             >
               TryKitt
             </button>
+            <button
+              onClick={() => setProvider('ai_ark')}
+              className={cn(
+                'flex-1 px-3 py-2 text-sm transition-colors',
+                provider === 'ai_ark'
+                  ? 'bg-cyan-500/20 text-white'
+                  : 'bg-white/5 text-white/50 hover:text-white'
+              )}
+            >
+              AI Ark
+            </button>
           </div>
+          {provider === 'ai_ark' && (
+            <p className="text-xs text-amber-300/80">
+              AI Ark is async. Each row is searched + submitted to AI Ark; emails arrive at our webhook over the next 1-2 minutes. Cells will sit on "submitted" until the webhook fires — refresh the table to see results land.
+            </p>
+          )}
         </div>
 
         {/* Input Mode Toggle */}
@@ -412,6 +442,9 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
             <div className="grid grid-cols-2 gap-1 text-xs">
               {resultSummary.found > 0 && (
                 <span className="text-emerald-400">Found: {resultSummary.found}</span>
+              )}
+              {resultSummary.submitted > 0 && (
+                <span className="text-cyan-400">Submitted: {resultSummary.submitted}</span>
               )}
               {resultSummary.catchAll > 0 && (
                 <span className="text-amber-400">Catch-all: {resultSummary.catchAll}</span>

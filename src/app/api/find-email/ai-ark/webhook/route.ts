@@ -1,0 +1,112 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createHmac, timingSafeEqual } from 'crypto';
+import { db, schema } from '@/lib/db';
+import { eq } from 'drizzle-orm';
+import type { CellValue } from '@/lib/db/schema';
+
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
+// AI Ark calls this URL after processing /people/email-finder. The URL itself
+// carries the cell coordinates ({tableId, rowId, emailColId, statusColId})
+// signed with an HMAC token, so we don't need a server-side job table.
+
+function verifyToken(parts: string[], token: string): boolean {
+  const secret = process.env.CRON_SECRET || '';
+  const expected = createHmac('sha256', secret).update(parts.join(':')).digest('hex');
+  if (expected.length !== token.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(token, 'hex'));
+  } catch {
+    return false;
+  }
+}
+
+// AI Ark's webhook payload schema isn't fully documented; handle the shapes
+// we've seen plus likely variants. Returns the first email + status string.
+function extractEmail(body: unknown): { email: string; status: string } {
+  const root = (body && typeof body === 'object') ? (body as Record<string, unknown>) : {};
+
+  // Direct shape: { email, status } or { email }
+  const direct = (root.email as string) || (root.work_email as string) || '';
+  if (direct) return { email: direct, status: (root.status as string) || 'found' };
+
+  // Array shapes seen on similar APIs:
+  // { results: [{ email, ... }] } | { items: [...] } | { emails: [...] } | { data: [...] }
+  const arrays = ['results', 'items', 'emails', 'data', 'people', 'content'];
+  for (const key of arrays) {
+    const arr = root[key];
+    if (Array.isArray(arr) && arr.length > 0) {
+      const first = (arr[0] && typeof arr[0] === 'object') ? (arr[0] as Record<string, unknown>) : {};
+      const email = (first.email as string) || (first.work_email as string) || '';
+      if (email) return { email, status: (first.status as string) || (root.state as string) || 'found' };
+    }
+  }
+
+  // No email anywhere → not found
+  const state = (root.state as string) || '';
+  return { email: '', status: state.toLowerCase() === 'completed' ? 'not_found' : (state || 'not_found') };
+}
+
+async function handleCallback(request: NextRequest) {
+  const params = request.nextUrl.searchParams;
+  const tableId = params.get('tableId') || '';
+  const rowId = params.get('rowId') || '';
+  const emailColId = params.get('emailColId') || '';
+  const statusColId = params.get('statusColId') || '';
+  const token = params.get('token') || '';
+
+  if (!tableId || !rowId || !emailColId || !statusColId || !token) {
+    return NextResponse.json({ error: 'missing query params' }, { status: 400 });
+  }
+  if (!verifyToken([tableId, rowId, emailColId, statusColId], token)) {
+    return NextResponse.json({ error: 'bad token' }, { status: 401 });
+  }
+
+  let payload: unknown = {};
+  try {
+    payload = await request.json();
+  } catch {
+    // some webhook senders POST empty body; treat as not-found
+  }
+  console.log('[ai-ark webhook]', JSON.stringify({ rowId, payload }).slice(0, 1000));
+
+  const { email, status } = extractEmail(payload);
+
+  // Read current row, merge cells, write back. We always 200 to AI Ark even
+  // if the row vanished — otherwise they'll retry.
+  const [row] = await db.select().from(schema.rows).where(eq(schema.rows.id, rowId));
+  if (!row) {
+    console.warn(`[ai-ark webhook] row ${rowId} not found, ignoring`);
+    return NextResponse.json({ ok: true });
+  }
+
+  const data = (row.data as Record<string, CellValue>) || {};
+  const updated = {
+    ...data,
+    [emailColId]: { value: email, status: 'complete' as const },
+    [statusColId]: { value: status || (email ? 'found' : 'not_found'), status: 'complete' as const },
+  };
+
+  try {
+    await db.update(schema.rows).set({ data: updated }).where(eq(schema.rows.id, rowId));
+  } catch (err) {
+    console.error('[ai-ark webhook] db update failed:', err);
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function POST(request: NextRequest) {
+  return handleCallback(request);
+}
+
+// Some webhook senders use PUT — handle defensively.
+export async function PUT(request: NextRequest) {
+  return handleCallback(request);
+}
+
+// Health check / browser visit
+export async function GET() {
+  return NextResponse.json({ ok: true, info: 'AI Ark email-finder webhook endpoint' });
+}

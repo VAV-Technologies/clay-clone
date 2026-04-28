@@ -761,3 +761,83 @@ export async function fetchCredits(): Promise<unknown> {
 export function isConfigured(): boolean {
   return !!process.env.AI_ARC_API_KEY;
 }
+
+// ─── Email Finder ───────────────────────────────────────────────────────────
+// AI Ark email finding is async: People Search returns a `trackId` at the top
+// level. POST /people/email-finder with { webhook, trackId, ids } submits the
+// job. Results arrive at the webhook URL minutes later. The trackId expires,
+// so the search and email-finder calls must happen back-to-back.
+
+export interface SearchByNameAndDomainResult {
+  personId: string;
+  trackId: string;
+  matchedName: string;
+}
+
+// Run a People Search filtered by full name + domain. Returns the first match
+// with its trackId, or null if no person matches. The trackId can be passed
+// straight to submitEmailFinder.
+export async function searchPersonByNameAndDomain(
+  fullName: string,
+  domain: string
+): Promise<SearchByNameAndDomainResult | null> {
+  const body = {
+    page: 0,
+    size: 5,
+    contact: {
+      fullName: { any: { include: { mode: 'SMART', content: [fullName] } } },
+    },
+    account: {
+      domain: { any: { include: [domain] } },
+    },
+  };
+
+  const data = (await aiArcFetch('/people', { body })) as Record<string, unknown>;
+  const trackId = (data.trackId as string) || '';
+  const content = (data.content as Record<string, unknown>[]) || [];
+  if (!trackId || content.length === 0) return null;
+
+  // Prefer exact (case-insensitive) full-name match; else first result.
+  const target = fullName.trim().toLowerCase();
+  let chosen: Record<string, unknown> | undefined;
+  for (const raw of content) {
+    const profile = (raw.profile as Record<string, unknown>) || {};
+    const candidate = ((profile.full_name as string) || '').trim().toLowerCase();
+    if (candidate === target) {
+      chosen = raw;
+      break;
+    }
+  }
+  chosen = chosen || content[0];
+
+  const id = (chosen.id as string) || '';
+  if (!id) return null;
+  const profile = (chosen.profile as Record<string, unknown>) || {};
+  return { personId: id, trackId, matchedName: (profile.full_name as string) || '' };
+}
+
+export interface EmailFinderSubmission {
+  trackId: string;
+  state: string;
+  total: number;
+  found: number;
+}
+
+// Submit an email-finder request for a set of person IDs from a single search.
+// Returns immediately; the actual emails arrive at the webhook URL.
+export async function submitEmailFinder(
+  webhook: string,
+  trackId: string,
+  ids: string[]
+): Promise<EmailFinderSubmission> {
+  const data = (await aiArcFetch('/people/email-finder', {
+    body: { webhook, trackId, ids },
+  })) as Record<string, unknown>;
+  const stats = (data.statistics as Record<string, unknown>) || {};
+  return {
+    trackId: (data.trackId as string) || trackId,
+    state: (data.state as string) || 'PENDING',
+    total: (stats.total as number) || ids.length,
+    found: (stats.found as number) || 0,
+  };
+}
