@@ -16,6 +16,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith('/api/admin') ||
     pathname.startsWith('/api/fix-stuck') ||
     pathname.startsWith('/api/nuke-table') ||
+    pathname.startsWith('/api/find-email/ai-ark/webhook') ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon')
   ) {
