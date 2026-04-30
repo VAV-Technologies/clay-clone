@@ -143,7 +143,8 @@ Many requests combine workflows. "Find companies in Jakarta, get their CMOs, fin
 | **Find Email** | You have name + company domain | No domain available |
 | **Lookup** | Connecting data between sheets via shared key | Need to search for new data |
 | **AI Enrichment** | Generating new insights (research, personalization) | Data exists somewhere — try Lookup or Clay first |
-| **Batch Enrichment** | 1000+ rows of AI enrichment (cheaper, 1-24hr) | Under 1000 rows — use real-time |
+| **AI Enrichment + Web Search** | Set `webSearchEnabled: true` when the prompt needs **live web data** (current news, websites, recent events, anything past the model's training cutoff). Model is forced to call `search_web` before answering. | Pure transformations or reasoning over the row — the extra Spider cost is wasted |
+| **Batch Enrichment** | 1000+ rows of AI enrichment (cheaper, 1-24hr) | Under 1000 rows — use real-time. **Not compatible with web search** — returns 400 if `webSearchEnabled: true` |
 | **Formula** | Data transformations (split, combine, clean) | Need external data or AI reasoning |
 | **Filters** | Narrowing rows: empty cells, value matching | Need to modify data — use PATCH |
 
@@ -525,15 +526,22 @@ POST /api/enrichment
   "inputColumns": ["col-id-company-name"],
   "outputColumns": ["industry", "funding"],
   "outputFormat": "json",
-  "temperature": 0.7
+  "temperature": 0.7,
+  "webSearchEnabled": false,
+  "webSearchProvider": "spider"
 }
 ```
+
+**Web search fields (optional, default OFF):**
+- `webSearchEnabled` (boolean, default `false`) — when `true`, the model gets `search_web` + `scrape_url` tools backed by Spider.Cloud and is **forced** to call a tool on the first round (`tool_choice: "required"`). Use this when the prompt asks for current data, recent news, websites, or anything past the model's training cutoff. See "AI Enrichment with Web Search" below.
+- `webSearchProvider` (string, default `"spider"`) — only `"spider"` is honored at runtime. Reserved for future providers.
 
 ### Get / Update Enrichment Config
 ```
 GET    /api/enrichment/{id}
 PATCH  /api/enrichment/{id}
 ```
+PATCH accepts any subset of the POST fields, including `webSearchEnabled` / `webSearchProvider`. Toggling `webSearchEnabled` on an existing config takes effect on the next `/run` call.
 
 ### Delete Enrichment Config
 ```
@@ -567,6 +575,8 @@ POST /api/enrichment/batch
 }
 ```
 Submits to Azure Batch API. Takes 1-24 hours. Up to 100k rows.
+
+**Returns 400 if the config has `webSearchEnabled: true`** — web search is real-time only because the tool-call loop needs sub-second round-trips. For configs that need web search, use `POST /api/enrichment/run` instead.
 
 ### Check Batch Status
 ```
@@ -634,6 +644,84 @@ Query params (one of):
 - `?columnId={id}` — Cancel all jobs for column
 - `?all=true` — Cancel all active jobs
 - `?resetStuck=true` — Reset stuck processing cells
+
+### AI Enrichment with Web Search (Spider.Cloud)
+
+Set `webSearchEnabled: true` on the enrichment config to give the model two tools during real-time enrichment:
+
+| Tool | Purpose | Cost (Spider credits) |
+|---|---|---|
+| `search_web(query, limit?)` | Search the live web. `limit` 1-10, default 3. | ~1 credit per result returned |
+| `scrape_url(url)` | Fetch one URL as markdown. | ~5-20 credits per page |
+
+**Behavior at runtime:**
+- The model is **forced** to call a tool on the first round (`tool_choice: "required"`). It cannot answer purely from training data.
+- Hard cap: **3 tool-call rounds** per row. Per-row hard timeout: 90s (vs 30s without tools).
+- Spider credit cost is converted to USD ($0.0001/credit) and added to `metadata.totalCost`. The existing per-row cost cap (`costLimitEnabled` + `maxCostPerRow`) covers both model tokens and Spider spend.
+- All Azure-OpenAI models supported, including `gpt-5-mini` (Responses API path) and `gpt-5-nano` (separate Azure resource).
+- **Batch enrichment is NOT supported** — `POST /api/enrichment/batch` returns 400 when the config has web search on.
+
+**Cell metadata gains two fields:**
+```json
+"metadata": {
+  "inputTokens": 7388,
+  "outputTokens": 1714,
+  "timeTakenMs": 71000,
+  "totalCost": 0.00477,
+  "webSearchCalls": 3,
+  "webSearchCost": 0.0005
+}
+```
+
+**When to enable** — turn ON for prompts that need:
+- Current news / events / press / press-releases (anything within the model's last few months of cutoff or after).
+- Live websites, domains, contact info.
+- Real-time prices, stock quotes, status pages.
+- Verification of facts the user wants grounded in citations.
+
+**When to leave OFF** — turn OFF for:
+- Pure transformation (extract domain from email, parse, classify).
+- Reasoning over data already in the row.
+- Anything where the answer is in the model's training data and no citation is required.
+
+**Prompt-design tips when web search is ON:**
+- Be explicit: "Search the web…" or "Use search_web to…". The model already has a system hint forcing one search, but a clear prompt narrows it.
+- Specify what to return verbatim: "Return the EXACT headline and EXACT URL. Do not paraphrase." This anchors the answer to actual results.
+- Lower `temperature` (0.1-0.3) for factual lookups. Helps the model commit to one search rather than re-searching.
+- Use the Data Guide (`outputColumns`) — structured outputs (e.g. `["headline", "source_url"]`) keep the model focused.
+
+**Cost guidance** (verified live):
+| Task | Tool calls | Total cost/row | Wall time |
+|---|---|---|---|
+| "Find the official website of {{Company}}" | 1 | ~$0.0014 | ~24s |
+| "Find a recent news headline about {{Topic}}" | 2-3 | ~$0.005 | ~70s |
+| "Research and summarize {{Company}} (last 30 days)" | 3 (cap) | ~$0.008 | ~80s |
+
+**Negative control** — when `webSearchEnabled: false`, `webSearchCalls` is `0` (or absent) and the model self-reports inability to fetch live data rather than hallucinating.
+
+**Example end-to-end** — find a recent news article:
+```bash
+# 1. Create config with web search ON
+curl -X POST https://dataflow-pi.vercel.app/api/enrichment \
+  -H "Authorization: Bearer $DATAFLOW_API_KEY" -H "Content-Type: application/json" \
+  -d '{
+    "name": "Latest News",
+    "model": "gpt-5-mini",
+    "prompt": "Search the web for the most recent news article about {{Topic}}. Return the EXACT headline and EXACT source URL.",
+    "inputColumns": ["TOPIC_COL_ID"],
+    "outputColumns": ["headline", "source_url"],
+    "temperature": 0.1,
+    "webSearchEnabled": true
+  }'
+
+# 2. Run on the row(s)
+curl -X POST https://dataflow-pi.vercel.app/api/enrichment/run \
+  -H "Authorization: Bearer $DATAFLOW_API_KEY" -H "Content-Type: application/json" \
+  -d '{"configId":"...","tableId":"...","targetColumnId":"...","rowIds":["..."]}'
+
+# 3. Inspect metadata
+# webSearchCalls > 0 confirms a real fetch, not training-data answer.
+```
 
 ---
 
