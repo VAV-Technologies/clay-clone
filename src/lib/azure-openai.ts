@@ -130,9 +130,9 @@ export interface AzureAIResult {
   toolCallCount?: number;
 }
 
-// Hard ceiling on tool-call rounds per generation. Keeps costs bounded and
-// prevents runaway loops if the model keeps requesting tools.
-const MAX_TOOL_ROUNDS = 4;
+// Hard ceiling on tool-call rounds per generation. Keeps costs bounded.
+// 3 = (forced search) → (optional follow-up search/scrape) → (final answer).
+const MAX_TOOL_ROUNDS = 3;
 // Soft time budget for the whole tool-call loop. The outer caller wraps with
 // a 90s hard timeout when tools are enabled; we stop dispatching new tool
 // calls past this soft mark to leave headroom for the final answer.
@@ -218,7 +218,10 @@ async function generateViaChatCompletions(args: {
 
     if (hasTools && !overBudget && round < MAX_TOOL_ROUNDS) {
       requestBody.tools = config.tools!.chat;
-      requestBody.tool_choice = 'auto';
+      // Round 0: force the model to call a tool — this is the whole point of
+      // enabling web search. Round 1+: let the model decide whether it has
+      // enough info to answer.
+      requestBody.tool_choice = round === 0 ? 'required' : 'auto';
     } else if (hasTools && (overBudget || round === MAX_TOOL_ROUNDS)) {
       // Wrap-up round: must include tools alongside tool_choice — Azure
       // rejects `tool_choice` when `tools` is missing.
@@ -228,7 +231,7 @@ async function generateViaChatCompletions(args: {
 
     console.log(
       `[azure] chat req — model=${modelId}, round=${round}, hasTools=${hasTools}, ` +
-      `bodyKeys=${Object.keys(requestBody).join(',')}, msgCount=${messages.length}`
+      `tool_choice=${requestBody.tool_choice ?? 'n/a'}, msgCount=${messages.length}`
     );
 
     const response = await fetch(url, {
@@ -376,7 +379,8 @@ async function generateViaResponsesApi(args: {
 
     if (hasTools && !overBudget && round < MAX_TOOL_ROUNDS) {
       requestBody.tools = config.tools!.responses;
-      requestBody.tool_choice = 'auto';
+      // See chat path for rationale: force a tool call on round 0.
+      requestBody.tool_choice = round === 0 ? 'required' : 'auto';
     } else if (hasTools && (overBudget || round === MAX_TOOL_ROUNDS)) {
       // Wrap-up round must keep tools alongside tool_choice.
       requestBody.tools = config.tools!.responses;
@@ -385,7 +389,7 @@ async function generateViaResponsesApi(args: {
 
     console.log(
       `[azure] responses req — model=${modelId}, round=${round}, hasTools=${hasTools}, ` +
-      `bodyKeys=${Object.keys(requestBody).join(',')}, inputLen=${input.length}`
+      `tool_choice=${requestBody.tool_choice ?? 'n/a'}, inputLen=${input.length}`
     );
 
     const response = await fetch(url, {

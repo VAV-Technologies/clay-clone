@@ -29,8 +29,14 @@ interface ResponsesToolDef {
 const SEARCH_PARAMS: JSONSchemaObject = {
   type: 'object',
   properties: {
-    query: { type: 'string', description: 'Search query in plain English. Be specific.' },
-    limit: { type: 'integer', description: 'Max results to return (1-10). Default 5.' },
+    query: {
+      type: 'string',
+      description: 'Search query in plain English. Be specific and concise.',
+    },
+    limit: {
+      type: 'integer',
+      description: 'Max results to return. Use 3 for simple lookups (find a website, find a single fact). Use 5 only when comparing or researching. Maximum 10. Default 3.',
+    },
   },
   required: ['query'],
 };
@@ -44,10 +50,16 @@ const SCRAPE_PARAMS: JSONSchemaObject = {
 };
 
 const SEARCH_DESC =
-  'Search the public web via Spider.Cloud and return a list of results. Use when the prompt mentions current events, recent data, news, or anything past the model\'s knowledge cutoff. Prefer one focused search per row.';
+  'Search the live web via Spider.Cloud. Each search costs credits — be efficient. ' +
+  'Use the SMALLEST `limit` that will answer the question (3 for simple lookups, up to 10 for broad research). ' +
+  'Prefer ONE well-formed search over multiple narrow ones. ' +
+  'Returned items have title/url/description; the description is usually enough to answer. ' +
+  'Do NOT call this multiple times with similar queries — refine the first query instead.';
 
 const SCRAPE_DESC =
-  'Fetch the body of a single URL as markdown. Use only after search_web when one specific result needs full content. Avoid scraping more than one URL per row.';
+  'Fetch ONE URL as markdown when the search result description is not enough. ' +
+  'Each scrape costs credits — only use when you genuinely need page body content (full article text, structured data on the page). ' +
+  'Do not scrape more than one URL per row. Do not scrape if the search description already contains the answer.';
 
 export const WEB_SEARCH_TOOLS: {
   chat: ChatToolDef[];
@@ -64,8 +76,11 @@ export const WEB_SEARCH_TOOLS: {
 };
 
 // Maximum characters of tool-result text we feed back to the model. Keeps a
-// single tool round-trip from blowing past the context window.
-const MAX_TOOL_RESULT_CHARS = 12000;
+// single tool round-trip from blowing past the context window AND keeps input
+// token cost bounded — every char here is repaid in input tokens on every
+// subsequent round of the loop.
+const MAX_TOOL_RESULT_CHARS = 6000;
+const MAX_RESULT_CONTENT_CHARS = 700;
 
 function trimContent(s: string, max = MAX_TOOL_RESULT_CHARS): string {
   if (s.length <= max) return s;
@@ -79,7 +94,22 @@ function compactResult(r: SpiderSearchResult): Record<string, string> {
   if (typeof r.url === 'string') out.url = r.url;
   if (typeof r.description === 'string') out.description = r.description;
   if (typeof r.content === 'string' && r.content.length > 0) {
-    out.content = r.content.slice(0, 1500);
+    out.content = r.content.slice(0, MAX_RESULT_CONTENT_CHARS);
+  }
+  return out;
+}
+
+// Drop duplicates (Spider sometimes returns the same URL multiple times) and
+// remove items with no useful content fields.
+function dedupeResults(items: Array<Record<string, string>>): Array<Record<string, string>> {
+  const seen = new Set<string>();
+  const out: Array<Record<string, string>> = [];
+  for (const r of items) {
+    if (!r.url && !r.title && !r.description) continue;
+    const key = (r.url || r.title || '').trim().toLowerCase();
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    out.push(r);
   }
   return out;
 }
@@ -103,10 +133,10 @@ export async function dispatchToolCall(name: string, argsJson: string): Promise<
         return { content: JSON.stringify({ error: 'missing_query' }), costUsd: 0 };
       }
       const limitRaw = Number(args.limit);
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(10, Math.floor(limitRaw))) : 5;
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(10, Math.floor(limitRaw))) : 3;
 
       const { results, costUsd } = await spiderSearch({ query, limit });
-      const compact = results.map(compactResult);
+      const compact = dedupeResults(results.map(compactResult));
       const payload = { query, results: compact };
       return { content: trimContent(JSON.stringify(payload)), costUsd };
     }
@@ -131,7 +161,10 @@ export async function dispatchToolCall(name: string, argsJson: string): Promise<
 }
 
 export const WEB_SEARCH_SYSTEM_HINT =
-  'You have two tools: search_web(query, limit?) and scrape_url(url). ' +
-  'Use them to research live information when the prompt asks for recent or current data. ' +
-  'Prefer ONE focused search; only scrape a URL when a search result needs full body content. ' +
-  'After research, answer in the requested format.';
+  'Web search is ENABLED for this task. You have two tools: search_web(query, limit?) and scrape_url(url).\n\n' +
+  'RULES:\n' +
+  '1. You MUST call search_web at least once before answering. Do not answer from prior knowledge — the user enabled this tool because they want fresh data.\n' +
+  '2. Be efficient. ONE well-formed search is almost always enough. Use the search-result `description` to answer; only call scrape_url if you need the full page body.\n' +
+  '3. Pick the smallest `limit` that fits the task: 3 for "find the website / find a fact", up to 10 only for "research / compare / list".\n' +
+  '4. Do not loop. After 1-2 tool calls you should have enough to answer. Do not re-search with similar queries.\n' +
+  '5. Return ONLY the requested output format. Do not narrate the search process in the final answer.';
