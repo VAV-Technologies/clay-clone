@@ -341,16 +341,15 @@ export const useTableStore = create<TableState>((set, get) => ({
 
   deleteSheet: async (sheetId: string) => {
     const { sheets, activeSheetId } = get();
-    if (sheets.length <= 1) return; // Must keep at least 1 sheet
-    try {
-      await fetch(`/api/tables/${sheetId}`, { method: 'DELETE' });
-      const remaining = sheets.filter(s => s.id !== sheetId);
-      set({ sheets: remaining });
-      // If we deleted the active sheet, switch to the first remaining
-      if (activeSheetId === sheetId && remaining.length > 0) {
-        await get().switchSheet(remaining[0].id);
-      }
-    } catch { /* */ }
+    if (sheets.length <= 1) {
+      throw new Error('LAST_SHEET');
+    }
+    await fetch(`/api/tables/${sheetId}`, { method: 'DELETE' });
+    const remaining = sheets.filter(s => s.id !== sheetId);
+    set({ sheets: remaining });
+    if (activeSheetId === sheetId && remaining.length > 0) {
+      await get().switchSheet(remaining[0].id);
+    }
   },
 
   getFilteredRows: () => {

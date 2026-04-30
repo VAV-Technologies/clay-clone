@@ -5,8 +5,10 @@ import { createPortal } from 'react-dom';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTableStore } from '@/stores/tableStore';
+import { useToast } from '@/components/ui';
 
 export function SheetTabs() {
+  const toast = useToast();
   const { sheets, activeSheetId, switchSheet, addSheet, renameSheet, deleteSheet } = useTableStore();
   const [contextMenu, setContextMenu] = useState<{ sheetId: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -44,10 +46,20 @@ export function SheetTabs() {
     setRenaming(null);
   };
 
-  const handleDelete = (sheetId: string) => {
+  const handleDelete = async (sheetId: string) => {
     setContextMenu(null);
-    if (sheets.length <= 1) return;
-    deleteSheet(sheetId);
+    try {
+      await deleteSheet(sheetId);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'LAST_SHEET') {
+        toast.error(
+          "Can't delete the last sheet",
+          'Delete the workbook from the folder view instead.'
+        );
+      } else {
+        toast.error('Error', 'Failed to delete sheet');
+      }
+    }
   };
 
   return (
@@ -126,15 +138,13 @@ export function SheetTabs() {
               <Pencil className="w-3.5 h-3.5" />
               Rename
             </button>
-            {sheets.length > 1 && (
-              <button
-                onClick={() => handleDelete(contextMenu.sheetId)}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Delete
-              </button>
-            )}
+            <button
+              onClick={() => handleDelete(contextMenu.sheetId)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete
+            </button>
           </div>
         </>,
         document.body

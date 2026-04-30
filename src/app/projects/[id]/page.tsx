@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { Plus, FileSpreadsheet, MoreHorizontal, Trash2, ArrowLeft, Pencil, FolderInput, Folder, ChevronRight } from 'lucide-react';
+import { Plus, FileSpreadsheet, MoreHorizontal, Trash2, ArrowLeft, Pencil, FolderInput, ChevronRight } from 'lucide-react';
 import {
   GlassButton,
   GlassInput,
@@ -12,6 +12,8 @@ import {
   ToastProvider,
   useToast,
 } from '@/components/ui';
+import { MovePickerModal, type MovePickerTarget } from '@/components/sidebar/MovePickerModal';
+import type { ProjectWithChildren } from '@/stores/projectStore';
 
 // Dynamically import AnimatedBackground to avoid hydration issues
 const AnimatedBackground = dynamic(
@@ -19,63 +21,82 @@ const AnimatedBackground = dynamic(
   { ssr: false }
 );
 
-interface Table {
+interface FolderHeader {
   id: string;
-  projectId: string;
   name: string;
-  createdAt: Date;
-  updatedAt: Date;
+  type: 'folder' | 'workbook' | 'table';
 }
 
-interface Project {
+interface WorkbookRow {
   id: string;
   name: string;
-  type: string;
-  tables: Table[];
-}
-
-interface FolderOption {
-  id: string;
-  name: string;
+  parentId: string | null;
+  updatedAt: string | Date;
 }
 
 function ProjectContent() {
   const params = useParams();
   const router = useRouter();
   const toast = useToast();
-  const projectId = params.id as string;
+  const folderId = params.id as string;
 
-  const [project, setProject] = useState<Project | null>(null);
-  const [allFolders, setAllFolders] = useState<FolderOption[]>([]);
+  const [folder, setFolder] = useState<FolderHeader | null>(null);
+  const [workbooks, setWorkbooks] = useState<WorkbookRow[]>([]);
+  const [allProjects, setAllProjects] = useState<ProjectWithChildren[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newTableName, setNewTableName] = useState('');
+  const [newWorkbookName, setNewWorkbookName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   // Rename modal state
-  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
-  const [renameTableId, setRenameTableId] = useState<string | null>(null);
-  const [renameTableName, setRenameTableName] = useState('');
+  const [renameTarget, setRenameTarget] = useState<WorkbookRow | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
 
-  // Move modal state
-  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
-  const [moveTableId, setMoveTableId] = useState<string | null>(null);
-  const [moveTableName, setMoveTableName] = useState('');
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const [isMoving, setIsMoving] = useState(false);
+  // Move picker state (uses shared MovePickerModal)
+  const [movePickerTarget, setMovePickerTarget] = useState<MovePickerTarget | null>(null);
 
   // Delete modal state
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deleteTableId, setDeleteTableId] = useState<string | null>(null);
-  const [deleteTableName, setDeleteTableName] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<WorkbookRow | null>(null);
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const response = await fetch('/api/projects');
+      if (!response.ok) {
+        setIsLoading(false);
+        return;
+      }
+      const tree: ProjectWithChildren[] = await response.json();
+      setAllProjects(tree);
+
+      const node = findInTree(tree, folderId);
+      if (!node) {
+        setFolder(null);
+        setWorkbooks([]);
+      } else {
+        setFolder({ id: node.id, name: node.name, type: node.type as FolderHeader['type'] });
+        const children = (node.children ?? [])
+          .filter((c) => c.type === 'workbook')
+          .map<WorkbookRow>((c) => ({
+            id: c.id,
+            name: c.name,
+            parentId: c.parentId ?? null,
+            updatedAt: c.updatedAt,
+          }));
+        setWorkbooks(children);
+      }
+    } catch (error) {
+      console.error('Failed to fetch project:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [folderId]);
 
   useEffect(() => {
-    fetchProject();
-    fetchAllFolders();
-  }, [projectId]);
+    fetchAll();
+  }, [fetchAll]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -85,57 +106,39 @@ function ProjectContent() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, [openMenuId]);
 
-  const fetchProject = async () => {
-    try {
-      const response = await fetch(`/api/projects/${projectId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setProject(data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch project:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchAllFolders = async () => {
-    try {
-      const response = await fetch('/api/projects');
-      if (response.ok) {
-        const data = await response.json();
-        // Filter to only folders and exclude current project
-        const folders = data
-          .filter((p: Project) => p.type === 'folder' && p.id !== projectId)
-          .map((p: Project) => ({ id: p.id, name: p.name }));
-        setAllFolders(folders);
-      }
-    } catch (error) {
-      console.error('Failed to fetch folders:', error);
-    }
-  };
-
-  const handleCreateTable = async () => {
-    if (!newTableName.trim()) return;
+  const handleCreateWorkbook = async () => {
+    if (!newWorkbookName.trim()) return;
 
     setIsCreating(true);
     try {
-      const response = await fetch('/api/tables', {
+      const projectRes = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectId,
-          name: newTableName,
+          name: newWorkbookName.trim(),
+          type: 'workbook',
+          parentId: folderId,
         }),
       });
 
-      if (response.ok) {
-        const table = await response.json();
-        toast.success('Workbook created', `"${table.name}" has been created`);
-        setNewTableName('');
-        setIsCreateModalOpen(false);
-        router.push(`/workbook/${projectId}?sheet=${table.id}`);
+      if (!projectRes.ok) {
+        toast.error('Error', 'Failed to create workbook');
+        return;
       }
+
+      const workbook = await projectRes.json();
+
+      // Create the first sheet inside the workbook
+      await fetch('/api/tables', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: workbook.id, name: 'Sheet 1' }),
+      });
+
+      toast.success('Workbook created', `"${workbook.name}" has been created`);
+      setNewWorkbookName('');
+      setIsCreateModalOpen(false);
+      router.push(`/workbook/${workbook.id}`);
     } catch (error) {
       toast.error('Error', 'Failed to create workbook');
     } finally {
@@ -143,100 +146,105 @@ function ProjectContent() {
     }
   };
 
-  const handleDeleteTable = async () => {
-    if (!deleteTableId) return;
+  const handleDeleteWorkbook = async () => {
+    if (!deleteTarget) return;
 
     try {
-      const response = await fetch(`/api/tables/${deleteTableId}`, {
+      const response = await fetch(`/api/projects/${deleteTarget.id}`, {
         method: 'DELETE',
       });
 
       if (response.ok) {
-        toast.success('Table deleted', `"${deleteTableName}" has been deleted`);
-        setIsDeleteModalOpen(false);
-        setDeleteTableId(null);
-        setDeleteTableName('');
-        fetchProject();
+        toast.success('Workbook deleted', `"${deleteTarget.name}" has been deleted`);
+        setDeleteTarget(null);
+        fetchAll();
       } else {
         const data = await response.json().catch(() => ({}));
-        toast.error('Error', data.error || 'Failed to delete table');
+        toast.error('Error', data.error || 'Failed to delete workbook');
       }
     } catch (error) {
-      toast.error('Error', 'Failed to delete table');
+      toast.error('Error', 'Failed to delete workbook');
     }
   };
 
-  const handleRenameTable = async () => {
-    if (!renameTableId || !renameTableName.trim()) return;
+  const handleRenameSubmit = async () => {
+    if (!renameTarget) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed || trimmed === renameTarget.name) {
+      setRenameTarget(null);
+      return;
+    }
 
     setIsRenaming(true);
     try {
-      const response = await fetch(`/api/tables/${renameTableId}`, {
+      const response = await fetch(`/api/projects/${renameTarget.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: renameTableName }),
+        body: JSON.stringify({ name: trimmed }),
       });
 
       if (response.ok) {
-        toast.success('Table renamed', `Table has been renamed to "${renameTableName}"`);
-        setIsRenameModalOpen(false);
-        setRenameTableId(null);
-        setRenameTableName('');
-        fetchProject();
+        toast.success('Workbook renamed', `Renamed to "${trimmed}"`);
+        setRenameTarget(null);
+        fetchAll();
+      } else {
+        toast.error('Error', 'Failed to rename');
       }
     } catch (error) {
-      toast.error('Error', 'Failed to rename table');
+      toast.error('Error', 'Failed to rename');
     } finally {
       setIsRenaming(false);
     }
   };
 
-  const handleMoveTable = async () => {
-    if (!moveTableId || !selectedFolderId) return;
-
-    setIsMoving(true);
+  const handleMoveSubmit = async (destinationId: string | null) => {
+    if (!movePickerTarget || movePickerTarget.kind !== 'project') {
+      setMovePickerTarget(null);
+      return;
+    }
+    if (destinationId === movePickerTarget.currentParentId) {
+      setMovePickerTarget(null);
+      return;
+    }
     try {
-      const response = await fetch(`/api/tables/${moveTableId}`, {
+      const response = await fetch(`/api/projects/${movePickerTarget.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: selectedFolderId }),
+        body: JSON.stringify({ parentId: destinationId }),
       });
-
       if (response.ok) {
-        const targetFolder = allFolders.find(f => f.id === selectedFolderId);
-        toast.success('Table moved', `"${moveTableName}" has been moved to "${targetFolder?.name}"`);
-        setIsMoveModalOpen(false);
-        setMoveTableId(null);
-        setMoveTableName('');
-        setSelectedFolderId(null);
-        fetchProject();
+        toast.success(destinationId ? 'Moved to folder' : 'Moved to root');
+        // Refetch — workbook may now live elsewhere
+        fetchAll();
+      } else {
+        toast.error('Error', 'Failed to move');
       }
     } catch (error) {
-      toast.error('Error', 'Failed to move table');
+      toast.error('Error', 'Failed to move');
     } finally {
-      setIsMoving(false);
+      setMovePickerTarget(null);
     }
   };
 
-  const openRenameModal = (table: Table) => {
-    setRenameTableId(table.id);
-    setRenameTableName(table.name);
-    setIsRenameModalOpen(true);
+  const openRename = (workbook: WorkbookRow) => {
+    setRenameTarget(workbook);
+    setRenameValue(workbook.name);
     setOpenMenuId(null);
   };
 
-  const openMoveModal = (table: Table) => {
-    setMoveTableId(table.id);
-    setMoveTableName(table.name);
-    setSelectedFolderId(null);
-    setIsMoveModalOpen(true);
+  const openMove = (workbook: WorkbookRow) => {
+    setMovePickerTarget({
+      kind: 'project',
+      id: workbook.id,
+      name: workbook.name,
+      type: 'workbook',
+      currentParentId: workbook.parentId,
+    });
     setOpenMenuId(null);
   };
 
-  const openDeleteModal = (table: Table) => {
-    setDeleteTableId(table.id);
-    setDeleteTableName(table.name);
-    setIsDeleteModalOpen(true);
+  const openDelete = (workbook: WorkbookRow) => {
+    setDeleteTarget(workbook);
     setOpenMenuId(null);
   };
 
@@ -249,11 +257,11 @@ function ProjectContent() {
     );
   }
 
-  if (!project) {
+  if (!folder) {
     return (
       <div className="min-h-screen relative flex items-center justify-center">
         <AnimatedBackground />
-        <p className="text-white/50">Project not found</p>
+        <p className="text-white/50">Folder not found</p>
       </div>
     );
   }
@@ -274,7 +282,7 @@ function ProjectContent() {
               <span className="text-sm">Back</span>
             </button>
             <div className="w-px h-5 bg-white/20" />
-            <h1 className="text-lg font-semibold text-white">{project.name}</h1>
+            <h1 className="text-lg font-semibold text-white">{folder.name}</h1>
           </div>
         </div>
       </header>
@@ -284,7 +292,7 @@ function ProjectContent() {
         {/* Action Bar */}
         <div className="flex items-center justify-between mb-6">
           <p className="text-white/50">
-            {project.tables?.length || 0} {project.tables?.length === 1 ? 'workbook' : 'workbooks'}
+            {workbooks.length} {workbooks.length === 1 ? 'workbook' : 'workbooks'}
           </p>
           <GlassButton variant="primary" onClick={() => setIsCreateModalOpen(true)}>
             <Plus className="w-4 h-4 mr-1" />
@@ -292,8 +300,8 @@ function ProjectContent() {
           </GlassButton>
         </div>
 
-        {/* Tables List - Row Layout */}
-        {project.tables && project.tables.length > 0 ? (
+        {/* Workbooks List - Row Layout */}
+        {workbooks.length > 0 ? (
           <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 rounded-xl">
             {/* Table Header */}
             <div className="flex items-center px-4 py-3 border-b border-white/10 bg-white/[0.02] rounded-t-xl">
@@ -302,48 +310,48 @@ function ProjectContent() {
               <div className="w-10"></div>
             </div>
 
-            {/* Table Rows */}
+            {/* Workbook Rows */}
             <div className="divide-y divide-white/[0.05]">
-              {project.tables.map((table) => (
+              {workbooks.map((workbook) => (
                 <div
-                  key={table.id}
+                  key={workbook.id}
                   className="flex items-center px-4 py-3 hover:bg-white/[0.03] transition-colors group"
                 >
                   {/* Clickable content area */}
                   <div
                     className="flex items-center gap-3 flex-1 cursor-pointer min-w-0"
-                    onClick={() => router.push(`/workbook/${projectId}?sheet=${table.id}`)}
+                    onClick={() => router.push(`/workbook/${workbook.id}`)}
                   >
                     <div className="w-9 h-9 rounded-lg bg-lavender/20 flex items-center justify-center flex-shrink-0">
                       <FileSpreadsheet className="w-4 h-4 text-lavender" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-medium text-white truncate">{table.name}</h3>
+                      <h3 className="font-medium text-white truncate">{workbook.name}</h3>
                     </div>
                     <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/40 transition-colors flex-shrink-0 hidden sm:block" />
                   </div>
 
                   {/* Modified date */}
                   <div className="w-32 text-sm text-white/40 hidden sm:block">
-                    {new Date(table.updatedAt).toLocaleDateString()}
+                    {new Date(workbook.updatedAt).toLocaleDateString()}
                   </div>
 
                   {/* Menu button */}
                   <div className="w-10 flex justify-end">
                     <button
                       type="button"
-                      ref={(el) => { menuBtnRefs.current[table.id] = el; }}
+                      ref={(el) => { menuBtnRefs.current[workbook.id] = el; }}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setOpenMenuId(openMenuId === table.id ? null : table.id);
+                        setOpenMenuId(openMenuId === workbook.id ? null : workbook.id);
                       }}
                       className="p-1.5 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100"
                     >
                       <MoreHorizontal className="w-4 h-4 text-white/50" />
                     </button>
 
-                    {openMenuId === table.id && createPortal(
+                    {openMenuId === workbook.id && createPortal(
                       <>
                         <div
                           className="fixed inset-0 z-[99]"
@@ -355,8 +363,8 @@ function ProjectContent() {
                         <div
                           className="fixed z-[100] min-w-[160px] py-1 bg-midnight-100 border border-white/10 rounded-xl shadow-xl"
                           style={{
-                            top: (menuBtnRefs.current[table.id]?.getBoundingClientRect().bottom ?? 0) + 4,
-                            right: window.innerWidth - (menuBtnRefs.current[table.id]?.getBoundingClientRect().right ?? 0),
+                            top: (menuBtnRefs.current[workbook.id]?.getBoundingClientRect().bottom ?? 0) + 4,
+                            right: window.innerWidth - (menuBtnRefs.current[workbook.id]?.getBoundingClientRect().right ?? 0),
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >
@@ -365,7 +373,7 @@ function ProjectContent() {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              openRenameModal(table);
+                              openRename(workbook);
                             }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/80 hover:bg-white/5 transition-colors"
                           >
@@ -377,7 +385,7 @@ function ProjectContent() {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              openMoveModal(table);
+                              openMove(workbook);
                             }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/80 hover:bg-white/5 transition-colors"
                           >
@@ -390,7 +398,7 @@ function ProjectContent() {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              openDeleteModal(table);
+                              openDelete(workbook);
                             }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
                           >
@@ -425,7 +433,7 @@ function ProjectContent() {
         )}
       </main>
 
-      {/* Create Table Modal */}
+      {/* Create Workbook Modal */}
       <Modal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
@@ -435,10 +443,10 @@ function ProjectContent() {
           <GlassInput
             label="Workbook Name"
             placeholder="e.g., Leads, Contacts, Companies"
-            value={newTableName}
-            onChange={(e) => setNewTableName(e.target.value)}
+            value={newWorkbookName}
+            onChange={(e) => setNewWorkbookName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleCreateTable();
+              if (e.key === 'Enter') handleCreateWorkbook();
             }}
             autoFocus
           />
@@ -451,53 +459,45 @@ function ProjectContent() {
             </GlassButton>
             <GlassButton
               variant="primary"
-              onClick={handleCreateTable}
+              onClick={handleCreateWorkbook}
               loading={isCreating}
-              disabled={!newTableName.trim()}
+              disabled={!newWorkbookName.trim()}
             >
-              Create Table
+              Create Workbook
             </GlassButton>
           </div>
         </div>
       </Modal>
 
-      {/* Rename Table Modal */}
+      {/* Rename Workbook Modal */}
       <Modal
-        isOpen={isRenameModalOpen}
-        onClose={() => {
-          setIsRenameModalOpen(false);
-          setRenameTableId(null);
-          setRenameTableName('');
-        }}
-        title="Rename Table"
+        isOpen={!!renameTarget}
+        onClose={() => setRenameTarget(null)}
+        title="Rename Workbook"
       >
         <div className="space-y-4">
           <GlassInput
-            label="Table Name"
+            label="Workbook Name"
             placeholder="Enter new name"
-            value={renameTableName}
-            onChange={(e) => setRenameTableName(e.target.value)}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleRenameTable();
+              if (e.key === 'Enter') handleRenameSubmit();
             }}
             autoFocus
           />
           <div className="flex justify-end gap-2">
             <GlassButton
               variant="ghost"
-              onClick={() => {
-                setIsRenameModalOpen(false);
-                setRenameTableId(null);
-                setRenameTableName('');
-              }}
+              onClick={() => setRenameTarget(null)}
             >
               Cancel
             </GlassButton>
             <GlassButton
               variant="primary"
-              onClick={handleRenameTable}
+              onClick={handleRenameSubmit}
               loading={isRenaming}
-              disabled={!renameTableName.trim()}
+              disabled={!renameValue.trim()}
             >
               Rename
             </GlassButton>
@@ -505,99 +505,34 @@ function ProjectContent() {
         </div>
       </Modal>
 
-      {/* Move Table Modal */}
-      <Modal
-        isOpen={isMoveModalOpen}
-        onClose={() => {
-          setIsMoveModalOpen(false);
-          setMoveTableId(null);
-          setMoveTableName('');
-          setSelectedFolderId(null);
-        }}
-        title={`Move "${moveTableName}"`}
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-white/60">Select a folder to move this table to:</p>
-
-          {allFolders.length > 0 ? (
-            <div className="space-y-1 max-h-64 overflow-y-auto">
-              {allFolders.map((folder) => (
-                <button
-                  key={folder.id}
-                  type="button"
-                  onClick={() => setSelectedFolderId(folder.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                    selectedFolderId === folder.id
-                      ? 'bg-lavender/20 border border-lavender/30'
-                      : 'hover:bg-white/5 border border-transparent'
-                  }`}
-                >
-                  <Folder className={`w-5 h-5 ${selectedFolderId === folder.id ? 'text-lavender' : 'text-white/40'}`} />
-                  <span className={`text-sm ${selectedFolderId === folder.id ? 'text-white' : 'text-white/70'}`}>
-                    {folder.name}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <Folder className="w-10 h-10 text-white/20 mx-auto mb-2" />
-              <p className="text-sm text-white/50">No other folders available</p>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <GlassButton
-              variant="ghost"
-              onClick={() => {
-                setIsMoveModalOpen(false);
-                setMoveTableId(null);
-                setMoveTableName('');
-                setSelectedFolderId(null);
-              }}
-            >
-              Cancel
-            </GlassButton>
-            <GlassButton
-              variant="primary"
-              onClick={handleMoveTable}
-              loading={isMoving}
-              disabled={!selectedFolderId}
-            >
-              Move
-            </GlassButton>
-          </div>
-        </div>
-      </Modal>
+      {/* Move Picker Modal (shared with dashboard) */}
+      <MovePickerModal
+        target={movePickerTarget}
+        projects={allProjects}
+        onClose={() => setMovePickerTarget(null)}
+        onMove={handleMoveSubmit}
+      />
 
       {/* Delete Confirmation Modal */}
       <Modal
-        isOpen={isDeleteModalOpen}
-        onClose={() => {
-          setIsDeleteModalOpen(false);
-          setDeleteTableId(null);
-          setDeleteTableName('');
-        }}
-        title="Delete Table"
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Workbook"
       >
         <div className="space-y-4">
           <p className="text-white/70">
-            Are you sure you want to delete "{deleteTableName}"? This action cannot be undone.
+            Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? All sheets in this workbook will be permanently deleted. This action cannot be undone.
           </p>
           <div className="flex justify-end gap-2">
             <GlassButton
               variant="ghost"
-              onClick={() => {
-                setIsDeleteModalOpen(false);
-                setDeleteTableId(null);
-                setDeleteTableName('');
-              }}
+              onClick={() => setDeleteTarget(null)}
             >
               Cancel
             </GlassButton>
             <GlassButton
               variant="primary"
-              onClick={handleDeleteTable}
+              onClick={handleDeleteWorkbook}
               className="!bg-red-500/20 !border-red-500/30 hover:!bg-red-500/30"
             >
               Delete
@@ -608,6 +543,20 @@ function ProjectContent() {
 
     </div>
   );
+}
+
+function findInTree(
+  tree: ProjectWithChildren[],
+  id: string
+): ProjectWithChildren | null {
+  for (const node of tree) {
+    if (node.id === id) return node;
+    if (node.children?.length) {
+      const found = findInTree(node.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 export default function ProjectPage() {
