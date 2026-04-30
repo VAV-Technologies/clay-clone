@@ -30,6 +30,20 @@ if (TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
     libsqlClient.execute('CREATE INDEX IF NOT EXISTS idx_tables_project ON tables(project_id)'),
     libsqlClient.execute('CREATE INDEX IF NOT EXISTS idx_projects_parent ON projects(parent_id)'),
   ]).catch((err) => console.error('Failed to ensure indexes:', err));
+
+  // Add web-search columns to enrichment_configs if missing.
+  // ALTER TABLE ADD COLUMN errors if the column already exists — swallow it.
+  void (async () => {
+    const tryAdd = async (sql: string) => {
+      try { await libsqlClient!.execute(sql); }
+      catch (err: unknown) {
+        const msg = (err as Error).message || '';
+        if (!/duplicate column/i.test(msg)) console.error('[migrate] ALTER failed:', msg);
+      }
+    };
+    await tryAdd("ALTER TABLE enrichment_configs ADD COLUMN web_search_enabled integer DEFAULT 0 NOT NULL");
+    await tryAdd("ALTER TABLE enrichment_configs ADD COLUMN web_search_provider text DEFAULT 'spider'");
+  })();
 } else {
   // Development: Use local SQLite
   const sqlite = new Database('dataflow.db');
@@ -72,6 +86,21 @@ function runLocalMigrations(sqlite: Database.Database) {
     }
   } catch {
     // Column already exists or table doesn't exist
+  }
+
+  // Migration: Add web_search_* columns to enrichment_configs
+  try {
+    const ecInfo = sqlite.prepare("PRAGMA table_info(enrichment_configs)").all() as { name: string }[];
+    if (ecInfo.length > 0) {
+      if (!ecInfo.some(c => c.name === 'web_search_enabled')) {
+        sqlite.exec(`ALTER TABLE enrichment_configs ADD COLUMN web_search_enabled INTEGER NOT NULL DEFAULT 0`);
+      }
+      if (!ecInfo.some(c => c.name === 'web_search_provider')) {
+        sqlite.exec(`ALTER TABLE enrichment_configs ADD COLUMN web_search_provider TEXT DEFAULT 'spider'`);
+      }
+    }
+  } catch {
+    // Table doesn't exist yet — CREATE TABLE below will include defaults
   }
 
   // Initialize database with tables
@@ -124,6 +153,8 @@ function runLocalMigrations(sqlite: Database.Database) {
       output_format TEXT NOT NULL DEFAULT 'text',
       temperature REAL DEFAULT 0.7,
       max_tokens INTEGER DEFAULT 1000,
+      web_search_enabled INTEGER NOT NULL DEFAULT 0,
+      web_search_provider TEXT DEFAULT 'spider',
       created_at INTEGER NOT NULL
     );
 

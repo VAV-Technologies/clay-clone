@@ -91,6 +91,9 @@ export const enrichmentConfigs = sqliteTable('enrichment_configs', {
   // Cost limit settings
   costLimitEnabled: integer('cost_limit_enabled', { mode: 'boolean' }).default(false),
   maxCostPerRow: real('max_cost_per_row'), // In dollars, null = unlimited
+  // Web search tool — when true, the model can call Spider.Cloud during real-time enrichment
+  webSearchEnabled: integer('web_search_enabled', { mode: 'boolean' }).notNull().default(false),
+  webSearchProvider: text('web_search_provider').default('spider'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
@@ -227,6 +230,8 @@ export interface CellValue {
     timeTakenMs: number;
     totalCost: number;
     forcedToFinishEarly?: boolean;
+    webSearchCalls?: number;
+    webSearchCost?: number;
   };
 }
 

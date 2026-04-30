@@ -4,6 +4,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import type { CellValue } from '@/lib/db/schema';
 import { callAI as callUnifiedAI, getModelPricing, getProviderRateLimits } from '@/lib/ai-provider';
+import { WEB_SEARCH_TOOLS, dispatchToolCall, WEB_SEARCH_SYSTEM_HINT } from '@/lib/enrichment-tools';
 
 // Vercel function config - extend timeout for AI calls
 export const maxDuration = 60;
@@ -157,18 +158,27 @@ export async function POST(request: NextRequest) {
         // Build prompt
         const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
 
-        // Call AI using unified provider (with timeout)
+        // Call AI using unified provider (with timeout). When the config has
+        // web search enabled, pass Spider.Cloud tools and a hint so the model
+        // can research live data before answering.
+        const webSearchEnabled = !!config.webSearchEnabled;
         const aiResult = await withTimeout(
           callUnifiedAI(prompt, modelId, {
             temperature: config.temperature ?? 0.7,
             maxOutputTokens: 8192,
+            tools: webSearchEnabled ? WEB_SEARCH_TOOLS : undefined,
+            toolDispatcher: webSearchEnabled ? dispatchToolCall : undefined,
+            systemHint: webSearchEnabled ? WEB_SEARCH_SYSTEM_HINT : undefined,
           }),
           AI_TIMEOUT_MS,
           'AI request timed out after 30 seconds'
         );
 
-        // Calculate cost
-        const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
+        // Calculate cost — model tokens + Spider tool spend folded into one number
+        // so the existing per-row cost cap covers both.
+        const modelCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
+        const webSearchCost = aiResult.toolCost ?? 0;
+        const rowCost = modelCost + webSearchCost;
         totalCost += rowCost;
 
         // Parse result
@@ -188,6 +198,8 @@ export async function POST(request: NextRequest) {
               timeTakenMs: aiResult.timeTakenMs,
               totalCost: rowCost,
               forcedToFinishEarly: false,
+              webSearchCalls: aiResult.toolCallCount ?? 0,
+              webSearchCost,
             },
           },
         };

@@ -97,6 +97,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Enrichment config not found' }, { status: 404 });
     }
 
+    // Tool-calling (web search) requires multi-round chat — incompatible with
+    // Azure's one-shot batch JSONL pipeline. Force the user to /api/enrichment/run.
+    if (config.webSearchEnabled) {
+      return NextResponse.json(
+        { error: 'Web search is real-time only. Use POST /api/enrichment/run for configs with webSearchEnabled.' },
+        { status: 400 }
+      );
+    }
+
     // Get columns for variable substitution
     const columns = await db
       .select()

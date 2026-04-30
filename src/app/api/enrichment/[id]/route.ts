@@ -34,7 +34,18 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { model, prompt, temperature, costLimitEnabled, maxCostPerRow, inputColumns, outputColumns, outputFormat } = body;
+    const {
+      model,
+      prompt,
+      temperature,
+      costLimitEnabled,
+      maxCostPerRow,
+      inputColumns,
+      outputColumns,
+      outputFormat,
+      webSearchEnabled,
+      webSearchProvider,
+    } = body;
 
     // Build update object with only provided fields
     const updateData: Record<string, unknown> = {};
@@ -46,6 +57,8 @@ export async function PATCH(
     if (inputColumns !== undefined) updateData.inputColumns = inputColumns;
     if (outputColumns !== undefined) updateData.outputColumns = outputColumns;
     if (outputFormat !== undefined) updateData.outputFormat = outputFormat;
+    if (webSearchEnabled !== undefined) updateData.webSearchEnabled = !!webSearchEnabled;
+    if (webSearchProvider !== undefined) updateData.webSearchProvider = webSearchProvider;
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });

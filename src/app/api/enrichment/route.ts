@@ -28,6 +28,8 @@ export async function POST(request: NextRequest) {
       temperature = 0.7,
       costLimitEnabled = false,
       maxCostPerRow = null,
+      webSearchEnabled = false,
+      webSearchProvider = 'spider',
     } = body;
 
     if (!name || !prompt || !inputColumns) {
@@ -48,6 +50,8 @@ export async function POST(request: NextRequest) {
       temperature,
       costLimitEnabled,
       maxCostPerRow,
+      webSearchEnabled: !!webSearchEnabled,
+      webSearchProvider: webSearchProvider || 'spider',
       createdAt: new Date(),
     };
 

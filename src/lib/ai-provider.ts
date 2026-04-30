@@ -1,15 +1,22 @@
 // Unified AI Provider Interface — Azure OpenAI only
 
+import type { AzureToolBundle, ToolDispatcher } from './azure-openai';
+
 export interface AIResult {
   text: string;
   inputTokens: number;
   outputTokens: number;
   timeTakenMs: number;
+  toolCost?: number;
+  toolCallCount?: number;
 }
 
 export interface AIGenerationConfig {
   temperature?: number;
   maxOutputTokens?: number;
+  tools?: AzureToolBundle;
+  toolDispatcher?: ToolDispatcher;
+  systemHint?: string;
 }
 
 // Model pricing per 1M tokens
@@ -79,5 +86,8 @@ export async function callAI(
   return generateContent(modelId, prompt, {
     temperature: config.temperature,
     maxTokens: config.maxOutputTokens,
+    tools: config.tools,
+    toolDispatcher: config.toolDispatcher,
+    systemHint: config.systemHint,
   });
 }

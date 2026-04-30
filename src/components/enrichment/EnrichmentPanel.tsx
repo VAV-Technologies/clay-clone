@@ -17,6 +17,7 @@ import {
   Trash2,
   Database,
   Save,
+  Globe,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassButton, GlassCard } from '@/components/ui';
@@ -64,6 +65,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
   const [costLimitEnabled, setCostLimitEnabled] = useState(false);
   const [maxCostPerRow, setMaxCostPerRow] = useState(0.01); // $0.01 default
   const [runOnEmpty, setRunOnEmpty] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
 
   // Run condition
   const [condColumnId, setCondColumnId] = useState('');
@@ -123,6 +125,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             setTemperature(config.temperature ?? 0.7);
             setCostLimitEnabled(config.costLimitEnabled ?? false);
             setMaxCostPerRow(config.maxCostPerRow ?? 0.01);
+            setWebSearchEnabled(!!config.webSearchEnabled);
             setExistingConfigId(config.id);
             setOutputColumns(config.outputColumns || []);
             setIsConfigLoaded(true);
@@ -155,6 +158,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
               setTemperature(matchingConfig.temperature ?? 0.7);
               setCostLimitEnabled(matchingConfig.costLimitEnabled ?? false);
               setMaxCostPerRow(matchingConfig.maxCostPerRow ?? 0.01);
+              setWebSearchEnabled(!!matchingConfig.webSearchEnabled);
               setExistingConfigId(matchingConfig.id);
               setOutputColumns(matchingConfig.outputColumns || []);
 
@@ -210,6 +214,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       setCostLimitEnabled(false);
       setMaxCostPerRow(0.01);
       setRunOnEmpty(false);
+      setWebSearchEnabled(false);
       setExistingConfigId(null);
       setOutputColumns([]);
       setNewOutputColumn('');
@@ -375,6 +380,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           costLimitEnabled,
           maxCostPerRow: costLimitEnabled ? maxCostPerRow : null,
           outputColumns,
+          webSearchEnabled,
+          webSearchProvider: 'spider',
         }),
       });
       return existingConfigId;
@@ -397,6 +404,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         temperature,
         costLimitEnabled,
         maxCostPerRow: costLimitEnabled ? maxCostPerRow : null,
+        webSearchEnabled,
+        webSearchProvider: 'spider',
       }),
     });
 
@@ -423,6 +432,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           costLimitEnabled,
           maxCostPerRow: costLimitEnabled ? maxCostPerRow : null,
           outputColumns,
+          webSearchEnabled,
+          webSearchProvider: 'spider',
         }),
       });
 
@@ -744,6 +755,41 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
               ))}
             </div>
           </div>
+        </div>
+
+        {/* Web Search — let the model research live data via Spider.Cloud */}
+        <div className="space-y-3 pb-4 border-b border-white/10">
+          <label className="flex items-center justify-between cursor-pointer">
+            <div>
+              <span className="text-sm font-medium text-white/70">Web Search</span>
+              <p className="text-xs text-white/40 mt-0.5">Let the model research the live web before answering.</p>
+            </div>
+            <button
+              onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+              className={cn(
+                'relative w-10 h-5 rounded-full transition-colors flex-shrink-0',
+                webSearchEnabled ? 'bg-lavender' : 'bg-white/20'
+              )}
+              aria-pressed={webSearchEnabled}
+              aria-label="Toggle web search"
+            >
+              <span
+                className={cn(
+                  'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-200',
+                  webSearchEnabled ? 'left-5' : 'left-0.5'
+                )}
+              />
+            </button>
+          </label>
+          {webSearchEnabled && (
+            <div className="flex items-center gap-2 pl-2 border-l-2 border-lavender/30">
+              <Globe className="w-3 h-3 text-lavender" />
+              <span className="text-xs text-white/60">
+                Provider: <span className="text-white/80">Spider.Cloud</span>
+              </span>
+              <span className="ml-auto text-[10px] text-white/40">real-time only</span>
+            </div>
+          )}
         </div>
 
         {/* Output Column Name - only shown when creating new enrichment */}

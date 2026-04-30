@@ -98,9 +98,27 @@ export function getDeploymentName(modelId: string): string {
   return DEFAULT_DEPLOYMENT_MAP[modelId] || modelId;
 }
 
+// Tool-calling types — kept loose since both Chat Completions and Responses
+// API accept slightly different shapes.
+type ChatToolDef = { type: 'function'; function: { name: string; description: string; parameters: unknown } };
+type ResponsesToolDef = { type: 'function'; name: string; description: string; parameters: unknown };
+
+export interface AzureToolBundle {
+  chat: ChatToolDef[];
+  responses: ResponsesToolDef[];
+}
+
+export type ToolDispatcher = (
+  name: string,
+  argsJson: string,
+) => Promise<{ content: string; costUsd: number }>;
+
 export interface AzureGenerationConfig {
   temperature?: number;
   maxTokens?: number;
+  tools?: AzureToolBundle;
+  toolDispatcher?: ToolDispatcher;
+  systemHint?: string;
 }
 
 export interface AzureAIResult {
@@ -108,7 +126,16 @@ export interface AzureAIResult {
   inputTokens: number;
   outputTokens: number;
   timeTakenMs: number;
+  toolCost?: number;
+  toolCallCount?: number;
 }
+
+// Hard ceiling on tool-call rounds per generation. Keeps costs bounded and
+// prevents runaway loops if the model keeps requesting tools.
+const MAX_TOOL_ROUNDS = 4;
+// Soft time budget for the whole tool-call loop. The outer caller wraps this
+// with a 30s hard timeout; we stop dispatching new tool calls past this mark.
+const SOFT_TIME_BUDGET_MS = 25000;
 
 export async function generateContent(
   modelId: string,
@@ -119,92 +146,319 @@ export async function generateContent(
   const azureConf = getAzureConfig();
   const deploymentName = getDeploymentName(modelId);
   const apiVersion = getApiVersionForModel(modelId, azureConf.apiVersion);
-
-  // Get model-specific endpoint (some models like gpt-5-nano use different Azure resources)
   const { endpoint, apiKey } = getModelEndpoint(modelId, azureConf);
 
-  // GPT-5-mini uses the Responses API with a different endpoint format
   const useResponsesApi = isResponsesApiModel(modelId);
-
-  let url: string;
-  let requestBody: Record<string, unknown>;
+  const hasTools = !!(config.tools && config.toolDispatcher);
 
   if (useResponsesApi) {
-    // Responses API endpoint format for gpt-5-mini
-    url = `${endpoint}/openai/responses?api-version=${apiVersion}`;
+    return generateViaResponsesApi({
+      endpoint, apiKey, apiVersion, deploymentName, modelId, prompt, config, hasTools, startTime,
+    });
+  }
 
-    requestBody = {
-      model: deploymentName,
-      input: prompt,
-      max_output_tokens: config.maxTokens ?? 8192,
-    };
-  } else {
-    // Standard Chat Completions API
-    url = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+  return generateViaChatCompletions({
+    endpoint, apiKey, apiVersion, deploymentName, modelId, prompt, config, hasTools, startTime,
+  });
+}
 
-    // GPT-5 models use max_completion_tokens and don't support temperature
-    const isGpt5 = isGpt5Model(modelId);
-    const tokenParam = isGpt5
-      ? { max_completion_tokens: config.maxTokens ?? 8192 }
-      : { max_tokens: config.maxTokens ?? 8192 };
+// ─── Chat Completions path (gpt-4o, gpt-5, gpt-5-nano, gpt-5-turbo, deepseek-*) ───
 
-    // Build request body - GPT-5 models don't support temperature parameter
-    requestBody = {
-      messages: [{ role: 'user', content: prompt }],
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
+}
+
+async function generateViaChatCompletions(args: {
+  endpoint: string;
+  apiKey: string;
+  apiVersion: string;
+  deploymentName: string;
+  modelId: string;
+  prompt: string;
+  config: AzureGenerationConfig;
+  hasTools: boolean;
+  startTime: number;
+}): Promise<AzureAIResult> {
+  const { endpoint, apiKey, apiVersion, deploymentName, modelId, prompt, config, hasTools, startTime } = args;
+  const url = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+  const isGpt5 = isGpt5Model(modelId);
+  const tokenParam = isGpt5
+    ? { max_completion_tokens: config.maxTokens ?? 8192 }
+    : { max_tokens: config.maxTokens ?? 8192 };
+
+  const messages: ChatMessage[] = [];
+  if (hasTools && config.systemHint) {
+    messages.push({ role: 'system', content: config.systemHint });
+  }
+  messages.push({ role: 'user', content: prompt });
+
+  let totalIn = 0;
+  let totalOut = 0;
+  let toolCost = 0;
+  let toolCallCount = 0;
+  let lastText = '';
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS + 1; round++) {
+    const elapsed = Date.now() - startTime;
+    const overBudget = elapsed > SOFT_TIME_BUDGET_MS;
+
+    const requestBody: Record<string, unknown> = {
+      messages,
       ...tokenParam,
     };
+    if (!isGpt5) requestBody.temperature = config.temperature ?? 0.7;
 
-    // Only add temperature for non-GPT-5 models
-    if (!isGpt5) {
-      requestBody.temperature = config.temperature ?? 0.7;
+    if (hasTools && !overBudget && round < MAX_TOOL_ROUNDS) {
+      requestBody.tools = config.tools!.chat;
+      requestBody.tool_choice = 'auto';
+    } else if (hasTools && (overBudget || round === MAX_TOOL_ROUNDS)) {
+      // Force the model to wrap up with a final answer.
+      requestBody.tool_choice = 'none';
     }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMessage = (errorData as { error?: { message?: string } }).error?.message
+        || `Azure OpenAI error: ${response.status}`;
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    totalIn += data.usage?.prompt_tokens ?? 0;
+    totalOut += data.usage?.completion_tokens ?? 0;
+
+    const choice = data.choices?.[0];
+    const msg = choice?.message;
+    const finishReason = choice?.finish_reason;
+    lastText = msg?.content ?? '';
+
+    const toolCalls = msg?.tool_calls;
+    if (hasTools && Array.isArray(toolCalls) && toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
+      // Push the assistant message with tool_calls verbatim, then dispatch each call
+      // and append role:'tool' messages keyed by tool_call_id.
+      messages.push({
+        role: 'assistant',
+        content: msg.content ?? null,
+        tool_calls: toolCalls,
+      });
+
+      for (const tc of toolCalls) {
+        toolCallCount++;
+        try {
+          const r = await config.toolDispatcher!(tc.function.name, tc.function.arguments ?? '{}');
+          toolCost += r.costUsd;
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: r.content,
+          });
+        } catch (err) {
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify({ error: 'dispatch_failed', message: (err as Error).message?.slice(0, 200) }),
+          });
+        }
+      }
+      continue;
+    }
+
+    // No tool calls — done.
+    console.log(
+      `[azure] Chat Completions done — model=${modelId}, rounds=${round + 1}, in=${totalIn}, out=${totalOut}, ` +
+      `toolCalls=${toolCallCount}, toolCost=$${toolCost.toFixed(5)}, finish=${finishReason}, text_len=${lastText.length}`
+    );
+    break;
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'api-key': apiKey,
-    },
-    body: JSON.stringify(requestBody),
+  return {
+    text: lastText,
+    inputTokens: totalIn,
+    outputTokens: totalOut,
+    timeTakenMs: Date.now() - startTime,
+    toolCost,
+    toolCallCount,
+  };
+}
+
+// ─── Responses API path (gpt-5-mini) ───
+// Uses /openai/responses with `input` array, `tools`, and `previous_response_id`
+// to thread state across tool round-trips. We don't pass `previous_response_id`
+// — instead we resend the full input list each round, since Azure's preview
+// versioning of stored responses varies. Token usage is summed across rounds.
+
+interface ResponsesInputMessage {
+  type: 'message';
+  role: 'system' | 'user' | 'assistant';
+  content: Array<{ type: 'input_text' | 'output_text'; text: string }>;
+}
+
+interface ResponsesFunctionCall {
+  type: 'function_call';
+  call_id: string;
+  name: string;
+  arguments: string;
+}
+
+interface ResponsesFunctionCallOutput {
+  type: 'function_call_output';
+  call_id: string;
+  output: string;
+}
+
+type ResponsesInputItem = ResponsesInputMessage | ResponsesFunctionCall | ResponsesFunctionCallOutput;
+
+async function generateViaResponsesApi(args: {
+  endpoint: string;
+  apiKey: string;
+  apiVersion: string;
+  deploymentName: string;
+  modelId: string;
+  prompt: string;
+  config: AzureGenerationConfig;
+  hasTools: boolean;
+  startTime: number;
+}): Promise<AzureAIResult> {
+  const { endpoint, apiKey, apiVersion, deploymentName, modelId, prompt, config, hasTools, startTime } = args;
+  const url = `${endpoint}/openai/responses?api-version=${apiVersion}`;
+
+  const input: ResponsesInputItem[] = [];
+  if (hasTools && config.systemHint) {
+    input.push({
+      type: 'message',
+      role: 'system',
+      content: [{ type: 'input_text', text: config.systemHint }],
+    });
+  }
+  input.push({
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text: prompt }],
   });
 
-  const timeTakenMs = Date.now() - startTime;
+  let totalIn = 0;
+  let totalOut = 0;
+  let toolCost = 0;
+  let toolCallCount = 0;
+  let lastText = '';
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const errorMessage = errorData.error?.message || `Azure OpenAI error: ${response.status}`;
-    throw new Error(errorMessage);
-  }
+  for (let round = 0; round < MAX_TOOL_ROUNDS + 1; round++) {
+    const elapsed = Date.now() - startTime;
+    const overBudget = elapsed > SOFT_TIME_BUDGET_MS;
 
-  const data = await response.json();
-
-  // Parse response based on API type
-  if (useResponsesApi) {
-    // Responses API format
-    const outputText = data.output_text ||
-      data.output?.[0]?.content?.[0]?.text ||
-      '';
-    console.log(`[azure] Responses API - output_text length: ${outputText?.length}, output keys: ${JSON.stringify(Object.keys(data))}, output_tokens: ${data.usage?.output_tokens}`);
-    return {
-      text: outputText,
-      inputTokens: data.usage?.input_tokens ?? 0,
-      outputTokens: data.usage?.output_tokens ?? 0,
-      timeTakenMs,
+    const requestBody: Record<string, unknown> = {
+      model: deploymentName,
+      input,
+      max_output_tokens: config.maxTokens ?? 8192,
     };
+
+    if (hasTools && !overBudget && round < MAX_TOOL_ROUNDS) {
+      requestBody.tools = config.tools!.responses;
+      requestBody.tool_choice = 'auto';
+    } else if (hasTools && (overBudget || round === MAX_TOOL_ROUNDS)) {
+      requestBody.tool_choice = 'none';
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMessage = (errorData as { error?: { message?: string } }).error?.message
+        || `Azure OpenAI error: ${response.status}`;
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    totalIn += data.usage?.input_tokens ?? 0;
+    totalOut += data.usage?.output_tokens ?? 0;
+
+    // Pull text + function calls out of `output[]`.
+    const output: Array<Record<string, unknown>> = Array.isArray(data.output) ? data.output : [];
+    const functionCalls: ResponsesFunctionCall[] = [];
+    let textPieces: string[] = [];
+
+    for (const item of output) {
+      const t = item.type;
+      if (t === 'function_call') {
+        functionCalls.push({
+          type: 'function_call',
+          call_id: String(item.call_id ?? item.id ?? ''),
+          name: String(item.name ?? ''),
+          arguments: typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {}),
+        });
+      } else if (t === 'message') {
+        const content = (item as { content?: Array<{ type?: string; text?: string }> }).content;
+        if (Array.isArray(content)) {
+          for (const c of content) {
+            if (c?.type === 'output_text' && typeof c.text === 'string') textPieces.push(c.text);
+          }
+        }
+      }
+    }
+
+    // Fallback for top-level `output_text` shorthand some versions return.
+    if (textPieces.length === 0 && typeof data.output_text === 'string') {
+      textPieces.push(data.output_text);
+    }
+    lastText = textPieces.join('');
+
+    if (hasTools && functionCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
+      // Echo the model's function_call items, then append matching outputs.
+      for (const fc of functionCalls) {
+        input.push(fc);
+      }
+      for (const fc of functionCalls) {
+        toolCallCount++;
+        try {
+          const r = await config.toolDispatcher!(fc.name, fc.arguments ?? '{}');
+          toolCost += r.costUsd;
+          input.push({
+            type: 'function_call_output',
+            call_id: fc.call_id,
+            output: r.content,
+          });
+        } catch (err) {
+          input.push({
+            type: 'function_call_output',
+            call_id: fc.call_id,
+            output: JSON.stringify({ error: 'dispatch_failed', message: (err as Error).message?.slice(0, 200) }),
+          });
+        }
+      }
+      continue;
+    }
+
+    console.log(
+      `[azure] Responses API done — model=${modelId}, rounds=${round + 1}, in=${totalIn}, out=${totalOut}, ` +
+      `toolCalls=${toolCallCount}, toolCost=$${toolCost.toFixed(5)}, text_len=${lastText.length}`
+    );
+    break;
   }
 
-  // Standard Chat Completions format
-  const text = data.choices?.[0]?.message?.content || '';
-  console.log(`[azure] Chat Completions - text length: ${text?.length}, model: ${modelId}, keys: ${JSON.stringify(Object.keys(data))}, output_tokens: ${data.usage?.completion_tokens}`);
-  if (!text && data.choices?.length > 0) {
-    console.log(`[azure] Choice finish_reason: ${data.choices[0].finish_reason}, message keys: ${JSON.stringify(Object.keys(data.choices[0].message || {}))}`);
-  }
   return {
-    text,
-    inputTokens: data.usage?.prompt_tokens ?? 0,
-    outputTokens: data.usage?.completion_tokens ?? 0,
-    timeTakenMs,
+    text: lastText,
+    inputTokens: totalIn,
+    outputTokens: totalOut,
+    timeTakenMs: Date.now() - startTime,
+    toolCost,
+    toolCallCount,
   };
 }
 
