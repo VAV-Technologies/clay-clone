@@ -19,6 +19,13 @@ export type FilterOperator =
 
 export type FilterLogic = 'AND' | 'OR';
 
+export class UnknownFilterColumnError extends Error {
+  constructor(public columnIds: string[]) {
+    super(`Filter/sort references columnId(s) that do not belong to this table: ${columnIds.join(', ')}`);
+    this.name = 'UnknownFilterColumnError';
+  }
+}
+
 interface CellValue {
   value?: string | number | null;
   [key: string]: unknown;
@@ -39,7 +46,10 @@ export function applyFilter(row: RowLike, filter: Filter, columns: ColumnLike[])
   const cellValue = row.data[filter.columnId]?.value;
   const column = columns.find((c) => c.id === filter.columnId);
 
-  if (!column) return true;
+  // Unknown column → no rows match (prefer "obvious zero" over the historical
+  // "matches every row" silent-wrong-answer trap). API callers should use
+  // applyFilters, which validates upfront and throws UnknownFilterColumnError.
+  if (!column) return false;
 
   const stringValue = cellValue?.toString().toLowerCase() ?? '';
   const filterValue = Array.isArray(filter.value)
@@ -81,6 +91,10 @@ export function applyFilter(row: RowLike, filter: Filter, columns: ColumnLike[])
 export function applyFilters(rows: RowLike[], filters: Filter[], filterLogic: FilterLogic, columns: ColumnLike[]): RowLike[] {
   if (filters.length === 0) return rows;
 
+  const validIds = new Set(columns.map((c) => c.id));
+  const invalid = filters.map((f) => f.columnId).filter((id) => !validIds.has(id));
+  if (invalid.length > 0) throw new UnknownFilterColumnError(Array.from(new Set(invalid)));
+
   return rows.filter((row) => {
     if (filterLogic === 'AND') {
       return filters.every((filter) => applyFilter(row, filter, columns));
@@ -92,7 +106,7 @@ export function applyFilters(rows: RowLike[], filters: Filter[], filterLogic: Fi
 
 export function sortRows(rows: RowLike[], sortColumnId: string, sortDirection: 'asc' | 'desc', columns: ColumnLike[]): RowLike[] {
   const column = columns.find((c) => c.id === sortColumnId);
-  if (!column) return rows;
+  if (!column) throw new UnknownFilterColumnError([sortColumnId]);
 
   return [...rows].sort((a, b) => {
     const aVal = a.data[sortColumnId]?.value;

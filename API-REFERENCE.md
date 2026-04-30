@@ -129,6 +129,7 @@ Many requests combine workflows. "Find companies in Jakarta, get their CMOs, fin
 
 ### 3. Data Quality
 
+- **Re-fetch column IDs for each sheet.** Column IDs do not transfer between sheets. When working across multiple sheets in the same workbook (e.g. Segment 1 / Segment 2 / Segment 3), call `GET /api/columns?tableId=...` *per sheet* and use that sheet's IDs in filter, lookup, find-email, and enrichment requests. Reusing a column ID from a different sheet now returns `400 invalidColumnIds` (was: silently matched every row).
 - **Always filter out rows with empty domains before Find Email.** Email finding requires a domain. Rows without one always fail.
 - **Clean domains before use.** Must be bare: `stripe.com` not `https://www.stripe.com/about`. Use Formula to strip protocol/www/paths.
 - **Deduplicate before expensive operations.** Check for duplicate domains/names before running Find Email or AI Enrichment.
@@ -191,6 +192,7 @@ Many requests combine workflows. "Find companies in Jakarta, get their CMOs, fin
 
 | Problem | Solution |
 |---------|----------|
+| `400 invalidColumnIds` on `GET /api/rows` | Filter or `sortBy` referenced a column ID from a different sheet. Refetch `GET /api/columns?tableId={this-sheet}` and use IDs from there. |
 | Search returns 0 results | Broaden filters. Remove most restrictive filter. Try `semantic_description` instead |
 | Email finder low success (<50%) | Common for small/local companies. Try AI enrichment to find emails from LinkedIn |
 | AI enrichment errors | Check `GET /api/columns/{id}/progress` for error samples. Common: vague prompt, column typo. Retry: `POST /api/enrichment/retry-cell` |
@@ -330,6 +332,8 @@ Cascading — deletes columns, rows, enrichment jobs.
 
 ## 3. Columns
 
+> **Column IDs are scoped per-table.** Two sheets with identically named columns ("Domain", "Company Name") have *different* column IDs. Always call `GET /api/columns?tableId={tableId}` for the specific sheet you are filtering, sorting, importing into, or running enrichment on. Do not reuse a column ID across sheets, even within the same workbook — the API will reject foreign IDs with `400 invalidColumnIds` (see §4 filter validation).
+
 ### List Columns
 ```
 GET /api/columns?tableId={tableId}
@@ -386,6 +390,8 @@ Optional query parameters:
 ```json
 [{"columnId": "col-id", "operator": "contains", "value": "stripe"}]
 ```
+
+> **Validation.** `GET /api/rows` returns `400 {error, invalidColumnIds, tableId}` if any `filter.columnId` (or `sortBy`) is not a column of the requested `tableId`. Each sheet has its own column IDs — refetch `GET /api/columns?tableId=...` per sheet. (Older clients may have observed "every row matches" instead of an error; that was a silent bug, fixed 2026-04-30.)
 
 **Filter operators:**
 | Operator | Description | Value |

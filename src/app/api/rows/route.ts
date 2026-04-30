@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
-import { applyFilters, sortRows } from '@/lib/filter-utils';
+import { applyFilters, sortRows, UnknownFilterColumnError } from '@/lib/filter-utils';
 import type { Filter, FilterLogic } from '@/lib/filter-utils';
 
 export const maxDuration = 60;
@@ -56,19 +56,48 @@ export async function GET(request: NextRequest) {
 
       // Apply filters
       if (filtersParam) {
+        let filters: Filter[];
         try {
-          const filters: Filter[] = JSON.parse(filtersParam);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          rows = applyFilters(rows as any, filters, filterLogic, columns) as unknown as typeof rows;
+          filters = JSON.parse(filtersParam);
         } catch {
           return NextResponse.json({ error: 'Invalid filters JSON' }, { status: 400 });
+        }
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          rows = applyFilters(rows as any, filters, filterLogic, columns) as unknown as typeof rows;
+        } catch (err) {
+          if (err instanceof UnknownFilterColumnError) {
+            return NextResponse.json(
+              {
+                error: 'Filter references columnId(s) that do not belong to this table. Column IDs are scoped per-table — fetch GET /api/columns?tableId=... for the sheet you are filtering.',
+                invalidColumnIds: err.columnIds,
+                tableId,
+              },
+              { status: 400 }
+            );
+          }
+          throw err;
         }
       }
 
       // Apply sorting
       if (sortBy) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        rows = sortRows(rows as any, sortBy, sortOrder, columns) as unknown as typeof rows;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          rows = sortRows(rows as any, sortBy, sortOrder, columns) as unknown as typeof rows;
+        } catch (err) {
+          if (err instanceof UnknownFilterColumnError) {
+            return NextResponse.json(
+              {
+                error: 'sortBy references a columnId that does not belong to this table. Column IDs are scoped per-table — fetch GET /api/columns?tableId=... for the sheet you are sorting.',
+                invalidColumnIds: err.columnIds,
+                tableId,
+              },
+              { status: 400 }
+            );
+          }
+          throw err;
+        }
       }
     }
 
