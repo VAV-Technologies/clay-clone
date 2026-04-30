@@ -37,7 +37,7 @@ Step-by-step playbooks for end-to-end campaign execution. Each workflow shows ex
 | 10 | Lookup company info | `POST /api/lookup/run` | Pull Industry, Size from Companies sheet into People sheet by matching Domain columns |
 | 11 | Find emails | `POST /api/find-email/run` | `{"tableId":"PEOPLE_TABLE","rowIds":[...],"inputMode":"full_name","fullNameColumnId":"...","domainColumnId":"..."}` |
 | 12 | Clean up | `GET /api/rows?filters=[...]` + `DELETE /api/rows` | Remove rows where Email is empty |
-| 13 | (Optional) AI personalization | `POST /api/enrichment` + `POST /api/enrichment/run` | Generate personalized intro lines using `{{Full Name}}`, `{{Job Title}}` template vars |
+| 13 | (Optional) AI personalization | `POST /api/enrichment/setup-and-run` | Generate personalized intro lines using `{{Full Name}}`, `{{Job Title}}` template vars. ONE call creates the config, the linked enrichment column, and runs it — see §6.1 |
 | 14 | Export | `GET /api/export/csv?tableId=...` | Download as CSV or read as JSON via `GET /api/rows` |
 
 ### Workflow 2: "Find [role] people in [location] and get their emails"
@@ -65,7 +65,7 @@ Company search only — no people, no emails.
 | 1 | Create workbook | `POST /api/projects` | `{"name":"German SaaS Companies","type":"workbook"}` |
 | 2 | Search companies | `POST /api/add-data/search` | `{"searchType":"companies","filters":{"country_names":["Germany"],"industries":["Software Development"],"semantic_description":"SaaS software as a service","minimum_member_count":200,"limit":1000}}` |
 | 3 | Create sheet + columns + import | `POST /api/tables` + `POST /api/columns` + `POST /api/rows` | Columns: Company Name, Domain, Size, Industry, Location, LinkedIn, Description, Revenue |
-| 4 | (Optional) AI enrich | `POST /api/enrichment` + `POST /api/enrichment/run` | Research competitors, tech stack, recent news, funding |
+| 4 | (Optional) AI enrich | `POST /api/enrichment/setup-and-run` | Research competitors, tech stack, recent news, funding. ONE call — see §6.1. Set `webSearchEnabled: true` for current/news data |
 
 ### Workflow 4: "I have a list — enrich it and find emails"
 
@@ -75,7 +75,7 @@ Company search only — no people, no emails.
 |------|--------|----------|-------------|
 | 1 | Create workbook + sheet | `POST /api/projects` + `POST /api/tables` | |
 | 2 | Import existing data | `POST /api/import/csv` or `POST /api/rows` | CSV import auto-creates columns from headers |
-| 3 | AI enrich missing fields | `POST /api/enrichment` + `POST /api/enrichment/run` | Use `onlyEmpty: true` to skip rows with existing data |
+| 3 | AI enrich missing fields | `POST /api/enrichment/setup-and-run` | Use `onlyEmpty: true` to skip rows with existing data. ONE call — see §6.1 |
 | 4 | Find emails for rows missing them | `GET /api/rows?filters=[...]` + `POST /api/find-email/run` | Filter for empty email first, then run finder on those row IDs only |
 | 5 | Export | `GET /api/export/csv?tableId=...` | |
 
@@ -142,9 +142,9 @@ Many requests combine workflows. "Find companies in Jakarta, get their CMOs, fin
 | **Add Data (Clay)** | Finding new companies or people | You already have the data |
 | **Find Email** | You have name + company domain | No domain available |
 | **Lookup** | Connecting data between sheets via shared key | Need to search for new data |
-| **AI Enrichment** | Generating new insights (research, personalization) | Data exists somewhere — try Lookup or Clay first |
-| **AI Enrichment + Web Search** | Set `webSearchEnabled: true` when the prompt needs **live web data** (current news, websites, recent events, anything past the model's training cutoff). Model is forced to call `search_web` before answering. | Pure transformations or reasoning over the row — the extra Spider cost is wasted |
-| **Batch Enrichment** | 1000+ rows of AI enrichment (cheaper, 1-24hr) | Under 1000 rows — use real-time. **Not compatible with web search** — returns 400 if `webSearchEnabled: true` |
+| **AI Enrichment** | Generating new insights (research, personalization). **Use `POST /api/enrichment/setup-and-run` (§6.1)** — single canonical call. | Data exists somewhere — try Lookup or Clay first |
+| **AI Enrichment + Web Search** | Set `webSearchEnabled: true` on `setup-and-run` when the prompt needs **live web data** (current news, websites, recent events, anything past the model's training cutoff). Model is forced to call `search_web` before answering. | Pure transformations or reasoning over the row — the extra Spider cost is wasted |
+| **Batch Enrichment** | 1000+ rows of AI enrichment (cheaper, 1-24hr). Requires an **existing** config — create one first via `setup-and-run` on a sample row, then `POST /api/enrichment/batch` with that `configId`. | Under 1000 rows — use real-time. **Not compatible with web search** — returns 400 if `webSearchEnabled: true` |
 | **Formula** | Data transformations (split, combine, clean) | Need external data or AI reasoning |
 | **Filters** | Narrowing rows: empty cells, value matching | Need to modify data — use PATCH |
 
@@ -508,7 +508,109 @@ Returns CSV content with `Content-Type: text/csv`.
 
 ## 6. AI Enrichment
 
-### List All Enrichment Configs
+> **🟢 CANONICAL FLOW — agents using this API to add an AI enrichment to a table MUST use `POST /api/enrichment/setup-and-run` (§6.1).** The legacy granular endpoints (§6.3) are retained for editing or rerunning *existing* configs only. Read §6.2 for the failure modes that arise from reaching for the wrong endpoint.
+
+### 6.1. Canonical Flow — Setup & Run (USE THIS)
+
+```
+POST /api/enrichment/setup-and-run
+```
+
+One atomic call that mirrors what happens when a user clicks "Run" in the EnrichmentPanel UI:
+
+1. Inserts an `enrichment_configs` row with your model/prompt/outputColumns/temperature/webSearchEnabled.
+2. Creates a column with `type: "enrichment"` and `enrichmentConfigId` linked to the new config — this is what makes the UI recognize the column (cell click → inspector modal, column header → run-button dropdown, "Extract to column" affordance).
+3. Runs the enrichment over the requested rows using the same prompt builder, tool-calling loop, and metadata persistence as a UI run.
+
+**Request body:**
+```json
+{
+  "tableId": "table-id",
+  "columnName": "Latest News",
+  "prompt": "Search the web for the most recent news (last 30 days) about {{Company}}. Return the EXACT headline and EXACT source URL.",
+  "model": "gpt-5-mini",
+  "inputColumns": ["col-id-of-Company"],
+  "outputColumns": ["headline", "source_url"],
+  "temperature": 0.1,
+  "webSearchEnabled": true,
+  "rowIds": ["row-1", "row-2"]
+}
+```
+
+**Required fields:** `tableId`, `columnName`, `prompt`, `inputColumns` (non-empty array).
+
+**Optional fields (with defaults):**
+- `model` — default `"gpt-5-mini"`. Any model from §"Cost Optimization" table.
+- `outputColumns` — default `[]`. Use a list of keys (e.g. `["headline","source_url"]`) for structured output. Each key auto-creates a sibling text column populated from the model's JSON.
+- `temperature` — default `0.7`. Use `0.1-0.3` for factual lookups.
+- `webSearchEnabled` — default `false`. Set `true` when the prompt needs live web data (see §6.4).
+- `webSearchProvider` — default `"spider"` (only Spider.Cloud is honored at runtime).
+- `costLimitEnabled` / `maxCostPerRow` — per-row cost cap (covers model tokens + Spider credits).
+- `rowIds` — array of row IDs to enrich. If omitted, runs on **all rows** in the table.
+- `onlyEmpty` — default `false`. Skip rows where the target cell is already non-empty.
+- `forceRerun` — default `false`. When `true`, re-runs even already-populated rows.
+
+**Response (201 Created):**
+```json
+{
+  "configId": "...",
+  "targetColumnId": "...",
+  "targetColumn": { "id": "...", "name": "Latest News", "type": "enrichment", "enrichmentConfigId": "...", "..." },
+  "results": [
+    {
+      "rowId": "...",
+      "success": true,
+      "data": { /* full updated row.data — every cell incl. the new enrichment cell */ },
+      "cost": 0.0048
+    }
+  ],
+  "totalCost": 0.0048,
+  "processedCount": 1,
+  "successCount": 1,
+  "errorCount": 0,
+  "newColumns": [ /* any output-column siblings auto-created from outputColumns[] */ ]
+}
+```
+
+The cell is populated with `enrichmentData` (the parsed JSON), `rawResponse`, and full `metadata` (tokens, time, cost, plus `webSearchCalls` and `webSearchCost` when web search was on). Same shape as a UI run.
+
+**Worked example — find a recent news headline with web search:**
+```bash
+curl -X POST https://dataflow-pi.vercel.app/api/enrichment/setup-and-run \
+  -H "Authorization: Bearer $DATAFLOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tableId": "TABLE_ID",
+    "columnName": "Recent News",
+    "prompt": "Search the web for one news article (last 30 days) about {{Company}}. Return EXACT headline + EXACT URL. Do not paraphrase. If none found, return empty strings.",
+    "model": "gpt-5-mini",
+    "inputColumns": ["COMPANY_COL_ID"],
+    "outputColumns": ["headline", "source_url"],
+    "temperature": 0.1,
+    "webSearchEnabled": true,
+    "rowIds": ["ROW_ID"]
+  }'
+```
+
+After this returns, opening the table in the UI shows the new column with a working run-button dropdown and a clickable cell that opens the inspector modal — same as if a user had configured it in the EnrichmentPanel.
+
+### 6.2. Anti-patterns (DO NOT)
+
+These are common mistakes when an agent skips `setup-and-run` and tries to assemble the flow manually. Each one produces broken UI state:
+
+- **DO NOT call `POST /api/enrichment/run` against a `text` column.** The cell will populate but the UI inspector won't open and the column header won't show the run-button dropdown — the column-to-config link is missing. Use `setup-and-run` instead.
+- **DO NOT call `POST /api/columns` with `type: "enrichment"` and forget `enrichmentConfigId`.** Same outcome — orphaned column. There's a fallback in the EnrichmentPanel that searches by name, but it's brittle and will not find a config you skipped creating.
+- **DO NOT call Azure OpenAI / OpenAI / any LLM directly from your client and write the result to a plain cell.** Cost won't be tracked, no `metadata` will be persisted, and the result won't be re-runnable. Always go through `setup-and-run` (or `/run` for an existing config) so the unified prompt builder, tool-calling loop, and metadata layer apply.
+- **DO NOT skip `outputColumns` for multi-datapoint results.** Without it, the model returns one blob and the "Extract to column" affordance has nothing structured to extract. If the user wants headline + URL + summary, declare them as `outputColumns: ["headline","url","summary"]` and the runner auto-creates sibling columns populated per-cell.
+- **DO NOT use `POST /api/formula/...` for AI work.** Formulas are for deterministic transformations (split, combine, regex). For anything that needs reasoning or live data, use `setup-and-run`.
+- **DO NOT toggle `webSearchEnabled: true` on `POST /api/enrichment/batch`** — batch returns 400 with that combination. Web search is real-time only. For >1000 rows that need web search, run `setup-and-run` in chunks.
+- **DO NOT enable web search for tasks the model already knows from training** (extract domain from email, classify text, transform formats). Spider charges credits per call — wasted spend.
+
+### 6.3. Lower-level endpoints (for editing existing configs)
+
+These are the granular endpoints. Use them when iterating on or rerunning an *existing* enrichment — not for creating a new one (use §6.1).
+
+#### List All Enrichment Configs
 ```
 GET /api/enrichment
 ```
@@ -576,7 +678,7 @@ POST /api/enrichment/batch
 ```
 Submits to Azure Batch API. Takes 1-24 hours. Up to 100k rows.
 
-**Returns 400 if the config has `webSearchEnabled: true`** — web search is real-time only because the tool-call loop needs sub-second round-trips. For configs that need web search, use `POST /api/enrichment/run` instead.
+**Returns 400 if the config has `webSearchEnabled: true`** — web search is real-time only. For configs that need web search, use `POST /api/enrichment/setup-and-run` (§6.1) for a new enrichment, or `POST /api/enrichment/run` against an existing one.
 
 ### Check Batch Status
 ```
@@ -645,9 +747,9 @@ Query params (one of):
 - `?all=true` — Cancel all active jobs
 - `?resetStuck=true` — Reset stuck processing cells
 
-### AI Enrichment with Web Search (Spider.Cloud)
+### 6.4. AI Enrichment with Web Search (Spider.Cloud)
 
-Set `webSearchEnabled: true` on the enrichment config to give the model two tools during real-time enrichment:
+Set `webSearchEnabled: true` on `POST /api/enrichment/setup-and-run` (§6.1) — or PATCH it on an existing config — to give the model two tools during real-time enrichment:
 
 | Tool | Purpose | Cost (Spider credits) |
 |---|---|---|
@@ -699,29 +801,7 @@ Set `webSearchEnabled: true` on the enrichment config to give the model two tool
 
 **Negative control** — when `webSearchEnabled: false`, `webSearchCalls` is `0` (or absent) and the model self-reports inability to fetch live data rather than hallucinating.
 
-**Example end-to-end** — find a recent news article:
-```bash
-# 1. Create config with web search ON
-curl -X POST https://dataflow-pi.vercel.app/api/enrichment \
-  -H "Authorization: Bearer $DATAFLOW_API_KEY" -H "Content-Type: application/json" \
-  -d '{
-    "name": "Latest News",
-    "model": "gpt-5-mini",
-    "prompt": "Search the web for the most recent news article about {{Topic}}. Return the EXACT headline and EXACT source URL.",
-    "inputColumns": ["TOPIC_COL_ID"],
-    "outputColumns": ["headline", "source_url"],
-    "temperature": 0.1,
-    "webSearchEnabled": true
-  }'
-
-# 2. Run on the row(s)
-curl -X POST https://dataflow-pi.vercel.app/api/enrichment/run \
-  -H "Authorization: Bearer $DATAFLOW_API_KEY" -H "Content-Type: application/json" \
-  -d '{"configId":"...","tableId":"...","targetColumnId":"...","rowIds":["..."]}'
-
-# 3. Inspect metadata
-# webSearchCalls > 0 confirms a real fetch, not training-data answer.
-```
+**Example end-to-end** — see §6.1 for the canonical `setup-and-run` worked example. `webSearchCalls > 0` in the per-cell metadata confirms a real fetch (not a training-data answer).
 
 ---
 
