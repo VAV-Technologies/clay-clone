@@ -60,6 +60,7 @@ function ProjectContent() {
 
   // Delete modal state
   const [deleteTarget, setDeleteTarget] = useState<WorkbookRow | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -147,23 +148,34 @@ function ProjectContent() {
   };
 
   const handleDeleteWorkbook = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || isDeleting) return;
+
+    const target = deleteTarget;
+    setIsDeleting(true);
+
+    // Optimistically remove from the list so the UI feels instant
+    setWorkbooks((prev) => prev.filter((w) => w.id !== target.id));
 
     try {
-      const response = await fetch(`/api/projects/${deleteTarget.id}`, {
+      const response = await fetch(`/api/projects/${target.id}`, {
         method: 'DELETE',
       });
 
       if (response.ok) {
-        toast.success('Workbook deleted', `"${deleteTarget.name}" has been deleted`);
+        toast.success('Workbook deleted', `"${target.name}" has been deleted`);
         setDeleteTarget(null);
         fetchAll();
       } else {
+        // Roll back the optimistic removal
+        setWorkbooks((prev) => [...prev, target]);
         const data = await response.json().catch(() => ({}));
         toast.error('Error', data.error || 'Failed to delete workbook');
       }
     } catch (error) {
+      setWorkbooks((prev) => [...prev, target]);
       toast.error('Error', 'Failed to delete workbook');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -516,7 +528,7 @@ function ProjectContent() {
       {/* Delete Confirmation Modal */}
       <Modal
         isOpen={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
+        onClose={() => { if (!isDeleting) setDeleteTarget(null); }}
         title="Delete Workbook"
       >
         <div className="space-y-4">
@@ -527,12 +539,14 @@ function ProjectContent() {
             <GlassButton
               variant="ghost"
               onClick={() => setDeleteTarget(null)}
+              disabled={isDeleting}
             >
               Cancel
             </GlassButton>
             <GlassButton
               variant="primary"
               onClick={handleDeleteWorkbook}
+              loading={isDeleting}
               className="!bg-red-500/20 !border-red-500/30 hover:!bg-red-500/30"
             >
               Delete

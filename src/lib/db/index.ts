@@ -19,6 +19,17 @@ if (TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
   });
   db = drizzleLibsql(libsqlClient, { schema });
   console.log('Connected to Turso database');
+
+  // Ensure FK indexes exist on Turso. Without these, cascade deletes
+  // fall back to full-table scans (a workbook delete on a 100k-row
+  // database took 25s before this was added). IF NOT EXISTS makes
+  // these no-ops on warm starts.
+  void Promise.all([
+    libsqlClient.execute('CREATE INDEX IF NOT EXISTS idx_rows_table ON rows(table_id)'),
+    libsqlClient.execute('CREATE INDEX IF NOT EXISTS idx_columns_table ON columns(table_id)'),
+    libsqlClient.execute('CREATE INDEX IF NOT EXISTS idx_tables_project ON tables(project_id)'),
+    libsqlClient.execute('CREATE INDEX IF NOT EXISTS idx_projects_parent ON projects(parent_id)'),
+  ]).catch((err) => console.error('Failed to ensure indexes:', err));
 } else {
   // Development: Use local SQLite
   const sqlite = new Database('dataflow.db');
