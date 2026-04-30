@@ -54,6 +54,12 @@ export async function GET(request: NextRequest) {
         .from(schema.columns)
         .where(eq(schema.columns.tableId, tableId));
 
+      // Validate filter/sort columnIds against this table's columns BEFORE
+      // calling into filter-utils. Doing this inline (not in filter-utils) so
+      // the validation lives in the same bundle as the route handler and
+      // can't be skipped by stale chunk caching.
+      const validColumnIds = new Set(columns.map((c) => c.id));
+
       // Apply filters
       if (filtersParam) {
         let filters: Filter[];
@@ -61,6 +67,19 @@ export async function GET(request: NextRequest) {
           filters = JSON.parse(filtersParam);
         } catch {
           return NextResponse.json({ error: 'Invalid filters JSON' }, { status: 400 });
+        }
+        const invalidFilterCols = Array.from(
+          new Set(filters.map((f) => f.columnId).filter((id) => !validColumnIds.has(id)))
+        );
+        if (invalidFilterCols.length > 0) {
+          return NextResponse.json(
+            {
+              error: 'Filter references columnId(s) that do not belong to this table. Column IDs are scoped per-table — fetch GET /api/columns?tableId=... for the sheet you are filtering.',
+              invalidColumnIds: invalidFilterCols,
+              tableId,
+            },
+            { status: 400 }
+          );
         }
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -82,6 +101,16 @@ export async function GET(request: NextRequest) {
 
       // Apply sorting
       if (sortBy) {
+        if (!validColumnIds.has(sortBy)) {
+          return NextResponse.json(
+            {
+              error: 'sortBy references a columnId that does not belong to this table. Column IDs are scoped per-table — fetch GET /api/columns?tableId=... for the sheet you are sorting.',
+              invalidColumnIds: [sortBy],
+              tableId,
+            },
+            { status: 400 }
+          );
+        }
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           rows = sortRows(rows as any, sortBy, sortOrder, columns) as unknown as typeof rows;
@@ -109,7 +138,6 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.json(rows);
     response.headers.set('X-Total-Count', String(totalCount));
     response.headers.set('X-Filtered-Count', String(filteredCount));
-    response.headers.set('X-DataFlow-Filter-Validation', 'v2');
     return response;
   } catch (error) {
     console.error('Error fetching rows:', error);
