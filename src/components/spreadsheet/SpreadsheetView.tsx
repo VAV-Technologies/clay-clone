@@ -70,13 +70,6 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const actionsButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Live clock displayed next to the add-row button
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(interval);
-  }, []);
-
   const {
     currentTable,
     columns,
@@ -632,9 +625,9 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
             })}
           </div>
 
-          {/* Add row button + live clock */}
+          {/* Add row button */}
           <div
-            className="flex items-center gap-3 h-9 border-t border-white/10"
+            className="flex items-center h-9 border-t border-white/10"
             style={{ paddingLeft: CHECKBOX_WIDTH + ROW_NUMBER_WIDTH }}
           >
             <button
@@ -644,16 +637,6 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
               <Plus className="w-4 h-4" />
               Add row
             </button>
-            <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-white/40 font-mono tabular-nums">
-              <Clock className="w-3 h-3" />
-              <span>
-                {now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-              </span>
-              <span className="text-white/20">·</span>
-              <span>
-                {now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
-              </span>
-            </div>
           </div>
         </div>
       </div>
