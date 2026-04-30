@@ -96,17 +96,19 @@ export async function spiderSearch(opts: {
   if (country) body.country = country;
   if (language) body.language = language;
 
-  const data = await spiderPost<{ results?: SpiderSearchResult[] } & Record<string, unknown>>(
-    '/search',
-    body,
-  );
+  const data = await spiderPost<Record<string, unknown>>('/search', body);
 
-  // Spider returns either {results: [...]} or a flat array depending on params.
-  const results: SpiderSearchResult[] = Array.isArray((data as { results?: unknown }).results)
-    ? ((data as { results: SpiderSearchResult[] }).results)
-    : Array.isArray(data)
-      ? (data as unknown as SpiderSearchResult[])
-      : [];
+  // Spider's /search response uses `content` for the SERP array. Older docs
+  // showed `results`. Some shapes also return a flat array. Cover all three.
+  const content = (data as { content?: unknown }).content;
+  const resultsField = (data as { results?: unknown }).results;
+  const results: SpiderSearchResult[] = Array.isArray(content)
+    ? (content as SpiderSearchResult[])
+    : Array.isArray(resultsField)
+      ? (resultsField as SpiderSearchResult[])
+      : Array.isArray(data)
+        ? (data as unknown as SpiderSearchResult[])
+        : [];
 
   const costUsd = extractCostUsd(data, results.length);
 
