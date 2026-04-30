@@ -109,6 +109,7 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.json(rows);
     response.headers.set('X-Total-Count', String(totalCount));
     response.headers.set('X-Filtered-Count', String(filteredCount));
+    response.headers.set('X-DataFlow-Filter-Validation', 'v2');
     return response;
   } catch (error) {
     console.error('Error fetching rows:', error);
