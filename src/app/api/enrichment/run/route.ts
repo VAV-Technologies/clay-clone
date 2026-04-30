@@ -7,9 +7,12 @@ import { callAI as callUnifiedAI, getModelPricing, getProviderRateLimits } from 
 import { WEB_SEARCH_TOOLS, dispatchToolCall, WEB_SEARCH_SYSTEM_HINT } from '@/lib/enrichment-tools';
 
 // Vercel function config - extend timeout for AI calls
-export const maxDuration = 60;
+export const maxDuration = 120;
 
-const AI_TIMEOUT_MS = 30000; // 30 second timeout per AI call
+// Without tools: 30s. With web-search tool calls (Spider round-trips +
+// multiple model rounds), bump to 90s.
+const AI_TIMEOUT_MS_NO_TOOLS = 30000;
+const AI_TIMEOUT_MS_WITH_TOOLS = 90000;
 
 // Timeout wrapper for promises
 function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> {
@@ -162,6 +165,7 @@ export async function POST(request: NextRequest) {
         // web search enabled, pass Spider.Cloud tools and a hint so the model
         // can research live data before answering.
         const webSearchEnabled = !!config.webSearchEnabled;
+        const aiTimeout = webSearchEnabled ? AI_TIMEOUT_MS_WITH_TOOLS : AI_TIMEOUT_MS_NO_TOOLS;
         const aiResult = await withTimeout(
           callUnifiedAI(prompt, modelId, {
             temperature: config.temperature ?? 0.7,
@@ -170,8 +174,8 @@ export async function POST(request: NextRequest) {
             toolDispatcher: webSearchEnabled ? dispatchToolCall : undefined,
             systemHint: webSearchEnabled ? WEB_SEARCH_SYSTEM_HINT : undefined,
           }),
-          AI_TIMEOUT_MS,
-          'AI request timed out after 30 seconds'
+          aiTimeout,
+          `AI request timed out after ${aiTimeout / 1000} seconds`
         );
 
         // Calculate cost — model tokens + Spider tool spend folded into one number

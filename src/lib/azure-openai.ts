@@ -133,9 +133,10 @@ export interface AzureAIResult {
 // Hard ceiling on tool-call rounds per generation. Keeps costs bounded and
 // prevents runaway loops if the model keeps requesting tools.
 const MAX_TOOL_ROUNDS = 4;
-// Soft time budget for the whole tool-call loop. The outer caller wraps this
-// with a 30s hard timeout; we stop dispatching new tool calls past this mark.
-const SOFT_TIME_BUDGET_MS = 25000;
+// Soft time budget for the whole tool-call loop. The outer caller wraps with
+// a 90s hard timeout when tools are enabled; we stop dispatching new tool
+// calls past this soft mark to leave headroom for the final answer.
+const SOFT_TIME_BUDGET_MS = 75000;
 
 export async function generateContent(
   modelId: string,
@@ -219,9 +220,16 @@ async function generateViaChatCompletions(args: {
       requestBody.tools = config.tools!.chat;
       requestBody.tool_choice = 'auto';
     } else if (hasTools && (overBudget || round === MAX_TOOL_ROUNDS)) {
-      // Force the model to wrap up with a final answer.
+      // Wrap-up round: must include tools alongside tool_choice — Azure
+      // rejects `tool_choice` when `tools` is missing.
+      requestBody.tools = config.tools!.chat;
       requestBody.tool_choice = 'none';
     }
+
+    console.log(
+      `[azure] chat req — model=${modelId}, round=${round}, hasTools=${hasTools}, ` +
+      `bodyKeys=${Object.keys(requestBody).join(',')}, msgCount=${messages.length}`
+    );
 
     const response = await fetch(url, {
       method: 'POST',
@@ -233,6 +241,7 @@ async function generateViaChatCompletions(args: {
       const errorData = await response.json().catch(() => ({}));
       const errorMessage = (errorData as { error?: { message?: string } }).error?.message
         || `Azure OpenAI error: ${response.status}`;
+      console.error(`[azure] chat error — model=${modelId}, round=${round}, status=${response.status}, msg=${errorMessage}`);
       throw new Error(errorMessage);
     }
 
@@ -369,8 +378,15 @@ async function generateViaResponsesApi(args: {
       requestBody.tools = config.tools!.responses;
       requestBody.tool_choice = 'auto';
     } else if (hasTools && (overBudget || round === MAX_TOOL_ROUNDS)) {
+      // Wrap-up round must keep tools alongside tool_choice.
+      requestBody.tools = config.tools!.responses;
       requestBody.tool_choice = 'none';
     }
+
+    console.log(
+      `[azure] responses req — model=${modelId}, round=${round}, hasTools=${hasTools}, ` +
+      `bodyKeys=${Object.keys(requestBody).join(',')}, inputLen=${input.length}`
+    );
 
     const response = await fetch(url, {
       method: 'POST',
@@ -382,6 +398,7 @@ async function generateViaResponsesApi(args: {
       const errorData = await response.json().catch(() => ({}));
       const errorMessage = (errorData as { error?: { message?: string } }).error?.message
         || `Azure OpenAI error: ${response.status}`;
+      console.error(`[azure] responses error — model=${modelId}, round=${round}, status=${response.status}, msg=${errorMessage}`);
       throw new Error(errorMessage);
     }
 
