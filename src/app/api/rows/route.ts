@@ -38,10 +38,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // VERSION MARKER 6ef9280-inline-validation - if this string is in the
-    // deployed lambda the new validation should run. Remove after verifying.
-    const __VERSION_MARKER__ = '6ef9280-inline-validation';
-
     // Fetch all rows for the table
     let rows = await db
       .select()
@@ -142,7 +138,6 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.json(rows);
     response.headers.set('X-Total-Count', String(totalCount));
     response.headers.set('X-Filtered-Count', String(filteredCount));
-    response.headers.set('X-DataFlow-Version', __VERSION_MARKER__);
     return response;
   } catch (error) {
     console.error('Error fetching rows:', error);
