@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Database, Plus, Check, Loader2, Clock, Coins, Zap } from 'lucide-react';
+import { X, Database, Plus, Check, Loader2, Clock, Coins, Zap, Globe } from 'lucide-react';
 import { GlassButton, Modal } from '@/components/ui';
 
 interface CellMetadata {
@@ -10,6 +10,8 @@ interface CellMetadata {
   timeTakenMs: number;
   totalCost: number;
   forcedToFinishEarly?: boolean;
+  webSearchCalls?: number;
+  webSearchCost?: number;
 }
 
 interface EnrichmentDataViewerProps {
@@ -143,6 +145,26 @@ export function EnrichmentDataViewer({
                 </div>
                 <div className="text-sm text-white font-medium">${metadata.totalCost.toFixed(6)}</div>
               </div>
+
+              {/* Web Search tiles — only when this row used the Spider tool */}
+              {(metadata.webSearchCalls ?? 0) > 0 && (
+                <>
+                  <div className="p-3 rounded-lg bg-lavender/10 border border-lavender/30">
+                    <div className="flex items-center gap-1 text-xs text-lavender mb-1">
+                      <Globe className="w-3 h-3" />
+                      Web Searches
+                    </div>
+                    <div className="text-sm text-white font-medium">{metadata.webSearchCalls}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-lavender/10 border border-lavender/30">
+                    <div className="flex items-center gap-1 text-xs text-lavender mb-1">
+                      <Coins className="w-3 h-3" />
+                      Search Cost
+                    </div>
+                    <div className="text-sm text-white font-medium">${(metadata.webSearchCost ?? 0).toFixed(6)}</div>
+                  </div>
+                </>
+              )}
 
               {/* Forced To Finish Early - only show if true */}
               {metadata.forcedToFinishEarly && (

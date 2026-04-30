@@ -36,6 +36,8 @@ interface CellMetadata {
   timeTakenMs: number;
   totalCost: number;
   forcedToFinishEarly?: boolean;
+  webSearchCalls?: number;
+  webSearchCost?: number;
 }
 
 interface EnrichmentDataState {
