@@ -125,3 +125,44 @@ select option:checked {
   background: rgba(147, 147, 255, 0.3);
   color: white;
 }
+
+/* Global site background — grainy gradient. Mounted once in RootLayout. */
+.site-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  overflow: hidden;
+  pointer-events: none;
+  background: #08081f;
+}
+
+.site-bg-blobs {
+  position: absolute;
+  inset: -10%;
+  background:
+    radial-gradient(ellipse 60% 50% at 18% 28%, rgba(147, 147, 255, 0.55), transparent 62%),
+    radial-gradient(ellipse 55% 45% at 82% 22%, rgba(124, 58, 237, 0.45), transparent 62%),
+    radial-gradient(ellipse 65% 55% at 62% 88%, rgba(59, 130, 246, 0.40), transparent 65%),
+    radial-gradient(ellipse 50% 40% at 30% 80%, rgba(99, 102, 241, 0.35), transparent 60%),
+    linear-gradient(135deg, #0d0d39, #16164d 40%, #1a1a5e 70%, #0a0a24);
+  animation: site-bg-drift 90s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.site-bg-grain {
+  position: absolute;
+  inset: 0;
+  filter: url(#site-noise);
+  opacity: 0.30;
+  mix-blend-mode: overlay;
+}
+
+@keyframes site-bg-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(-2%, 1.5%, 0) scale(1.04); }
+  100% { transform: translate3d(2%, -1%, 0) scale(1.02); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-bg-blobs { animation: none; }
+}
