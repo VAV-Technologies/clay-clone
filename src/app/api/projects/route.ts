@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, isNull } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
+import { MAX_FOLDER_DEPTH, getDepth } from '@/lib/db/folderTree';
 
 export const maxDuration = 60;
 
@@ -71,11 +72,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Name and type are required' }, { status: 400 });
     }
 
+    const resolvedParentId: string | null = parentId || null;
+    if (resolvedParentId !== null) {
+      const [parent] = await db
+        .select()
+        .from(schema.projects)
+        .where(eq(schema.projects.id, resolvedParentId));
+      if (!parent) {
+        return NextResponse.json({ error: 'parentNotFound' }, { status: 400 });
+      }
+      if (parent.type !== 'folder') {
+        return NextResponse.json({ error: 'parentNotFolder' }, { status: 400 });
+      }
+      const parentDepth = await getDepth(resolvedParentId);
+      if (parentDepth + 1 > MAX_FOLDER_DEPTH) {
+        return NextResponse.json({ error: 'maxDepthExceeded', maxDepth: MAX_FOLDER_DEPTH }, { status: 400 });
+      }
+    }
+
     const now = new Date();
     const project = {
       id: generateId(),
       name,
-      parentId: parentId || null,
+      parentId: resolvedParentId,
       type: type as 'folder' | 'workbook' | 'table',
       createdAt: now,
       updatedAt: now,

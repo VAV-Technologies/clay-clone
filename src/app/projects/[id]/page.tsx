@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { Plus, FileSpreadsheet, MoreHorizontal, Trash2, ArrowLeft, Pencil, FolderInput, ChevronRight } from 'lucide-react';
+import { Plus, FileSpreadsheet, MoreHorizontal, Trash2, ArrowLeft, Pencil, FolderInput, ChevronRight, Folder } from 'lucide-react';
 import {
   GlassButton,
   GlassInput,
@@ -27,12 +27,15 @@ interface FolderHeader {
   type: 'folder' | 'workbook' | 'table';
 }
 
-interface WorkbookRow {
+interface ChildRow {
   id: string;
   name: string;
+  type: 'folder' | 'workbook' | 'table';
   parentId: string | null;
   updatedAt: string | Date;
 }
+
+type CreateKind = 'folder' | 'workbook';
 
 function ProjectContent() {
   const params = useParams();
@@ -41,17 +44,17 @@ function ProjectContent() {
   const folderId = params.id as string;
 
   const [folder, setFolder] = useState<FolderHeader | null>(null);
-  const [workbooks, setWorkbooks] = useState<WorkbookRow[]>([]);
+  const [children, setChildren] = useState<ChildRow[]>([]);
   const [allProjects, setAllProjects] = useState<ProjectWithChildren[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newWorkbookName, setNewWorkbookName] = useState('');
+  const [createKind, setCreateKind] = useState<CreateKind | null>(null);
+  const [newName, setNewName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   // Rename modal state
-  const [renameTarget, setRenameTarget] = useState<WorkbookRow | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ChildRow | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
 
@@ -59,7 +62,7 @@ function ProjectContent() {
   const [movePickerTarget, setMovePickerTarget] = useState<MovePickerTarget | null>(null);
 
   // Delete modal state
-  const [deleteTarget, setDeleteTarget] = useState<WorkbookRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ChildRow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchAll = useCallback(async () => {
@@ -75,18 +78,24 @@ function ProjectContent() {
       const node = findInTree(tree, folderId);
       if (!node) {
         setFolder(null);
-        setWorkbooks([]);
+        setChildren([]);
       } else {
         setFolder({ id: node.id, name: node.name, type: node.type as FolderHeader['type'] });
-        const children = (node.children ?? [])
-          .filter((c) => c.type === 'workbook')
-          .map<WorkbookRow>((c) => ({
+        const rows = (node.children ?? [])
+          .filter((c) => c.type === 'folder' || c.type === 'workbook')
+          .map<ChildRow>((c) => ({
             id: c.id,
             name: c.name,
+            type: c.type as 'folder' | 'workbook',
             parentId: c.parentId ?? null,
             updatedAt: c.updatedAt,
           }));
-        setWorkbooks(children);
+        // Folders first, then workbooks
+        rows.sort((a, b) => {
+          if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+        setChildren(rows);
       }
     } catch (error) {
       console.error('Failed to fetch project:', error);
@@ -107,73 +116,94 @@ function ProjectContent() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, [openMenuId]);
 
-  const handleCreateWorkbook = async () => {
-    if (!newWorkbookName.trim()) return;
+  const ancestors = useMemo(() => {
+    if (!folder) return [];
+    return getAncestorChain(allProjects, folder.id);
+  }, [allProjects, folder]);
+
+  const folderCount = children.filter((c) => c.type === 'folder').length;
+  const workbookCount = children.filter((c) => c.type === 'workbook').length;
+
+  const handleCreate = async () => {
+    if (!createKind) return;
+    const name = newName.trim();
+    if (!name) return;
 
     setIsCreating(true);
     try {
-      const projectRes = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newWorkbookName.trim(),
-          type: 'workbook',
-          parentId: folderId,
-        }),
-      });
-
-      if (!projectRes.ok) {
-        toast.error('Error', 'Failed to create workbook');
-        return;
+      if (createKind === 'folder') {
+        const res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, type: 'folder', parentId: folderId }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (data.error === 'maxDepthExceeded') {
+            toast.error('Too deep', `Folders can be nested up to ${data.maxDepth} levels`);
+          } else {
+            toast.error('Error', 'Failed to create folder');
+          }
+          return;
+        }
+        toast.success('Folder created', `"${name}" has been created`);
+        setNewName('');
+        setCreateKind(null);
+        fetchAll();
+      } else {
+        const projectRes = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, type: 'workbook', parentId: folderId }),
+        });
+        if (!projectRes.ok) {
+          toast.error('Error', 'Failed to create workbook');
+          return;
+        }
+        const workbook = await projectRes.json();
+        await fetch('/api/tables', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId: workbook.id, name: 'Sheet 1' }),
+        });
+        toast.success('Workbook created', `"${workbook.name}" has been created`);
+        setNewName('');
+        setCreateKind(null);
+        router.push(`/workbook/${workbook.id}`);
       }
-
-      const workbook = await projectRes.json();
-
-      // Create the first sheet inside the workbook
-      await fetch('/api/tables', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: workbook.id, name: 'Sheet 1' }),
-      });
-
-      toast.success('Workbook created', `"${workbook.name}" has been created`);
-      setNewWorkbookName('');
-      setIsCreateModalOpen(false);
-      router.push(`/workbook/${workbook.id}`);
     } catch (error) {
-      toast.error('Error', 'Failed to create workbook');
+      toast.error('Error', createKind === 'folder' ? 'Failed to create folder' : 'Failed to create workbook');
     } finally {
       setIsCreating(false);
     }
   };
 
-  const handleDeleteWorkbook = async () => {
+  const handleDelete = async () => {
     if (!deleteTarget || isDeleting) return;
 
     const target = deleteTarget;
     setIsDeleting(true);
 
-    // Optimistically remove from the list so the UI feels instant
-    setWorkbooks((prev) => prev.filter((w) => w.id !== target.id));
+    setChildren((prev) => prev.filter((c) => c.id !== target.id));
 
     try {
-      const response = await fetch(`/api/projects/${target.id}`, {
-        method: 'DELETE',
-      });
+      const response = await fetch(`/api/projects/${target.id}`, { method: 'DELETE' });
 
       if (response.ok) {
-        toast.success('Workbook deleted', `"${target.name}" has been deleted`);
+        toast.success(
+          target.type === 'folder' ? 'Folder deleted' : 'Workbook deleted',
+          `"${target.name}" has been deleted`
+        );
         setDeleteTarget(null);
         fetchAll();
       } else {
-        // Roll back the optimistic removal
-        setWorkbooks((prev) => [...prev, target]);
+        setChildren((prev) => [...prev, target]);
         const data = await response.json().catch(() => ({}));
-        toast.error('Error', data.error || 'Failed to delete workbook');
+        toast.error('Error', data.error || 'Failed to delete');
       }
     } catch (error) {
-      setWorkbooks((prev) => [...prev, target]);
-      toast.error('Error', 'Failed to delete workbook');
+      setChildren((prev) => [...prev, target]);
+      toast.error('Error', 'Failed to delete');
     } finally {
       setIsDeleting(false);
     }
@@ -196,7 +226,7 @@ function ProjectContent() {
       });
 
       if (response.ok) {
-        toast.success('Workbook renamed', `Renamed to "${trimmed}"`);
+        toast.success('Renamed', `Renamed to "${trimmed}"`);
         setRenameTarget(null);
         fetchAll();
       } else {
@@ -226,10 +256,18 @@ function ProjectContent() {
       });
       if (response.ok) {
         toast.success(destinationId ? 'Moved to folder' : 'Moved to root');
-        // Refetch — workbook may now live elsewhere
         fetchAll();
       } else {
-        toast.error('Error', 'Failed to move');
+        const data = await response.json().catch(() => ({}));
+        if (data.error === 'maxDepthExceeded') {
+          toast.error('Too deep', `Folders can be nested up to ${data.maxDepth} levels`);
+        } else if (data.error === 'wouldCreateCycle') {
+          toast.error('Invalid move', 'A folder cannot be moved into one of its descendants');
+        } else if (data.error === 'parentNotFolder') {
+          toast.error('Invalid destination', 'Destination must be a folder');
+        } else {
+          toast.error('Error', 'Failed to move');
+        }
       }
     } catch (error) {
       toast.error('Error', 'Failed to move');
@@ -238,26 +276,34 @@ function ProjectContent() {
     }
   };
 
-  const openRename = (workbook: WorkbookRow) => {
-    setRenameTarget(workbook);
-    setRenameValue(workbook.name);
+  const openRename = (row: ChildRow) => {
+    setRenameTarget(row);
+    setRenameValue(row.name);
     setOpenMenuId(null);
   };
 
-  const openMove = (workbook: WorkbookRow) => {
+  const openMove = (row: ChildRow) => {
     setMovePickerTarget({
       kind: 'project',
-      id: workbook.id,
-      name: workbook.name,
-      type: 'workbook',
-      currentParentId: workbook.parentId,
+      id: row.id,
+      name: row.name,
+      type: row.type === 'folder' ? 'folder' : 'workbook',
+      currentParentId: row.parentId,
     });
     setOpenMenuId(null);
   };
 
-  const openDelete = (workbook: WorkbookRow) => {
-    setDeleteTarget(workbook);
+  const openDelete = (row: ChildRow) => {
+    setDeleteTarget(row);
     setOpenMenuId(null);
+  };
+
+  const handleOpen = (row: ChildRow) => {
+    if (row.type === 'folder') {
+      router.push(`/projects/${row.id}`);
+    } else {
+      router.push(`/workbook/${row.id}`);
+    }
   };
 
   if (isLoading) {
@@ -285,16 +331,36 @@ function ProjectContent() {
       {/* Header */}
       <header className="relative z-10 border-b border-white/10 bg-midnight/50 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 min-w-0 flex-1">
             <button
               onClick={() => router.push('/')}
-              className="flex items-center gap-2 text-white/70 hover:text-white transition-colors"
+              className="flex items-center gap-2 text-white/70 hover:text-white transition-colors shrink-0"
             >
               <ArrowLeft className="w-4 h-4" />
               <span className="text-sm">Back</span>
             </button>
-            <div className="w-px h-5 bg-white/20" />
-            <h1 className="text-lg font-semibold text-white">{folder.name}</h1>
+            <div className="w-px h-5 bg-white/20 shrink-0" />
+            <nav className="flex items-center gap-1 text-sm text-white/50 min-w-0 overflow-hidden">
+              <button
+                onClick={() => router.push('/')}
+                className="hover:text-white/80 transition-colors shrink-0"
+              >
+                Root
+              </button>
+              {ancestors.slice(0, -1).map((a) => (
+                <span key={a.id} className="flex items-center gap-1 min-w-0">
+                  <ChevronRight className="w-3 h-3 text-white/30 shrink-0" />
+                  <button
+                    onClick={() => router.push(`/projects/${a.id}`)}
+                    className="hover:text-white/80 transition-colors truncate max-w-[12rem]"
+                  >
+                    {a.name}
+                  </button>
+                </span>
+              ))}
+              <ChevronRight className="w-3 h-3 text-white/30 shrink-0" />
+              <h1 className="text-lg font-semibold text-white truncate">{folder.name}</h1>
+            </nav>
           </div>
         </div>
       </header>
@@ -302,18 +368,27 @@ function ProjectContent() {
       {/* Main Content - Centered */}
       <main className="relative z-10 max-w-4xl mx-auto px-6 py-8">
         {/* Action Bar */}
-        <div className="flex items-center justify-between mb-6">
-          <p className="text-white/50">
-            {workbooks.length} {workbooks.length === 1 ? 'workbook' : 'workbooks'}
+        <div className="flex items-center justify-between mb-6 gap-3">
+          <p className="text-white/50 text-sm">
+            {folderCount > 0 && `${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}`}
+            {folderCount > 0 && workbookCount > 0 && ' · '}
+            {workbookCount > 0 && `${workbookCount} ${workbookCount === 1 ? 'workbook' : 'workbooks'}`}
+            {folderCount === 0 && workbookCount === 0 && 'Empty'}
           </p>
-          <GlassButton variant="primary" onClick={() => setIsCreateModalOpen(true)}>
-            <Plus className="w-4 h-4 mr-1" />
-            New Workbook
-          </GlassButton>
+          <div className="flex items-center gap-2">
+            <GlassButton variant="ghost" onClick={() => { setNewName(''); setCreateKind('folder'); }}>
+              <Folder className="w-4 h-4 mr-1" />
+              New Folder
+            </GlassButton>
+            <GlassButton variant="primary" onClick={() => { setNewName(''); setCreateKind('workbook'); }}>
+              <Plus className="w-4 h-4 mr-1" />
+              New Workbook
+            </GlassButton>
+          </div>
         </div>
 
-        {/* Workbooks List - Row Layout */}
-        {workbooks.length > 0 ? (
+        {/* Children List - Row Layout */}
+        {children.length > 0 ? (
           <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 rounded-xl">
             {/* Table Header */}
             <div className="flex items-center px-4 py-3 border-b border-white/10 bg-white/[0.02] rounded-t-xl">
@@ -322,48 +397,52 @@ function ProjectContent() {
               <div className="w-10"></div>
             </div>
 
-            {/* Workbook Rows */}
+            {/* Rows */}
             <div className="divide-y divide-white/[0.05]">
-              {workbooks.map((workbook) => (
+              {children.map((row) => (
                 <div
-                  key={workbook.id}
+                  key={row.id}
                   className="flex items-center px-4 py-3 hover:bg-white/[0.03] transition-colors group"
                 >
                   {/* Clickable content area */}
                   <div
                     className="flex items-center gap-3 flex-1 cursor-pointer min-w-0"
-                    onClick={() => router.push(`/workbook/${workbook.id}`)}
+                    onClick={() => handleOpen(row)}
                   >
-                    <div className="w-9 h-9 rounded-lg bg-lavender/20 flex items-center justify-center flex-shrink-0">
-                      <FileSpreadsheet className="w-4 h-4 text-lavender" />
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${row.type === 'folder' ? 'bg-amber-400/15' : 'bg-lavender/20'}`}>
+                      {row.type === 'folder' ? (
+                        <Folder className="w-4 h-4 text-amber-300" />
+                      ) : (
+                        <FileSpreadsheet className="w-4 h-4 text-lavender" />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-medium text-white truncate">{workbook.name}</h3>
+                      <h3 className="font-medium text-white truncate">{row.name}</h3>
                     </div>
                     <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/40 transition-colors flex-shrink-0 hidden sm:block" />
                   </div>
 
                   {/* Modified date */}
                   <div className="w-32 text-sm text-white/40 hidden sm:block">
-                    {new Date(workbook.updatedAt).toLocaleDateString()}
+                    {new Date(row.updatedAt).toLocaleDateString()}
                   </div>
 
                   {/* Menu button */}
                   <div className="w-10 flex justify-end">
                     <button
                       type="button"
-                      ref={(el) => { menuBtnRefs.current[workbook.id] = el; }}
+                      ref={(el) => { menuBtnRefs.current[row.id] = el; }}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setOpenMenuId(openMenuId === workbook.id ? null : workbook.id);
+                        setOpenMenuId(openMenuId === row.id ? null : row.id);
                       }}
                       className="p-1.5 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100"
                     >
                       <MoreHorizontal className="w-4 h-4 text-white/50" />
                     </button>
 
-                    {openMenuId === workbook.id && createPortal(
+                    {openMenuId === row.id && createPortal(
                       <>
                         <div
                           className="fixed inset-0 z-[99]"
@@ -375,8 +454,8 @@ function ProjectContent() {
                         <div
                           className="fixed z-[100] min-w-[160px] py-1 bg-midnight-100 border border-white/10 rounded-xl shadow-xl"
                           style={{
-                            top: (menuBtnRefs.current[workbook.id]?.getBoundingClientRect().bottom ?? 0) + 4,
-                            right: window.innerWidth - (menuBtnRefs.current[workbook.id]?.getBoundingClientRect().right ?? 0),
+                            top: (menuBtnRefs.current[row.id]?.getBoundingClientRect().bottom ?? 0) + 4,
+                            right: window.innerWidth - (menuBtnRefs.current[row.id]?.getBoundingClientRect().right ?? 0),
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >
@@ -385,7 +464,7 @@ function ProjectContent() {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              openRename(workbook);
+                              openRename(row);
                             }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/80 hover:bg-white/5 transition-colors"
                           >
@@ -397,7 +476,7 @@ function ProjectContent() {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              openMove(workbook);
+                              openMove(row);
                             }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/80 hover:bg-white/5 transition-colors"
                           >
@@ -410,7 +489,7 @@ function ProjectContent() {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              openDelete(workbook);
+                              openDelete(row);
                             }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
                           >
@@ -432,77 +511,73 @@ function ProjectContent() {
               <FileSpreadsheet className="w-8 h-8 text-white/20" />
             </div>
             <h3 className="text-lg font-medium text-white mb-1">
-              No workbooks yet
+              Nothing in this folder yet
             </h3>
             <p className="text-white/50 mb-4">
-              Create your first workbook to start organizing your data
+              Create a sub-folder or a workbook to get started
             </p>
-            <GlassButton variant="primary" onClick={() => setIsCreateModalOpen(true)}>
-              <Plus className="w-4 h-4 mr-1" />
-              Create Workbook
-            </GlassButton>
+            <div className="flex items-center justify-center gap-2">
+              <GlassButton variant="ghost" onClick={() => { setNewName(''); setCreateKind('folder'); }}>
+                <Folder className="w-4 h-4 mr-1" />
+                New Folder
+              </GlassButton>
+              <GlassButton variant="primary" onClick={() => { setNewName(''); setCreateKind('workbook'); }}>
+                <Plus className="w-4 h-4 mr-1" />
+                New Workbook
+              </GlassButton>
+            </div>
           </div>
         )}
       </main>
 
-      {/* Create Workbook Modal */}
+      {/* Create Modal — handles folder + workbook */}
       <Modal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        title="Create New Workbook"
+        isOpen={!!createKind}
+        onClose={() => { if (!isCreating) { setCreateKind(null); setNewName(''); } }}
+        title={createKind === 'folder' ? 'Create New Folder' : 'Create New Workbook'}
       >
         <div className="space-y-4">
           <GlassInput
-            label="Workbook Name"
-            placeholder="e.g., Leads, Contacts, Companies"
-            value={newWorkbookName}
-            onChange={(e) => setNewWorkbookName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleCreateWorkbook();
-            }}
+            label={createKind === 'folder' ? 'Folder Name' : 'Workbook Name'}
+            placeholder={createKind === 'folder' ? 'e.g., Outreach, Research' : 'e.g., Leads, Contacts, Companies'}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
             autoFocus
           />
           <div className="flex justify-end gap-2">
-            <GlassButton
-              variant="ghost"
-              onClick={() => setIsCreateModalOpen(false)}
-            >
+            <GlassButton variant="ghost" onClick={() => { setCreateKind(null); setNewName(''); }}>
               Cancel
             </GlassButton>
             <GlassButton
               variant="primary"
-              onClick={handleCreateWorkbook}
+              onClick={handleCreate}
               loading={isCreating}
-              disabled={!newWorkbookName.trim()}
+              disabled={!newName.trim()}
             >
-              Create Workbook
+              {createKind === 'folder' ? 'Create Folder' : 'Create Workbook'}
             </GlassButton>
           </div>
         </div>
       </Modal>
 
-      {/* Rename Workbook Modal */}
+      {/* Rename Modal */}
       <Modal
         isOpen={!!renameTarget}
         onClose={() => setRenameTarget(null)}
-        title="Rename Workbook"
+        title={renameTarget?.type === 'folder' ? 'Rename Folder' : 'Rename Workbook'}
       >
         <div className="space-y-4">
           <GlassInput
-            label="Workbook Name"
+            label="Name"
             placeholder="Enter new name"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleRenameSubmit();
-            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleRenameSubmit(); }}
             autoFocus
           />
           <div className="flex justify-end gap-2">
-            <GlassButton
-              variant="ghost"
-              onClick={() => setRenameTarget(null)}
-            >
+            <GlassButton variant="ghost" onClick={() => setRenameTarget(null)}>
               Cancel
             </GlassButton>
             <GlassButton
@@ -529,23 +604,22 @@ function ProjectContent() {
       <Modal
         isOpen={!!deleteTarget}
         onClose={() => { if (!isDeleting) setDeleteTarget(null); }}
-        title="Delete Workbook"
+        title={deleteTarget?.type === 'folder' ? 'Delete Folder' : 'Delete Workbook'}
       >
         <div className="space-y-4">
           <p className="text-white/70">
-            Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? All sheets in this workbook will be permanently deleted. This action cannot be undone.
+            {deleteTarget?.type === 'folder'
+              ? <>Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? All sub-folders and workbooks inside will be permanently deleted. This action cannot be undone.</>
+              : <>Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? All sheets in this workbook will be permanently deleted. This action cannot be undone.</>
+            }
           </p>
           <div className="flex justify-end gap-2">
-            <GlassButton
-              variant="ghost"
-              onClick={() => setDeleteTarget(null)}
-              disabled={isDeleting}
-            >
+            <GlassButton variant="ghost" onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
               Cancel
             </GlassButton>
             <GlassButton
               variant="primary"
-              onClick={handleDeleteWorkbook}
+              onClick={handleDelete}
               loading={isDeleting}
               className="!bg-red-500/20 !border-red-500/30 hover:!bg-red-500/30"
             >
@@ -571,6 +645,24 @@ function findInTree(
     }
   }
   return null;
+}
+
+function getAncestorChain(
+  tree: ProjectWithChildren[],
+  id: string
+): ProjectWithChildren[] {
+  const path: ProjectWithChildren[] = [];
+  const walk = (nodes: ProjectWithChildren[]): boolean => {
+    for (const node of nodes) {
+      path.push(node);
+      if (node.id === id) return true;
+      if (node.children?.length && walk(node.children)) return true;
+      path.pop();
+    }
+    return false;
+  };
+  walk(tree);
+  return path;
 }
 
 export default function ProjectPage() {

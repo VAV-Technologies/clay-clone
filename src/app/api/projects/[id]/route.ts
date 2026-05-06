@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
+import { MAX_FOLDER_DEPTH, getDepth, getSubtreeDepth, isDescendantOf } from '@/lib/db/folderTree';
 
 export const maxDuration = 60;
 
@@ -57,7 +58,33 @@ export async function PATCH(
     };
 
     if (name !== undefined) updates.name = name;
-    if (parentId !== undefined) updates.parentId = parentId;
+
+    if (parentId !== undefined) {
+      if (parentId === id) {
+        return NextResponse.json({ error: 'cannotBeOwnParent' }, { status: 400 });
+      }
+      if (parentId !== null) {
+        const [parent] = await db
+          .select()
+          .from(schema.projects)
+          .where(eq(schema.projects.id, parentId));
+        if (!parent) {
+          return NextResponse.json({ error: 'parentNotFound' }, { status: 400 });
+        }
+        if (parent.type !== 'folder') {
+          return NextResponse.json({ error: 'parentNotFolder' }, { status: 400 });
+        }
+        if (await isDescendantOf(id, parentId)) {
+          return NextResponse.json({ error: 'wouldCreateCycle' }, { status: 400 });
+        }
+        const parentDepth = await getDepth(parentId);
+        const subtreeDepth = await getSubtreeDepth(id);
+        if (parentDepth + 1 + subtreeDepth > MAX_FOLDER_DEPTH) {
+          return NextResponse.json({ error: 'maxDepthExceeded', maxDepth: MAX_FOLDER_DEPTH }, { status: 400 });
+        }
+      }
+      updates.parentId = parentId;
+    }
 
     await db
       .update(schema.projects)
