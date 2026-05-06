@@ -230,7 +230,7 @@ export function ColumnHeader({ column, tableId, onEnrichmentClick, onFormulaClic
       className={cn(
         'relative flex items-center gap-1.5 px-3 border-r border-white/10',
         'text-sm font-medium text-white/70',
-        'group select-none flex-shrink-0'
+        'group select-none flex-shrink-0 overflow-hidden'
       )}
       style={{ width: column.width || 150, minWidth: column.width || 150 }}
     >
@@ -267,9 +267,10 @@ export function ColumnHeader({ column, tableId, onEnrichmentClick, onFormulaClic
       ) : isEnrichmentColumn ? (
         // For enrichment columns: left-click shows menu, right-click opens enrichment panel
         <Dropdown
+          className="flex-1 min-w-0"
           trigger={
             <span
-              className="flex-1 min-w-0 truncate cursor-pointer text-left hover:text-white transition-colors"
+              className="block w-full truncate cursor-pointer text-left hover:text-white transition-colors"
               onContextMenu={(e) => {
                 e.preventDefault();
                 onEnrichmentClick?.(column.id);
@@ -283,9 +284,10 @@ export function ColumnHeader({ column, tableId, onEnrichmentClick, onFormulaClic
       ) : isFormulaColumn ? (
         // For formula columns: left-click shows menu, right-click opens formula panel
         <Dropdown
+          className="flex-1 min-w-0"
           trigger={
             <span
-              className="flex-1 min-w-0 truncate cursor-pointer text-left hover:text-white transition-colors"
+              className="block w-full truncate cursor-pointer text-left hover:text-white transition-colors"
               onContextMenu={(e) => {
                 e.preventDefault();
                 onFormulaClick?.(column.id);
@@ -297,7 +299,7 @@ export function ColumnHeader({ column, tableId, onEnrichmentClick, onFormulaClic
           items={menuItems}
         />
       ) : (
-        <Dropdown trigger={<span className="flex-1 min-w-0 truncate cursor-pointer text-left">{column.name}</span>} items={menuItems} />
+        <Dropdown className="flex-1 min-w-0" trigger={<span className="block w-full truncate cursor-pointer text-left">{column.name}</span>} items={menuItems} />
       )}
 
       {/* Sort indicator */}
