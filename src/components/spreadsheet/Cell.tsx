@@ -374,6 +374,9 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
     prev.row.data[prev.column.id] === next.row.data[next.column.id] &&
     prev.isEditing === next.isEditing &&
     prev.column.id === next.column.id &&
+    prev.column.width === next.column.width &&
+    prev.column.type === next.column.type &&
+    prev.column.enrichmentConfigId === next.column.enrichmentConfigId &&
     prev.row.id === next.row.id
   );
 });
