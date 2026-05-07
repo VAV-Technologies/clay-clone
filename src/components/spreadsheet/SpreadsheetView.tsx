@@ -332,9 +332,9 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full gap-3">
       {/* Toolbar - Row/column controls and actions */}
-      <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/[0.02]">
+      <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border border-white/10 bg-midnight-100/60 backdrop-blur-xl shadow-2xl">
         <div className="flex items-center gap-1">
           <RowDisplayControl />
           <ColumnVisibilityDropdown />
@@ -430,6 +430,8 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
         </div>
       </div>
 
+      {/* Table card — FilterBar + scrollable grid + Add row, all together */}
+      <div className="flex-1 min-h-0 flex flex-col border border-white/10 bg-midnight-100/60 backdrop-blur-xl shadow-2xl overflow-hidden">
       {/* Filter Bar */}
       <FilterBar />
 
@@ -641,6 +643,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
             </button>
           </div>
         </div>
+      </div>
       </div>
 
       {/* Enrichment Data Viewer Modal */}

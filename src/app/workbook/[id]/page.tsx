@@ -95,13 +95,12 @@ function WorkbookContent() {
       <AnimatedBackground />
 
       <div className="relative z-10 p-4 lg:p-6 h-full">
-        <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 overflow-hidden shadow-2xl
-                        w-[95%] lg:w-[90%] mx-auto
+        <div className="w-[95%] lg:w-[90%] mx-auto
                         h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)]
-                        flex flex-col">
+                        flex flex-col gap-3">
 
           {/* Header */}
-          <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-white/10">
+          <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 bg-midnight-100/60 backdrop-blur-xl border border-white/10 shadow-2xl">
             <div className="flex items-center gap-4">
               <button
                 onClick={() => router.push('/')}

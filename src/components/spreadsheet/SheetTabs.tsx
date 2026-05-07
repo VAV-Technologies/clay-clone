@@ -63,7 +63,7 @@ export function SheetTabs() {
   };
 
   return (
-    <div className="flex-shrink-0 flex items-stretch border-t border-white/10 bg-midnight-100/60 overflow-hidden">
+    <div className="flex-shrink-0 flex items-stretch border border-white/10 bg-midnight-100/60 backdrop-blur-xl shadow-2xl overflow-hidden">
       {sheets.map((sheet) => {
         const isActive = activeSheetId === sheet.id;
 
