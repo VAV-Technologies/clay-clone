@@ -9,7 +9,7 @@ export function AnimatedBackground() {
     >
       <svg
         className="absolute inset-0 w-full h-full"
-        style={{ mixBlendMode: 'screen', opacity: 0.55 }}
+        style={{ mixBlendMode: 'screen', opacity: 0.28 }}
       >
         <filter id="bg-grain">
           <feTurbulence
@@ -21,9 +21,9 @@ export function AnimatedBackground() {
           />
           <feColorMatrix type="saturate" values="0" />
           <feComponentTransfer>
-            <feFuncR type="linear" slope="1.6" intercept="-0.3" />
-            <feFuncG type="linear" slope="1.6" intercept="-0.3" />
-            <feFuncB type="linear" slope="1.6" intercept="-0.3" />
+            <feFuncR type="linear" slope="1.3" intercept="-0.2" />
+            <feFuncG type="linear" slope="1.3" intercept="-0.2" />
+            <feFuncB type="linear" slope="1.3" intercept="-0.2" />
           </feComponentTransfer>
         </filter>
         <rect width="100%" height="100%" filter="url(#bg-grain)" />
