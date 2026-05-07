@@ -705,38 +705,46 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         </div>
 
         {/* Web Search — let the model research live data via Spider.Cloud */}
-        <div className="space-y-3 pb-4 border-b border-white/10">
-          <label className="flex items-center justify-between cursor-pointer">
-            <div>
-              <span className="text-sm font-medium text-white/70">Web Search</span>
-              <p className="text-xs text-white/40 mt-0.5">Let the model research the live web before answering.</p>
-            </div>
-            <button
-              onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-              className={cn(
-                'relative w-10 h-5 rounded-full transition-colors flex-shrink-0',
-                webSearchEnabled ? 'bg-lavender' : 'bg-white/20'
-              )}
-              aria-pressed={webSearchEnabled}
-              aria-label="Toggle web search"
-            >
-              <span
+        <div className="space-y-2 pb-4 border-b border-white/10">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-white/70">Web Search</span>
+            <div className="inline-flex border border-white/10 overflow-hidden flex-shrink-0" role="radiogroup" aria-label="Web search">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={!webSearchEnabled}
+                onClick={() => setWebSearchEnabled(false)}
                 className={cn(
-                  'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-200',
-                  webSearchEnabled ? 'left-5' : 'left-0.5'
+                  'px-3 py-1 text-xs font-medium transition-colors',
+                  !webSearchEnabled
+                    ? 'bg-white/15 text-white'
+                    : 'bg-transparent text-white/50 hover:text-white/80'
                 )}
-              />
-            </button>
-          </label>
-          {webSearchEnabled && (
-            <div className="flex items-center gap-2 pl-2 border-l-2 border-lavender/30">
-              <Globe className="w-3 h-3 text-lavender" />
-              <span className="text-xs text-white/60">
-                Provider: <span className="text-white/80">Spider.Cloud</span>
-              </span>
-              <span className="ml-auto text-[10px] text-white/40">real-time only</span>
+              >
+                No
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={webSearchEnabled}
+                onClick={() => setWebSearchEnabled(true)}
+                className={cn(
+                  'px-3 py-1 text-xs font-medium transition-colors border-l border-white/10',
+                  webSearchEnabled
+                    ? 'bg-lavender/30 text-lavender'
+                    : 'bg-transparent text-white/50 hover:text-white/80'
+                )}
+              >
+                Yes
+              </button>
             </div>
-          )}
+          </div>
+          <p className="text-xs text-white/40 flex items-center gap-1.5">
+            {webSearchEnabled && <Globe className="w-3 h-3 text-lavender" />}
+            {webSearchEnabled
+              ? <>Live web research via <span className="text-white/70">Spider.Cloud</span></>
+              : 'Let the model research the live web before answering.'}
+          </p>
         </div>
 
         {/* Output Column Name - only shown when creating new enrichment */}
