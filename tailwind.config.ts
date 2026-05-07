@@ -12,6 +12,7 @@ const config: Config = {
         sans: ['var(--font-dm-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         mono: ['var(--font-dm-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         display: ['var(--font-display)', 'serif'],
+        'display-thin': ['var(--font-display-thin)', 'serif'],
       },
       colors: {
         midnight: {
