@@ -208,10 +208,11 @@ function DashboardContent() {
   const [timeOfDay, setTimeOfDay] = useState<string | null>(null);
   useEffect(() => {
     const h = new Date().getHours();
-    if (h < 5) setTimeOfDay('evening');
+    if (h < 5) setTimeOfDay('night');
     else if (h < 12) setTimeOfDay('morning');
     else if (h < 17) setTimeOfDay('afternoon');
-    else setTimeOfDay('evening');
+    else if (h < 21) setTimeOfDay('evening');
+    else setTimeOfDay('night');
   }, []);
 
   const handleAgentPromptSubmit = async (e?: React.FormEvent | React.KeyboardEvent) => {
@@ -421,18 +422,18 @@ function DashboardContent() {
       <main className="relative z-10 max-w-4xl mx-auto px-6 py-6">
         {/* Greeting + Agent prompt */}
         <section className="mb-10 text-center pt-6">
-          <h2
-            className="text-5xl text-white/80 leading-tight tracking-wide"
+          <p
+            className="text-xl text-white/55 leading-tight tracking-wide"
             style={{ fontFamily: 'var(--font-cormorant)', fontWeight: 300 }}
           >
             {timeOfDay ? `Good ${timeOfDay},` : ' '}
-          </h2>
-          <p
-            className="mt-1 text-3xl text-white/55"
+          </p>
+          <h2
+            className="mt-1 text-5xl text-white/85"
             style={{ fontFamily: 'var(--font-cormorant)', fontWeight: 300, fontStyle: 'italic' }}
           >
             What would you like to build today?
-          </p>
+          </h2>
 
           <form onSubmit={handleAgentPromptSubmit} className="mt-6 max-w-2xl mx-auto text-left">
             <textarea
