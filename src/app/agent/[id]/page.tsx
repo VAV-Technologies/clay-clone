@@ -389,27 +389,32 @@ function AgentChatPage() {
 
       {/* Main pane */}
       <div className="relative z-10 flex-1 flex flex-col min-w-0 h-full">
-        {/* Header — single line, height-matched to the sidebar's back-arrow row */}
+        {/* Header — single line, height-matched to the sidebar's back-arrow row.
+            Title sits on the left, status pill / step counter / workbook link
+            cluster on the right. */}
         <header className="border-b border-white/10 bg-midnight/50 backdrop-blur-sm px-6 py-3 flex items-center justify-between gap-4 h-[53px]">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <h1 className="text-base font-medium text-white truncate">{conversation.title}</h1>
+          <h1 className="text-base font-medium text-white truncate flex-1 min-w-0">
+            {conversation.title}
+          </h1>
+
+          <div className="flex items-center gap-3 flex-shrink-0">
             <StatusPill status={conversation.status} />
             {campaign && (
               <span className="text-xs text-white/40 hidden sm:inline">
-                · {campaign.progress.completedSteps}/{campaign.progress.totalSteps} steps
+                {campaign.progress.completedSteps}/{campaign.progress.totalSteps} steps
               </span>
             )}
+            {campaign?.workbookId && (
+              <a
+                href={`/workbook/${campaign.workbookId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1 px-3 py-1 text-xs border border-white/10 hover:border-white/30 transition text-white/70"
+              >
+                Open workbook <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
           </div>
-          {campaign?.workbookId && (
-            <a
-              href={`/workbook/${campaign.workbookId}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-1 px-3 py-1 text-xs border border-white/10 hover:border-white/30 transition text-white/70 flex-shrink-0"
-            >
-              Open workbook <ExternalLink className="w-3 h-3" />
-            </a>
-          )}
         </header>
 
         {/* Thread */}
