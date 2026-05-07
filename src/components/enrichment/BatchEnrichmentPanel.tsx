@@ -408,7 +408,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
   if (!isOpen) return null;
 
   return (
-    <div className="absolute inset-y-0 right-0 w-96 z-30 flex flex-col bg-midnight-100 border-l border-white/10 shadow-2xl animate-slide-in">
+    <div className="absolute inset-y-0 right-0 w-96 z-30 flex flex-col bg-midnight-100 border border-white/10 shadow-2xl animate-slide-in">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-white/10">
         <div className="flex items-center gap-2">
