@@ -411,6 +411,11 @@ function AgentChatPage() {
             <MessageBubble key={m.id} message={m} />
           ))}
 
+          {/* Thinking bubble — visible while the planner round-trip is in
+              flight. Sits beneath the user's just-sent message until the
+              real assistant reply arrives. */}
+          {sending && <ThinkingBubble />}
+
           {/* Plan card — shown after the most recent assistant message that carries a plan */}
           {latestPlan && !launched && (
             <PlanCard
@@ -570,9 +575,69 @@ function StatusPill({ status, compact }: { status: string; compact?: boolean }) 
   );
 }
 
+function ThinkingBubble() {
+  // Cycle through hint phrases so the long-running planner call (5-30s) feels
+  // alive rather than stuck. Pure cosmetic — none of these reflect the
+  // agent's actual internal state, since gpt-5-mini's chain-of-thought
+  // isn't surfaced.
+  const phrases = [
+    'Reading your prompt',
+    'Thinking through filters',
+    'Drafting stage breakdown',
+    'Picking the right step types',
+    'Almost there',
+  ];
+  const [phraseIdx, setPhraseIdx] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const phraseTimer = setInterval(() => {
+      setPhraseIdx((i) => (i + 1) % phrases.length);
+    }, 4000);
+    const elapsedTimer = setInterval(() => {
+      setElapsed((e) => e + 1);
+    }, 1000);
+    return () => {
+      clearInterval(phraseTimer);
+      clearInterval(elapsedTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="flex justify-start">
+      <div className="px-4 py-3 bg-white/5 border border-white/10 backdrop-blur-md min-w-[280px]">
+        <div className="text-xs text-white/40 mb-1">Agent</div>
+        <div className="text-sm text-white/70 flex items-center gap-2">
+          <Loader2 className="w-3.5 h-3.5 text-lavender animate-spin flex-shrink-0" />
+          <span>{phrases[phraseIdx]}</span>
+          <span className="ml-auto text-xs text-white/30 tabular-nums">{elapsed}s</span>
+        </div>
+        <div className="mt-2 flex gap-1">
+          <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" style={{ animationDelay: '0ms' }} />
+          <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" style={{ animationDelay: '200ms' }} />
+          <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-pulse" style={{ animationDelay: '400ms' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MessageBubble({ message }: { message: AgentMessage }) {
   const isUser = message.role === 'user';
+  const [showDetails, setShowDetails] = useState(false);
   if (message.role === 'tool' || message.role === 'system') return null;
+
+  // Fallback display for already-stored messages with empty content (older
+  // turns from before the planner-side fallback was added). New turns are
+  // guaranteed non-empty server-side now.
+  const trimmed = (message.content || '').trim();
+  const hasPlan = !!message.planJson;
+  const displayText = trimmed
+    ? trimmed
+    : hasPlan
+      ? `Drafted a plan: **${(message.planJson as CampaignPlan).name}**. Review below.`
+      : '(No reply text — the agent didn\'t produce any. Try asking again.)';
+
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
       <div
@@ -584,7 +649,38 @@ function MessageBubble({ message }: { message: AgentMessage }) {
         )}
       >
         <div className="text-xs text-white/40 mb-1">{isUser ? 'You' : 'Agent'}</div>
-        <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+        <div className={cn('text-sm whitespace-pre-wrap', !trimmed && 'text-white/50 italic')}>{displayText}</div>
+        {!isUser && hasPlan && (
+          <button
+            onClick={() => setShowDetails((v) => !v)}
+            className="mt-2 text-xs text-white/35 hover:text-white/70 transition flex items-center gap-1"
+          >
+            {showDetails ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            {showDetails ? 'Hide details' : 'Show what the agent decided'}
+          </button>
+        )}
+        {!isUser && hasPlan && showDetails && (
+          <div className="mt-2 pt-2 border-t border-white/10 space-y-2 text-xs text-white/55">
+            <div>
+              <span className="text-white/40">Rationale: </span>
+              {(message.planJson as CampaignPlan).rationale}
+            </div>
+            <div>
+              <span className="text-white/40">Source: </span>
+              {(message.planJson as CampaignPlan).source === 'ai-ark' ? 'AI Ark' : 'Clay'}
+              <span className="text-white/40"> · Stages: </span>
+              {(message.planJson as CampaignPlan).stages.length}
+            </div>
+            <details className="text-white/45">
+              <summary className="cursor-pointer hover:text-white/70 select-none">
+                Raw plan JSON
+              </summary>
+              <pre className="mt-1 max-h-64 overflow-auto bg-black/30 border border-white/5 p-2 text-[10px] leading-snug whitespace-pre-wrap">
+                {JSON.stringify(message.planJson, null, 2)}
+              </pre>
+            </details>
+          </div>
+        )}
       </div>
     </div>
   );

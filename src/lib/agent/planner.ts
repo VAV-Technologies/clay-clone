@@ -292,8 +292,25 @@ export async function runPlannerTurn(args: RunPlannerArgs): Promise<PlannerOutpu
       ? (parsed.nextAction as NextAction)
       : 'await_user_reply';
 
+  // Fallback assistantText when the model returns JSON without one (or with
+  // an empty one). Without this the chat shows a blank "Agent" bubble.
+  const rawText = typeof parsed.assistantText === 'string' ? parsed.assistantText.trim() : '';
+  let assistantText = rawText;
+  if (!assistantText) {
+    if (planJson) {
+      const stageCount = planJson.stages.length;
+      assistantText =
+        `Drafted a campaign plan: **${planJson.name}**. ` +
+        `${stageCount} stage${stageCount === 1 ? '' : 's'} — review the breakdown below and click "Approve & Run" when ready.`;
+    } else if (Array.isArray(parsed.clarifyingQuestions) && parsed.clarifyingQuestions.length > 0) {
+      assistantText = 'I need a bit more detail before drafting a plan:';
+    } else {
+      assistantText = 'Could you share more about what you want to build?';
+    }
+  }
+
   return {
-    assistantText: typeof parsed.assistantText === 'string' ? parsed.assistantText : '',
+    assistantText,
     planJson,
     clarifyingQuestions: Array.isArray(parsed.clarifyingQuestions)
       ? (parsed.clarifyingQuestions as unknown[]).filter((q): q is string => typeof q === 'string')
