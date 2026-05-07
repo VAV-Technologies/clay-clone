@@ -490,7 +490,7 @@ function AgentChatPage() {
               className="flex-1 h-10 px-3 py-2 bg-white/5 border border-white/10 backdrop-blur-md
                          text-white placeholder:text-white/30 leading-6
                          focus:border-lavender focus:outline-none focus:ring-2 focus:ring-lavender/20
-                         resize-none disabled:opacity-50"
+                         resize-none overflow-hidden disabled:opacity-50"
             />
             <button
               type="submit"
