@@ -428,7 +428,6 @@ function ProjectContent() {
                     <div className="min-w-0 flex-1">
                       <h3 className="font-medium text-white truncate">{row.name}</h3>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/40 transition-colors flex-shrink-0 hidden sm:block" />
                   </div>
 
                   {/* Modified date */}
