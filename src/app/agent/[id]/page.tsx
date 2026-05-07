@@ -458,7 +458,11 @@ function AgentChatPage() {
 
           {/* Live campaign progress */}
           {campaign && (
-            <CampaignProgressCard campaign={campaign} workbookHref={campaign.workbookId ? `/workbook/${campaign.workbookId}` : null} />
+            <CampaignProgressCard
+              campaign={campaign}
+              workbookHref={campaign.workbookId ? `/workbook/${campaign.workbookId}` : null}
+              onCampaignChanged={fetchConversation}
+            />
           )}
         </div>
 
@@ -910,14 +914,43 @@ function PreviewGate({
 function CampaignProgressCard({
   campaign,
   workbookHref,
+  onCampaignChanged,
 }: {
   campaign: CampaignSnapshot;
   workbookHref: string | null;
+  onCampaignChanged: () => void | Promise<void>;
 }) {
+  const toast = useToast();
+  const [retrying, setRetrying] = useState(false);
+
   const sendReadyStep = campaign.steps.find(
     s => s.type === 'materialize_send_ready' && s.status === 'complete',
   );
   const sendReadyTableId = (sendReadyStep?.result?.tableId as string | undefined) || null;
+  const erroredStep = campaign.steps.find(s => s.status === 'error');
+
+  const handleRetry = async () => {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'retry' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Retry failed');
+        return;
+      }
+      toast.success(data.message || 'Resuming campaign');
+      await onCampaignChanged();
+    } catch {
+      toast.error('Retry failed');
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   return (
     <div className="bg-white/[0.03] border border-white/15 backdrop-blur-md p-5 max-w-3xl">
@@ -934,6 +967,26 @@ function CampaignProgressCard({
           <StepRow key={s.step} step={s} />
         ))}
       </div>
+
+      {campaign.status === 'error' && erroredStep && (
+        <div className="mt-4 p-3 border border-red-400/30 bg-red-500/5 text-xs text-red-200/90">
+          <div className="font-medium mb-1">Step {erroredStep.step} failed: {humanizeStep(erroredStep.type)}</div>
+          {erroredStep.error && (
+            <div className="font-mono text-[10px] text-red-200/70 line-clamp-3 mb-2">{erroredStep.error}</div>
+          )}
+          <div className="flex items-center justify-end gap-2 mt-2">
+            <button
+              onClick={handleRetry}
+              disabled={retrying}
+              className="px-3 py-1.5 bg-red-500/15 border border-red-300/40 hover:bg-red-500/25
+                         text-white text-xs transition flex items-center gap-2 disabled:opacity-50"
+            >
+              {retrying ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+              {retrying ? 'Resuming...' : 'Retry from failed step →'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {campaign.status === 'complete' && (
         <div className="mt-4 flex items-center justify-end gap-2">

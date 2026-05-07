@@ -321,10 +321,7 @@ export async function executeStep(
       if (idsToDelete.length > 0) {
         for (let i = 0; i < idsToDelete.length; i += 500) {
           const batch = idsToDelete.slice(i, i + 500);
-          await db.delete(schema.rows).where(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (schema.rows.id as any).in(batch)
-          );
+          await db.delete(schema.rows).where(inArray(schema.rows.id, batch));
         }
       }
 
@@ -480,10 +477,7 @@ export async function executeStep(
       if (idsToDelete.length > 0) {
         for (let i = 0; i < idsToDelete.length; i += 500) {
           const batch = idsToDelete.slice(i, i + 500);
-          await db.delete(schema.rows).where(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (schema.rows.id as any).in(batch)
-          );
+          await db.delete(schema.rows).where(inArray(schema.rows.id, batch));
         }
       }
 

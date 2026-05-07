@@ -109,3 +109,83 @@ export async function DELETE(
     return NextResponse.json({ error: 'Failed to cancel campaign' }, { status: 500 });
   }
 }
+
+// POST /api/campaigns/[id] — Retry a failed campaign. Resets the errored
+// step to 'pending', clears the error, flips status back to 'running'
+// so the cron picks it up on the next tick.
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const action = (body.action as string | undefined) || 'retry';
+
+    if (action !== 'retry') {
+      return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
+    }
+
+    const [campaign] = await db.select().from(schema.campaigns)
+      .where(eq(schema.campaigns.id, params.id)).limit(1);
+    if (!campaign) {
+      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
+    }
+    if (campaign.status !== 'error') {
+      return NextResponse.json(
+        { error: `Can only retry errored campaigns; this one is ${campaign.status}` },
+        { status: 400 },
+      );
+    }
+
+    const steps = campaign.steps as CampaignStep[];
+    // Reset the first errored step (and any subsequent error/skipped) to pending.
+    let resetCount = 0;
+    let firstErrorIndex = -1;
+    for (let i = 0; i < steps.length; i++) {
+      if (steps[i].status === 'error' || steps[i].status === 'skipped') {
+        if (firstErrorIndex === -1) firstErrorIndex = i;
+        steps[i] = {
+          ...steps[i],
+          status: 'pending',
+          error: undefined,
+          startedAt: undefined,
+          completedAt: undefined,
+        };
+        resetCount++;
+      }
+    }
+    // Also reset any 'running' step that got stuck — shouldn't happen normally
+    // but if maxDuration hit we want to retry it cleanly.
+    for (let i = 0; i < steps.length; i++) {
+      if (steps[i].status === 'running') {
+        steps[i] = { ...steps[i], status: 'pending', startedAt: undefined };
+        if (firstErrorIndex === -1) firstErrorIndex = i;
+      }
+    }
+
+    if (resetCount === 0) {
+      return NextResponse.json(
+        { error: 'Campaign has no errored steps to retry' },
+        { status: 400 },
+      );
+    }
+
+    await db.update(schema.campaigns).set({
+      status: 'running',
+      currentStepIndex: firstErrorIndex >= 0 ? firstErrorIndex : campaign.currentStepIndex,
+      steps,
+      error: null,
+      updatedAt: new Date(),
+    }).where(eq(schema.campaigns.id, params.id));
+
+    return NextResponse.json({
+      success: true,
+      message: `Reset ${resetCount} step(s); campaign back to running. Cron will resume on next tick.`,
+      resumingAtStep: (firstErrorIndex >= 0 ? firstErrorIndex : campaign.currentStepIndex) + 1,
+    });
+  } catch (error) {
+    console.error('Error retrying campaign:', error);
+    const msg = error instanceof Error ? error.message : 'Failed to retry campaign';
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
