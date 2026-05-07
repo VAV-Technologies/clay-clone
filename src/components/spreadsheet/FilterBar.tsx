@@ -164,75 +164,78 @@ export function FilterBar() {
 
           return (
             <div key={row.id} className="flex items-center gap-2">
-              {/* First row: "Where" label, Other rows: AND/OR toggle */}
-              {index === 0 ? (
-                <span className="w-16 text-sm text-white/50 flex-shrink-0">Where</span>
-              ) : (
-                <button
-                  onClick={toggleFilterLogic}
-                  className={cn(
-                    'w-16 px-2 py-1 text-xs font-medium transition-colors flex-shrink-0 text-center',
-                    'bg-lavender/20 text-lavender border border-lavender/30',
-                    'hover:bg-lavender/30'
-                  )}
-                >
-                  {filterLogic}
-                </button>
-              )}
+              {/* Boxed expression: Where|AND-OR + column + operator + value (transparent outline) */}
+              <div className="flex-1 flex items-center gap-2 border border-white/15 p-2">
+                {/* First row: "Where" label, Other rows: AND/OR toggle */}
+                {index === 0 ? (
+                  <span className="w-16 text-sm text-white/50 flex-shrink-0 text-center">Where</span>
+                ) : (
+                  <button
+                    onClick={toggleFilterLogic}
+                    className={cn(
+                      'w-16 px-2 py-1 text-xs font-medium transition-colors flex-shrink-0 text-center',
+                      'bg-lavender/20 text-lavender border border-lavender/30',
+                      'hover:bg-lavender/30'
+                    )}
+                  >
+                    {filterLogic}
+                  </button>
+                )}
 
-              {/* Column Selector */}
-              <select
-                value={row.columnId}
-                onChange={(e) => {
-                  updateFilterRow(row.id, 'columnId', e.target.value);
-                }}
-                className="select-chevron w-44 pl-3 pr-9 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
-              >
-                <option value="" className="bg-midnight-100 text-white/50">
-                  Select column
-                </option>
-                {filterableColumns.map((col) => (
-                  <option key={col.id} value={col.id} className="bg-midnight-100 text-white">
-                    {col.name}
-                  </option>
-                ))}
-              </select>
-
-              {/* Operator Selector */}
-              <select
-                value={row.operator}
-                onChange={(e) => {
-                  updateFilterRow(row.id, 'operator', e.target.value);
-                }}
-                className="select-chevron w-48 pl-3 pr-9 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
-              >
-                {OPERATORS.map((op) => (
-                  <option key={op} value={op} className="bg-midnight-100 text-white">
-                    {OPERATOR_LABELS[op]}
-                  </option>
-                ))}
-              </select>
-
-              {/* Value Input (if needed) */}
-              {needsValue ? (
-                <input
-                  type="text"
-                  value={row.value}
-                  onChange={(e) => updateFilterRow(row.id, 'value', e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      applyFilter(row);
-                    }
+                {/* Column Selector */}
+                <select
+                  value={row.columnId}
+                  onChange={(e) => {
+                    updateFilterRow(row.id, 'columnId', e.target.value);
                   }}
-                  placeholder="Enter value..."
-                  className={cn(
-                    'flex-1 min-w-[120px] px-3 py-1.5 bg-white/5 border text-white text-sm placeholder:text-white/30 focus:border-lavender focus:outline-none',
-                    row.isApplied ? 'border-lavender/30' : 'border-white/10'
-                  )}
-                />
-              ) : (
-                <div className="flex-1 min-w-[120px]" />
-              )}
+                  className="select-chevron w-44 pl-3 pr-9 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
+                >
+                  <option value="" className="bg-midnight-100 text-white/50">
+                    Select column
+                  </option>
+                  {filterableColumns.map((col) => (
+                    <option key={col.id} value={col.id} className="bg-midnight-100 text-white">
+                      {col.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Operator Selector */}
+                <select
+                  value={row.operator}
+                  onChange={(e) => {
+                    updateFilterRow(row.id, 'operator', e.target.value);
+                  }}
+                  className="select-chevron w-48 pl-3 pr-9 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
+                >
+                  {OPERATORS.map((op) => (
+                    <option key={op} value={op} className="bg-midnight-100 text-white">
+                      {OPERATOR_LABELS[op]}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Value Input (if needed) */}
+                {needsValue ? (
+                  <input
+                    type="text"
+                    value={row.value}
+                    onChange={(e) => updateFilterRow(row.id, 'value', e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        applyFilter(row);
+                      }
+                    }}
+                    placeholder="Enter value..."
+                    className={cn(
+                      'flex-1 min-w-[120px] px-3 py-1.5 bg-white/5 border text-white text-sm placeholder:text-white/30 focus:border-lavender focus:outline-none',
+                      row.isApplied ? 'border-lavender/30' : 'border-white/10'
+                    )}
+                  />
+                ) : (
+                  <div className="flex-1 min-w-[120px]" />
+                )}
+              </div>
 
               {/* Apply Filter Button */}
               {!row.isApplied && (
@@ -272,7 +275,7 @@ export function FilterBar() {
         <div className="flex items-center gap-3 pt-1">
           <button
             onClick={addNewFilterRow}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-lavender hover:bg-lavender/10 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-lavender border border-lavender/30 hover:bg-lavender/10 transition-colors"
           >
             <Plus className="w-4 h-4" />
             <span>Add filter</span>
