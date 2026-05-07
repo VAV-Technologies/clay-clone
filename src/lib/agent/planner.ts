@@ -257,6 +257,13 @@ export async function runPlannerTurn(args: RunPlannerArgs): Promise<PlannerOutpu
   });
 
   const parsed = parseModelJson(result.text);
+  // Lightweight debug — first 400 chars of raw output. Helps diagnose when
+  // the planner produces JSON without our expected fields (assistantText,
+  // planJson, etc.) so we land on the empty-bubble fallback.
+  console.log(
+    `[planner] turn done — text_len=${result.text?.length ?? 0}, parsed=${!!parsed}, ` +
+    `keys=${parsed ? Object.keys(parsed).join(',') : 'n/a'} | head: ${(result.text ?? '').slice(0, 400).replace(/\s+/g, ' ')}`
+  );
 
   if (!parsed) {
     return {

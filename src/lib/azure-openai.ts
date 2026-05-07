@@ -195,7 +195,11 @@ async function generateViaChatCompletions(args: {
     : { max_tokens: config.maxTokens ?? 8192 };
 
   const messages: ChatMessage[] = [];
-  if (hasTools && config.systemHint) {
+  // systemHint was historically gated on hasTools (the only original caller
+  // — enrichment with web search — set it only when tools were on). It is
+  // really a generic system prompt: the agent planner relies on it being
+  // sent regardless of tool use, so we pass it whenever it's provided.
+  if (config.systemHint) {
     messages.push({ role: 'system', content: config.systemHint });
   }
   messages.push({ role: 'user', content: prompt });
@@ -348,7 +352,8 @@ async function generateViaResponsesApi(args: {
   const url = `${endpoint}/openai/responses?api-version=${apiVersion}`;
 
   const input: ResponsesInputItem[] = [];
-  if (hasTools && config.systemHint) {
+  // See chat-completions path: systemHint is generic, send whenever provided.
+  if (config.systemHint) {
     input.push({
       type: 'message',
       role: 'system',
