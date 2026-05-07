@@ -362,28 +362,34 @@ function AgentChatPage() {
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto py-2">
-          <div className="px-4 py-2 text-xs uppercase tracking-wider text-white/30">
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3">
+          <div className="px-1 pb-2 text-xs uppercase tracking-wider text-white/30">
             Past conversations
           </div>
-          {conversations.length === 0 ? (
-            <div className="px-4 py-2 text-sm text-white/30">No conversations yet</div>
-          ) : (
-            conversations.map(c => (
-              <ConversationRow
-                key={c.id}
-                conversation={c}
-                isActive={c.id === conversation.id}
-                onOpen={() => router.push(`/agent/${c.id}`)}
-                onDeleted={async () => {
-                  await fetchConversations();
-                  // If the user just deleted the conversation they're currently
-                  // viewing, send them back to home.
-                  if (c.id === conversation.id) router.push('/');
-                }}
-              />
-            ))
-          )}
+          {/* Boxed list — matches the New campaign block above and the
+              bordered chrome elsewhere in the chat. */}
+          <div className="border border-white/10 bg-white/[0.02]">
+            {conversations.length === 0 ? (
+              <div className="px-3 py-3 text-sm text-white/30">No conversations yet</div>
+            ) : (
+              <div className="divide-y divide-white/5">
+                {conversations.map(c => (
+                  <ConversationRow
+                    key={c.id}
+                    conversation={c}
+                    isActive={c.id === conversation.id}
+                    onOpen={() => router.push(`/agent/${c.id}`)}
+                    onDeleted={async () => {
+                      await fetchConversations();
+                      // If the user just deleted the conversation they're
+                      // currently viewing, send them back to home.
+                      if (c.id === conversation.id) router.push('/');
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </aside>
 
