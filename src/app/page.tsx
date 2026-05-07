@@ -382,6 +382,11 @@ function DashboardContent() {
 
       {/* Main Content - Centered */}
       <main className="relative z-10 max-w-4xl mx-auto px-6 py-6">
+        {/* Greeting */}
+        <h2 className="font-display italic font-light text-5xl md:text-6xl text-white/40 mb-8 mt-4 leading-none tracking-tight">
+          What are we building today?
+        </h2>
+
         {/* Search Bar */}
         <div className="relative mb-4">
           <input
