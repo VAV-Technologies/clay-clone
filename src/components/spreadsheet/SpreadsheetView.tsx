@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Plus, Sparkles, Code, Clock, Mail, Link2, Zap, ChevronDown } from 'lucide-react';
+import { Plus, Sparkles, Code, Clock, Mail, Link2, Zap, ChevronDown, UserPlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassButton } from '@/components/ui';
 import { useTableStore } from '@/stores/tableStore';
@@ -22,6 +22,9 @@ interface SpreadsheetViewProps {
   tableId: string;
   onEnrich?: (columnId?: string) => void;
   onFormula?: (columnId?: string) => void;
+  onAddClayData?: () => void;
+  onAddAiArcData?: () => void;
+  onAddWattdata?: () => void;
 }
 
 const ROW_HEIGHT = 36;
@@ -48,7 +51,7 @@ interface EnrichmentDataState {
   metadata?: CellMetadata;
 }
 
-export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetViewProps) {
+export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, onAddAiArcData, onAddWattdata }: SpreadsheetViewProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
   // State for enrichment data viewer
@@ -71,6 +74,8 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
   // Actions dropdown
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const actionsButtonRef = useRef<HTMLButtonElement>(null);
+  const [isAddDataOpen, setIsAddDataOpen] = useState(false);
+  const addDataButtonRef = useRef<HTMLButtonElement>(null);
 
   const {
     currentTable,
@@ -351,6 +356,63 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
               Delete ({selectedRows.size})
             </GlassButton>
           )}
+
+          {/* Add Data dropdown */}
+          <div className="relative">
+            <button
+              ref={addDataButtonRef}
+              onClick={() => setIsAddDataOpen(!isAddDataOpen)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium
+                         bg-emerald-500/20 border border-emerald-500/30 text-white
+                         hover:bg-emerald-500/30 transition-all"
+            >
+              <Plus className="w-4 h-4 text-emerald-400" />
+              Add Data
+              <ChevronDown className={cn('w-3.5 h-3.5 text-white/50 transition-transform', isAddDataOpen && 'rotate-180')} />
+            </button>
+
+            {isAddDataOpen && createPortal(
+              <>
+                <div className="fixed inset-0 z-[99]" onClick={() => setIsAddDataOpen(false)} />
+                <div
+                  className="fixed z-[100] w-52 py-1.5 bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-2xl"
+                  style={{
+                    top: (addDataButtonRef.current?.getBoundingClientRect().bottom ?? 0) + 6,
+                    right: window.innerWidth - (addDataButtonRef.current?.getBoundingClientRect().right ?? 0),
+                  }}
+                >
+                  <button
+                    onClick={() => { setIsAddDataOpen(false); onAddClayData?.(); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
+                  >
+                    <div className="w-7 h-7 bg-white/[0.06] flex items-center justify-center">
+                      <UserPlus className="w-3.5 h-3.5 text-white/60" />
+                    </div>
+                    Add Clay Data
+                  </button>
+                  <button
+                    onClick={() => { setIsAddDataOpen(false); onAddAiArcData?.(); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
+                  >
+                    <div className="w-7 h-7 bg-violet-500/10 flex items-center justify-center">
+                      <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                    </div>
+                    Add AI Ark Data
+                  </button>
+                  <button
+                    onClick={() => { setIsAddDataOpen(false); onAddWattdata?.(); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
+                  >
+                    <div className="w-7 h-7 bg-emerald-500/10 flex items-center justify-center">
+                      <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                    </div>
+                    Add Wattdata
+                  </button>
+                </div>
+              </>,
+              document.body
+            )}
+          </div>
 
           {/* Actions dropdown */}
           <div className="relative">

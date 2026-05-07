@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Upload, Download, UserPlus } from 'lucide-react';
+import { ArrowLeft, Upload, Download } from 'lucide-react';
 import Papa from 'papaparse';
 import { ToastProvider, useToast } from '@/components/ui';
 import { SpreadsheetView } from '@/components/spreadsheet';
@@ -129,30 +129,6 @@ function WorkbookContent() {
                 <Download className="w-4 h-4" />
                 <span>Export</span>
               </button>
-              <button
-                onClick={() => setIsAddDataOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                title="Add Clay Data"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Add Clay Data</span>
-              </button>
-              <button
-                onClick={() => setIsAiArcDataOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-violet-300/70 hover:text-violet-200 hover:bg-violet-500/10 transition-colors"
-                title="Add AI Ark Data"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Add AI Ark Data</span>
-              </button>
-              <button
-                onClick={() => setIsWattdataOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-emerald-300/70 hover:text-emerald-200 hover:bg-emerald-500/10 transition-colors"
-                title="Add Wattdata"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Add Wattdata</span>
-              </button>
             </div>
           </div>
 
@@ -163,6 +139,9 @@ function WorkbookContent() {
                 tableId={tableId}
                 onEnrich={handleOpenEnrichment}
                 onFormula={handleOpenFormula}
+                onAddClayData={() => setIsAddDataOpen(true)}
+                onAddAiArcData={() => setIsAiArcDataOpen(true)}
+                onAddWattdata={() => setIsWattdataOpen(true)}
               />
             </div>
           )}
