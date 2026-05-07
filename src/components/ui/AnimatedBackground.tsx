@@ -9,12 +9,12 @@ export function AnimatedBackground() {
     >
       <svg
         className="absolute inset-0 w-full h-full"
-        style={{ mixBlendMode: 'screen', opacity: 0.08 }}
+        style={{ mixBlendMode: 'screen', opacity: 0.1 }}
       >
         <filter id="bg-grain">
           <feTurbulence
             type="fractalNoise"
-            baseFrequency="0.9"
+            baseFrequency="0.7"
             numOctaves="2"
             seed="5"
             stitchTiles="stitch"
