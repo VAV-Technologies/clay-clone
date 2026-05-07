@@ -2,8 +2,10 @@ import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
 import type { CampaignStep, CampaignContext, CellValue } from '@/lib/db/schema';
-import { searchPeople, searchCompanies } from '@/lib/clay-api';
+import { searchPeople as claySearchPeople, searchCompanies as claySearchCompanies } from '@/lib/clay-api';
 import type { ClaySearchFilters, ClayCompanySearchFilters } from '@/lib/clay-api';
+import { searchPeople as aiArkSearchPeople, searchCompanies as aiArkSearchCompanies } from '@/lib/aiarc-api';
+import type { AiArcPeopleFilters, AiArcCompanyFilters } from '@/lib/aiarc-api';
 
 // Standard column sets for auto-creating sheets
 const COMPANY_COLUMNS = ['Company Name', 'Domain', 'Size', 'Industry', 'Country', 'Location', 'LinkedIn URL', 'Description', 'Annual Revenue'];
@@ -139,10 +141,28 @@ export async function executeStep(
     }
 
     case 'search_companies': {
+      // Source is stamped onto each search step by /api/agent/.../launch.
+      // Default to clay for back-compat with the original /campaign skill,
+      // which doesn't set this field.
+      const source = (step.params.source as 'ai-ark' | 'clay' | undefined) || 'clay';
+
+      if (source === 'ai-ark') {
+        const filters = (step.params.filters || {}) as AiArcCompanyFilters;
+        const limit = filters.limit ?? 1000;
+        log(`[ai-ark] Searching companies, limit=${limit}, filters: ${JSON.stringify(filters)}`);
+        const result = await aiArkSearchCompanies(filters, limit, log);
+        log(`[ai-ark] Found ${result.totalCount} companies, returned ${result.items.length}`);
+        return {
+          result: { totalCount: result.totalCount, mode: 'ai-ark' },
+          contextUpdate: { searchResults: { ...context.searchResults, companies: result.items as unknown[] } },
+        };
+      }
+
+      // Clay path
       const filters = (step.params.filters || {}) as ClayCompanySearchFilters;
-      log(`Searching companies with filters: ${JSON.stringify(filters)}`);
-      const result = await searchCompanies(filters, log);
-      log(`Found ${result.totalCount} companies`);
+      log(`[clay] Searching companies with filters: ${JSON.stringify(filters)}`);
+      const result = await claySearchCompanies(filters, log);
+      log(`[clay] Found ${result.totalCount} companies`);
       return {
         result: { totalCount: result.totalCount, mode: result.mode },
         contextUpdate: { searchResults: { ...context.searchResults, companies: result.companies } },
@@ -150,11 +170,11 @@ export async function executeStep(
     }
 
     case 'search_people': {
-      const filters = (step.params.filters || {}) as ClaySearchFilters;
-      const domains = step.params.domains as string[] | undefined;
+      const source = (step.params.source as 'ai-ark' | 'clay' | undefined) || 'clay';
 
-      // If domainsFrom is specified, pull domains from a sheet column
-      if (step.params.domainsFrom && !domains) {
+      // Resolve domainsFrom -> a list of domain strings, regardless of source.
+      let extractedDomains: string[] = (step.params.domains as string[]) || [];
+      if (step.params.domainsFrom && extractedDomains.length === 0) {
         const ref = step.params.domainsFrom as string; // e.g. "sheet:Companies:Domain"
         const [, sheetName, colName] = ref.split(':');
         const sheet = context.sheets?.[sheetName];
@@ -162,19 +182,35 @@ export async function executeStep(
           const colId = sheet.columnIds[colName];
           if (colId) {
             const rows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, sheet.tableId));
-            const extractedDomains = rows
+            extractedDomains = rows
               .map(r => (r.data as Record<string, CellValue>)[colId]?.value)
               .filter((v): v is string => typeof v === 'string' && v.length > 0);
-            (step.params as Record<string, unknown>).domains = extractedDomains;
             log(`Extracted ${extractedDomains.length} domains from ${sheetName}:${colName}`);
           }
         }
+        (step.params as Record<string, unknown>).domains = extractedDomains;
       }
 
-      const finalDomains = (step.params.domains as string[]) || [];
-      log(`Searching people (${finalDomains.length} domains, filters: ${JSON.stringify(filters)})`);
-      const result = await searchPeople(finalDomains, filters, log);
-      log(`Found ${result.totalCount} people`);
+      if (source === 'ai-ark') {
+        const filters = { ...((step.params.filters || {}) as AiArcPeopleFilters) };
+        if (extractedDomains.length > 0) {
+          filters.companyDomain = extractedDomains;
+        }
+        const limit = filters.limit ?? 5000;
+        log(`[ai-ark] Searching people, limit=${limit}, ${extractedDomains.length} domains, filters: ${JSON.stringify(filters)}`);
+        const result = await aiArkSearchPeople(filters, limit, log);
+        log(`[ai-ark] Found ${result.totalCount} people, returned ${result.items.length}`);
+        return {
+          result: { totalCount: result.totalCount, mode: 'ai-ark' },
+          contextUpdate: { searchResults: { ...context.searchResults, people: result.items as unknown[] } },
+        };
+      }
+
+      // Clay path
+      const filters = (step.params.filters || {}) as ClaySearchFilters;
+      log(`[clay] Searching people (${extractedDomains.length} domains, filters: ${JSON.stringify(filters)})`);
+      const result = await claySearchPeople(extractedDomains, filters, log);
+      log(`[clay] Found ${result.totalCount} people`);
       return {
         result: { totalCount: result.totalCount, mode: result.mode },
         contextUpdate: { searchResults: { ...context.searchResults, people: result.people } },
@@ -849,23 +885,29 @@ export async function executeStep(
   }
 }
 
-// Map a search result record to a column name
+// Map a search result record to a column name. Each column lists the
+// candidate keys we look at in priority order — covers Clay's shape AND
+// AI Ark's shape so import_rows works regardless of `plan.source`.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapRecordToColumn(record: any, colName: string): string | null {
   const map: Record<string, string[]> = {
+    // Companies — Clay uses {name, domain, size, country, location, ...};
+    // AI Ark uses {name, domain, staff_range, headquarter_state, headquarter_city, ...}
     'Company Name': ['name', 'company_name'],
-    'Domain': ['domain', 'company_domain'],
-    'Size': ['size'],
-    'Industry': ['industry'],
-    'Country': ['country'],
-    'Location': ['location'],
+    'Domain': ['domain', 'company_domain', 'website'],
+    'Size': ['size', 'staff_range'],
+    'Industry': ['industry', 'company_industry'],
+    'Country': ['country', 'headquarter_state'],
+    'Location': ['location', 'headquarter_city'],
     'LinkedIn URL': ['linkedin_url'],
     'Description': ['description'],
-    'Annual Revenue': ['annual_revenue'],
+    'Annual Revenue': ['annual_revenue', 'funding_total'],
+    // People — Clay {first_name, last_name, full_name, job_title};
+    // AI Ark {first_name, last_name, full_name, title}
     'First Name': ['first_name'],
     'Last Name': ['last_name'],
     'Full Name': ['full_name'],
-    'Job Title': ['job_title'],
+    'Job Title': ['title', 'job_title', 'headline'],
     'Company Domain': ['company_domain', 'domain'],
   };
 

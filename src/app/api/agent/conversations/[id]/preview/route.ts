@@ -53,20 +53,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const filters = (firstSearch.params.filters as Record<string, unknown>) || {};
     const searchType = firstSearch.type === 'search_companies' ? 'companies' : 'people';
 
-    // The planner emits Clay-shaped filters (country_names, sizes,
-    // minimum_member_count, seniority_levels, job_title_keywords/mode).
-    // AI Ark uses a different schema (accountLocation, employeeSize:[{start,end}],
-    // seniority, titleKeywords/titleMode) — sending Clay fields to AI Ark
-    // returns the unfiltered ~70M-row database count. Until we add proper
-    // filter translation, force Clay regardless of plan.source. The
-    // campaign-executor calls Clay anyway, so this also makes preview
-    // counts match the real list size.
-    if (plan.source !== 'clay') {
-      console.warn(
-        `[agent/preview] plan.source="${plan.source}" but planner emits Clay filters — forcing Clay preview`,
-      );
-    }
-    const previewPath = '/api/add-data/preview';
+    // Route preview to whichever data source the planner picked. Filter
+    // shapes differ between Clay and AI Ark — the planner is responsible
+    // for emitting the right shape per source.
+    const previewPath =
+      plan.source === 'clay'
+        ? '/api/add-data/preview'
+        : '/api/add-aiarc-data/preview';
 
     const res = await fetch(`${internalBaseUrl(request)}${previewPath}`, {
       method: 'POST',

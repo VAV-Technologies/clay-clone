@@ -66,6 +66,16 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: 'Plan has no steps to execute' }, { status: 400 });
     }
 
+    // Stamp the plan's data source onto every search step so the executor
+    // can dispatch search_companies / search_people to the right API
+    // (Clay vs AI Ark). Filter shapes differ between sources, so the step
+    // carrying its source alongside its filters is the cleanest contract.
+    for (const s of steps) {
+      if (s.type === 'search_companies' || s.type === 'search_people') {
+        s.params = { ...s.params, source: plan.source };
+      }
+    }
+
     const campaignsRes = await fetch(`${internalBaseUrl(request)}/api/campaigns`, {
       method: 'POST',
       headers: {

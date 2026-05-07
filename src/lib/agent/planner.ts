@@ -100,19 +100,21 @@ shared context (workbookId + sheets + searchResults).
 
 # Hard rules — apply these in EVERY plan
 
-## Filters
+## Filters (AI Ark vocabulary — default)
 - Apply the MINIMUM number of filters. Every filter shrinks the list and
   most filters are estimates.
-- NEVER use revenue filters (annual_revenues, derived_revenue_streams).
-  Revenue is sparse and unreliable on the underlying data sources. Convert
-  the user's revenue threshold to an employee-size range using the table
-  below, then filter on sizes / minimum_member_count.
+- NEVER use revenue filters on the search step. Revenue is sparse and
+  unreliable. Convert the user's revenue threshold to an employee-size
+  range using the table below, then filter on \`employeeSize\` (an
+  array of \`{start, end}\` ranges).
 
   Country -> revenue per employee (rough median, USD):
 ${REVENUE_TABLE_SUMMARY}
 
   Conversion: minEmployees = round(revenueUSD / ratio * 0.4),
               maxEmployees = round(revenueUSD / ratio * 3).
+  AI Ark example for "$10M+ rev in Brunei (~$80k/employee)":
+    employeeSize: [{ start: 50, end: 1000 }]
   Always state the conversion in the stage's "notes" so the user can
   sanity-check.
 
@@ -125,17 +127,23 @@ ${REVENUE_TABLE_SUMMARY}
   Domain is essential. Do NOT proceed past this stage with rows that have
   no domain.
 
-## People search
-- ALWAYS include seniority_levels. Without it you get interns to CEOs.
+## People search (AI Ark)
+- ALWAYS include \`seniority\`. Without it you get interns to CEOs.
+  Common values: ["c_level", "vp", "director", "head", "senior",
+  "manager", "lead", "owner", "founder", "entry"]. Pick the band that
+  matches the user's intent.
 - Prefer broader signals over title strings (in priority order):
-  1st: job_functions (e.g. ["Sales", "Marketing"])
-  2nd: seniority_levels (e.g. ["c-suite", "vp"])
-  Last resort: job_title_keywords — and when used, EXPAND to all plausible
+  1st: \`departments\` (e.g. ["Sales", "Marketing", "Engineering"])
+  2nd: \`seniority\` (e.g. ["c_level", "vp"])
+  Last resort: \`titleKeywords\` — and when used, EXPAND to all plausible
   variants. "CMO" -> ["CMO", "Chief Marketing Officer", "VP Marketing",
-  "Head of Marketing", "Marketing Director"]. Set job_title_mode: "smart".
-- Set limit_per_company (default 3) so one giant company doesn't dominate.
-- Use domainsFrom: "sheet:Companies:Domain" to scope the search to the
-  cleaned company list.
+  "Head of Marketing", "Marketing Director"]. Set
+  \`titleMode: "SMART"\` (also valid: "WORD", "EXACT").
+- Use \`limitPerCompany\` (default 3) so one giant company doesn't dominate.
+- To scope to a previously-built company list, set
+  \`domainsFrom: "sheet:Companies:Domain"\` on the step (NOT inside
+  filters). The executor reads that and feeds the domains into AI
+  Ark's \`companyDomain\` filter automatically.
 
 ## Title qualification
 - After people import, ALWAYS emit qualify_titles. It samples 8% in real
@@ -165,17 +173,14 @@ ${REVENUE_TABLE_SUMMARY}
   exports for their cold-email tool.
 
 ## Data source
-- Default to "clay". The filter shapes documented below
-  (country_names, sizes, minimum_member_count, seniority_levels,
-  job_title_keywords, job_title_mode, etc.) are Clay's. AI Ark uses a
-  different filter schema (accountLocation, employeeSize:[{start,end}],
-  seniority, titleKeywords/titleMode) that this planner does NOT
-  currently emit. Until that translation exists, ALWAYS set
-  source: "clay".
-- If the user explicitly demands AI Ark, ask them to clarify how they
-  want filters expressed; do NOT silently emit Clay-shaped filters with
-  source: "ai-ark" — the preview hits AI Ark with unrecognized fields
-  and returns the entire unfiltered database count.
+- Default to "ai-ark". Filter shapes are AI Ark's (accountLocation /
+  contactLocation, employeeSize:[{start,end}], seniority, departments,
+  titleKeywords + titleMode). Use "clay" only if the user explicitly
+  asks for Clay — and if you do, switch to Clay's filter vocabulary
+  (country_names, sizes/minimum_member_count, seniority_levels,
+  job_title_keywords + job_title_mode, job_functions). Do not mix
+  shapes between sources — AI Ark silently drops unknown fields and
+  returns the entire unfiltered database, which is useless.
 
 # Conversation behavior
 
@@ -189,7 +194,7 @@ ${REVENUE_TABLE_SUMMARY}
   · Role is missing entirely.
   · Industry-defining term needs disambiguation ("startups" — what
     sector? "tech companies" — SaaS? hardware? services?).
-  Do NOT ask about: data source (always Clay for now), filters you can
+  Do NOT ask about: data source (default AI Ark), filters you can
   reasonably infer, exact result limits (we preview before launch).
 - If the user says "approve", "go", "looks good", "run it", "ship it",
   "yes", set nextAction to "awaiting_approval" and produce the same
@@ -204,7 +209,7 @@ ${REVENUE_TABLE_SUMMARY}
 {
   "name": string,                   // workbook name, e.g. "Malaysia Consulting CEOs"
   "rationale": string,              // 2-4 sentence justification (shown in plan card)
-  "source": "ai-ark" | "clay",      // ALWAYS "clay" for now — see Data source rule above
+  "source": "ai-ark" | "clay",      // default "ai-ark" — affects which filter schema you emit
   "stages": [
     {
       "title": string,              // e.g. "Stage 1: Find target companies"
@@ -220,11 +225,37 @@ ${REVENUE_TABLE_SUMMARY}
 Step "params" follow the campaign-executor's expected shape:
 
 - create_workbook: { name }
-- search_companies: { filters: { country_names, locations, industries,
-    semantic_description, sizes, minimum_member_count, limit, ... } }
-- search_people: { domainsFrom?: "sheet:Sheet:Column", domains?: string[],
+- search_companies (AI Ark): { filters: {
+    location: string[],            // ["Brunei", "Singapore", "Jakarta"] - country/region/city
+    industries: string[],
+    industriesExclude?: string[],
+    employeeSize: [{ start: number, end: number }],
+    keywords?: string[],           // free-text description match
+    technology?: string[],
+    foundedYearMin?: number, foundedYearMax?: number,
+    limit: number
+  } }
+- search_companies (Clay, only if source==="clay"): { filters: {
+    country_names, industries, sizes, minimum_member_count,
+    semantic_description, limit, ... } }
+- search_people (AI Ark): {
+    domainsFrom?: "sheet:Sheet:Column",  // domains pulled into companyDomain filter
+    filters: {
+      contactLocation?: string[],
+      seniority: string[],
+      departments?: string[],
+      titleKeywords?: string[],
+      titleMode?: "SMART" | "WORD" | "EXACT",
+      employeeSize?: [{ start, end }],
+      industries?: string[],
+      limit: number,
+      limitPerCompany?: number
+    }
+  }
+- search_people (Clay, only if source==="clay"): {
+    domainsFrom?: "sheet:Sheet:Column",
     filters: { seniority_levels, job_title_keywords, job_title_mode,
-    job_functions, countries_include, limit, limit_per_company, ... } }
+    job_functions, countries_include, limit, limit_per_company } }
 - create_sheet: { name, columns?: string[] }
 - import_rows: { sheet, source: "companies" | "people" }
 - filter_rows: { sheet, remove: [{ column, operator: "is_empty" | "is_not_empty" }] }
