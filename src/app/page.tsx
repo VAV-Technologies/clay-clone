@@ -201,6 +201,43 @@ function DashboardContent() {
 
   const [movePickerTarget, setMovePickerTarget] = useState<MovePickerTarget | null>(null);
 
+  // Agent prompt — kicks off a new campaign-builder chat.
+  const [agentPrompt, setAgentPrompt] = useState('');
+  const [submittingAgentPrompt, setSubmittingAgentPrompt] = useState(false);
+  // Render greeting only after mount so SSR/CSR agree (server's clock is UTC).
+  const [timeOfDay, setTimeOfDay] = useState<string | null>(null);
+  useEffect(() => {
+    const h = new Date().getHours();
+    if (h < 5) setTimeOfDay('evening');
+    else if (h < 12) setTimeOfDay('morning');
+    else if (h < 17) setTimeOfDay('afternoon');
+    else setTimeOfDay('evening');
+  }, []);
+
+  const handleAgentPromptSubmit = async (e?: React.FormEvent | React.KeyboardEvent) => {
+    if (e) e.preventDefault();
+    const prompt = agentPrompt.trim();
+    if (!prompt || submittingAgentPrompt) return;
+    setSubmittingAgentPrompt(true);
+    try {
+      const res = await fetch('/api/agent/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.conversationId) {
+        toast.error(data.error || 'Failed to start agent');
+        setSubmittingAgentPrompt(false);
+        return;
+      }
+      router.push(`/agent/${data.conversationId}`);
+    } catch (error) {
+      toast.error('Failed to start agent');
+      setSubmittingAgentPrompt(false);
+    }
+  };
+
   // Fetch projects on mount
   useEffect(() => {
     fetchProjects();
@@ -382,6 +419,56 @@ function DashboardContent() {
 
       {/* Main Content - Centered */}
       <main className="relative z-10 max-w-4xl mx-auto px-6 py-6">
+        {/* Greeting + Agent prompt */}
+        <section className="mb-10 text-center pt-6">
+          <h2
+            className="text-5xl text-white/80 leading-tight tracking-wide"
+            style={{ fontFamily: 'var(--font-cormorant)', fontWeight: 300 }}
+          >
+            {timeOfDay ? `Good ${timeOfDay},` : ' '}
+          </h2>
+          <p
+            className="mt-1 text-3xl text-white/55"
+            style={{ fontFamily: 'var(--font-cormorant)', fontWeight: 300, fontStyle: 'italic' }}
+          >
+            What would you like to build today?
+          </p>
+
+          <form onSubmit={handleAgentPromptSubmit} className="mt-6 max-w-2xl mx-auto text-left">
+            <textarea
+              value={agentPrompt}
+              onChange={(e) => setAgentPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleAgentPromptSubmit(e);
+                }
+              }}
+              disabled={submittingAgentPrompt}
+              placeholder="Build me a list of CEOs of consulting firms in Malaysia with $10M+ revenue..."
+              rows={3}
+              className="w-full px-5 py-4
+                         bg-white/5 border border-white/10
+                         text-white placeholder:text-white/30
+                         focus:border-lavender focus:outline-none focus:ring-2 focus:ring-lavender/20
+                         backdrop-blur-md resize-none
+                         disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <div className="mt-2 flex items-center justify-between text-xs text-white/30">
+              <span>Press Enter to start. Shift+Enter for newline.</span>
+              <button
+                type="submit"
+                disabled={!agentPrompt.trim() || submittingAgentPrompt}
+                className="px-3 py-1 border border-white/15 hover:border-white/40 hover:text-white/70 transition disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {submittingAgentPrompt ? 'Starting...' : 'Start →'}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <div className="mb-8 border-t border-white/10" />
+
         {/* Search Bar */}
         <div className="relative mb-4">
           <input
