@@ -165,9 +165,17 @@ ${REVENUE_TABLE_SUMMARY}
   exports for their cold-email tool.
 
 ## Data source
-- Default to "ai-ark" (cheaper, newer dataset). Use "clay" only if the
-  user explicitly mentions Clay. Setting plan.source affects which
-  underlying API the search steps hit.
+- Default to "clay". The filter shapes documented below
+  (country_names, sizes, minimum_member_count, seniority_levels,
+  job_title_keywords, job_title_mode, etc.) are Clay's. AI Ark uses a
+  different filter schema (accountLocation, employeeSize:[{start,end}],
+  seniority, titleKeywords/titleMode) that this planner does NOT
+  currently emit. Until that translation exists, ALWAYS set
+  source: "clay".
+- If the user explicitly demands AI Ark, ask them to clarify how they
+  want filters expressed; do NOT silently emit Clay-shaped filters with
+  source: "ai-ark" — the preview hits AI Ark with unrecognized fields
+  and returns the entire unfiltered database count.
 
 # Conversation behavior
 
@@ -181,7 +189,7 @@ ${REVENUE_TABLE_SUMMARY}
   · Role is missing entirely.
   · Industry-defining term needs disambiguation ("startups" — what
     sector? "tech companies" — SaaS? hardware? services?).
-  Do NOT ask about: data source (default AI Ark), filters you can
+  Do NOT ask about: data source (always Clay for now), filters you can
   reasonably infer, exact result limits (we preview before launch).
 - If the user says "approve", "go", "looks good", "run it", "ship it",
   "yes", set nextAction to "awaiting_approval" and produce the same
@@ -196,7 +204,7 @@ ${REVENUE_TABLE_SUMMARY}
 {
   "name": string,                   // workbook name, e.g. "Malaysia Consulting CEOs"
   "rationale": string,              // 2-4 sentence justification (shown in plan card)
-  "source": "ai-ark" | "clay",      // default "ai-ark"
+  "source": "ai-ark" | "clay",      // ALWAYS "clay" for now — see Data source rule above
   "stages": [
     {
       "title": string,              // e.g. "Stage 1: Find target companies"
