@@ -19,6 +19,7 @@ import {
   ChevronRight,
   ExternalLink,
   Send,
+  Trash2,
   XCircle,
 } from 'lucide-react';
 import { ToastProvider, useToast } from '@/components/ui';
@@ -359,19 +360,18 @@ function AgentChatPage() {
             <div className="px-4 py-2 text-sm text-white/30">No conversations yet</div>
           ) : (
             conversations.map(c => (
-              <button
+              <ConversationRow
                 key={c.id}
-                onClick={() => router.push(`/agent/${c.id}`)}
-                className={cn(
-                  'w-full text-left px-4 py-2 text-sm truncate hover:bg-white/5 transition',
-                  c.id === conversation.id && 'bg-white/[0.04] border-l-2 border-lavender',
-                )}
-              >
-                <div className="text-white/80 truncate">{c.title}</div>
-                <div className="text-xs text-white/30 mt-0.5">
-                  <StatusPill status={c.status} compact />
-                </div>
-              </button>
+                conversation={c}
+                isActive={c.id === conversation.id}
+                onOpen={() => router.push(`/agent/${c.id}`)}
+                onDeleted={async () => {
+                  await fetchConversations();
+                  // If the user just deleted the conversation they're currently
+                  // viewing, send them back to home.
+                  if (c.id === conversation.id) router.push('/');
+                }}
+              />
             ))
           )}
         </div>
@@ -486,6 +486,71 @@ function AgentChatPage() {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+function ConversationRow({
+  conversation,
+  isActive,
+  onOpen,
+  onDeleted,
+}: {
+  conversation: ConversationListItem;
+  isActive: boolean;
+  onOpen: () => void;
+  onDeleted: () => void | Promise<void>;
+}) {
+  const toast = useToast();
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (deleting) return;
+    const ok = window.confirm(
+      `Delete "${conversation.title}"? This removes the conversation and cancels any running campaign linked to it.`,
+    );
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/agent/conversations/${conversation.id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to delete');
+        setDeleting(false);
+        return;
+      }
+      if (data.cancelledCampaign) toast.success('Conversation deleted, campaign cancelled');
+      else toast.success('Conversation deleted');
+      await onDeleted();
+    } catch {
+      toast.error('Failed to delete');
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        'group relative flex items-start gap-1 px-4 py-2 text-sm hover:bg-white/5 transition cursor-pointer',
+        isActive && 'bg-white/[0.04] border-l-2 border-lavender',
+      )}
+      onClick={onOpen}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="text-white/80 truncate">{conversation.title}</div>
+        <div className="text-xs text-white/30 mt-0.5">
+          <StatusPill status={conversation.status} compact />
+        </div>
+      </div>
+      <button
+        onClick={handleDelete}
+        disabled={deleting}
+        className="opacity-0 group-hover:opacity-100 p-1 text-white/40 hover:text-red-400 transition flex-shrink-0"
+        title="Delete conversation"
+      >
+        {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+      </button>
+    </div>
+  );
+}
 
 function StatusPill({ status, compact }: { status: string; compact?: boolean }) {
   const map: Record<string, { label: string; cls: string }> = {
