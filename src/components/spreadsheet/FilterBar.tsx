@@ -163,19 +163,21 @@ export function FilterBar() {
           const needsValue = !['is_empty', 'is_not_empty'].includes(row.operator);
 
           return (
-            <div key={row.id} className="flex items-center gap-2">
-              {/* Boxed expression: Where|AND-OR + column + operator + value (transparent outline) */}
-              <div className="flex-1 flex items-center gap-2 border border-white/15 p-2">
+            <div key={row.id} className="flex items-stretch gap-2">
+              {/* Boxed expression: Where|AND-OR + column + operator + value */}
+              <div className={cn(
+                'flex-1 flex items-stretch border divide-x',
+                row.isApplied ? 'border-lavender/30 divide-lavender/20' : 'border-white/15 divide-white/15'
+              )}>
                 {/* First row: "Where" label, Other rows: AND/OR toggle */}
                 {index === 0 ? (
-                  <span className="w-16 text-sm text-white/50 flex-shrink-0 text-center">Where</span>
+                  <span className="w-16 flex items-center justify-center px-2 py-1.5 text-sm text-white/50 flex-shrink-0">Where</span>
                 ) : (
                   <button
                     onClick={toggleFilterLogic}
                     className={cn(
-                      'w-16 px-2 py-1 text-xs font-medium transition-colors flex-shrink-0 text-center',
-                      'bg-lavender/20 text-lavender border border-lavender/30',
-                      'hover:bg-lavender/30'
+                      'w-16 flex items-center justify-center px-2 py-1.5 text-xs font-medium transition-colors flex-shrink-0',
+                      'bg-lavender/20 text-lavender hover:bg-lavender/30'
                     )}
                   >
                     {filterLogic}
@@ -188,7 +190,7 @@ export function FilterBar() {
                   onChange={(e) => {
                     updateFilterRow(row.id, 'columnId', e.target.value);
                   }}
-                  className="select-chevron w-44 pl-3 pr-9 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
+                  className="select-chevron w-44 pl-3 pr-9 py-1.5 bg-white/5 text-white text-sm focus:outline-none cursor-pointer flex-shrink-0"
                 >
                   <option value="" className="bg-midnight-100 text-white/50">
                     Select column
@@ -206,7 +208,7 @@ export function FilterBar() {
                   onChange={(e) => {
                     updateFilterRow(row.id, 'operator', e.target.value);
                   }}
-                  className="select-chevron w-48 pl-3 pr-9 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
+                  className="select-chevron w-48 pl-3 pr-9 py-1.5 bg-white/5 text-white text-sm focus:outline-none cursor-pointer flex-shrink-0"
                 >
                   {OPERATORS.map((op) => (
                     <option key={op} value={op} className="bg-midnight-100 text-white">
@@ -227,46 +229,43 @@ export function FilterBar() {
                       }
                     }}
                     placeholder="Enter value..."
-                    className={cn(
-                      'flex-1 min-w-[120px] px-3 py-1.5 bg-white/5 border text-white text-sm placeholder:text-white/30 focus:border-lavender focus:outline-none',
-                      row.isApplied ? 'border-lavender/30' : 'border-white/10'
-                    )}
+                    className="flex-1 min-w-[120px] px-3 py-1.5 bg-white/5 text-white text-sm placeholder:text-white/30 focus:outline-none"
                   />
                 ) : (
-                  <div className="flex-1 min-w-[120px]" />
+                  <div className="flex-1 min-w-[120px] bg-white/5" />
                 )}
               </div>
 
-              {/* Apply Filter Button */}
-              {!row.isApplied && (
+              {/* Combined Apply (or Applied) + X box, vertically aligned with expression box */}
+              <div className={cn(
+                'flex items-stretch border divide-x flex-shrink-0',
+                row.isApplied ? 'border-lavender/30 divide-lavender/20' : 'border-white/15 divide-white/15'
+              )}>
+                {!row.isApplied ? (
+                  <button
+                    onClick={() => applyFilter(row)}
+                    disabled={needsValue && !row.value.trim()}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors',
+                      'bg-lavender text-midnight hover:bg-lavender/90',
+                      'disabled:opacity-50 disabled:cursor-not-allowed'
+                    )}
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Apply</span>
+                  </button>
+                ) : (
+                  <span className="flex items-center px-3 py-1.5 text-xs font-medium text-lavender bg-lavender/10">
+                    Applied
+                  </span>
+                )}
                 <button
-                  onClick={() => applyFilter(row)}
-                  disabled={needsValue && !row.value.trim()}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors flex-shrink-0',
-                    'bg-lavender text-midnight hover:bg-lavender/90',
-                    'disabled:opacity-50 disabled:cursor-not-allowed'
-                  )}
+                  onClick={() => removeFilterRow(row.id)}
+                  className="flex items-center justify-center px-2 py-1.5 text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors"
                 >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Apply</span>
+                  <X className="w-4 h-4" />
                 </button>
-              )}
-
-              {/* Applied indicator */}
-              {row.isApplied && (
-                <span className="px-2 py-1 text-xs text-lavender bg-lavender/10 flex-shrink-0">
-                  Applied
-                </span>
-              )}
-
-              {/* Remove Button */}
-              <button
-                onClick={() => removeFilterRow(row.id)}
-                className="p-1.5 text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              </div>
             </div>
           );
         })}
