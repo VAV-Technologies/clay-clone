@@ -69,9 +69,7 @@ function AgentHomeContent() {
       <main className="relative z-10 flex-1 flex items-center justify-center pb-24">
         <section className="w-full max-w-4xl px-6">
           <div
-            className="border border-white/10
-                       px-8 py-14 sm:px-14 sm:py-20 lg:px-20 lg:py-24
-                       text-center"
+            className="px-8 py-14 sm:px-14 sm:py-20 lg:px-20 lg:py-24 text-center"
           >
             <p
               className="text-xl text-white/55 leading-tight tracking-wide"
