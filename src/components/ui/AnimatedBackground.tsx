@@ -14,16 +14,16 @@ export function AnimatedBackground() {
         <filter id="bg-grain">
           <feTurbulence
             type="fractalNoise"
-            baseFrequency="0.45"
+            baseFrequency="0.7"
             numOctaves="2"
             seed="5"
             stitchTiles="stitch"
           />
           <feColorMatrix type="saturate" values="0" />
           <feComponentTransfer>
-            <feFuncR type="linear" slope="1.5" intercept="-0.35" />
-            <feFuncG type="linear" slope="1.5" intercept="-0.35" />
-            <feFuncB type="linear" slope="1.5" intercept="-0.35" />
+            <feFuncR type="linear" slope="1.3" intercept="-0.2" />
+            <feFuncG type="linear" slope="1.3" intercept="-0.2" />
+            <feFuncB type="linear" slope="1.3" intercept="-0.2" />
           </feComponentTransfer>
         </filter>
         <rect width="100%" height="100%" filter="url(#bg-grain)" />
