@@ -331,11 +331,14 @@ function AgentChatPage() {
   const launched = !!conversation.campaignId;
 
   return (
-    <div className="min-h-screen relative flex">
+    // h-screen (not min-h-screen) so the inner flex children have a bounded
+    // height. Without this, the thread's `flex-1 overflow-y-auto` has no
+    // ceiling to scroll within and the whole page grows instead.
+    <div className="h-screen overflow-hidden relative flex">
       <AnimatedBackground />
 
       {/* Sidebar */}
-      <aside className="relative z-10 w-72 border-r border-white/10 bg-midnight/60 backdrop-blur-sm flex flex-col">
+      <aside className="relative z-10 w-72 border-r border-white/10 bg-midnight/60 backdrop-blur-sm flex flex-col h-full">
         <div className="p-4 border-b border-white/10 flex items-center gap-2">
           <button
             onClick={() => router.push('/')}
@@ -352,7 +355,7 @@ function AgentChatPage() {
             New campaign
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto py-2">
           <div className="px-4 py-2 text-xs uppercase tracking-wider text-white/30">
             Past conversations
           </div>
@@ -378,7 +381,7 @@ function AgentChatPage() {
       </aside>
 
       {/* Main pane */}
-      <div className="relative z-10 flex-1 flex flex-col min-w-0">
+      <div className="relative z-10 flex-1 flex flex-col min-w-0 h-full">
         {/* Header */}
         <header className="border-b border-white/10 bg-midnight/50 backdrop-blur-sm px-6 py-3 flex items-center justify-between">
           <div className="min-w-0">
@@ -406,7 +409,7 @@ function AgentChatPage() {
         </header>
 
         {/* Thread */}
-        <div ref={threadRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+        <div ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-6 py-6 space-y-4">
           {messages.map(m => (
             <MessageBubble key={m.id} message={m} />
           ))}
