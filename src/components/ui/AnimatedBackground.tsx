@@ -9,7 +9,7 @@ export function AnimatedBackground() {
     >
       <svg
         className="absolute inset-0 w-full h-full"
-        style={{ mixBlendMode: 'screen', opacity: 0.28 }}
+        style={{ mixBlendMode: 'screen', opacity: 0.08 }}
       >
         <filter id="bg-grain">
           <feTurbulence
