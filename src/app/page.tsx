@@ -44,15 +44,31 @@ function AgentHomeContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt }),
       });
-      const data = await res.json();
+      // Robustly extract an error message: try JSON, fall back to body text,
+      // fall back to status code so we never silently land on the generic
+      // "Failed to start agent" string when the server actually told us why.
+      let data: { conversationId?: string; error?: string } = {};
+      let rawText = '';
+      try {
+        rawText = await res.text();
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        // body wasn't JSON — keep rawText as-is for the error toast
+      }
       if (!res.ok || !data.conversationId) {
-        toast.error(data.error || 'Failed to start agent');
+        const detail =
+          data.error ||
+          (rawText && rawText.length < 300 ? rawText : '') ||
+          `HTTP ${res.status}`;
+        toast.error(`Failed to start agent: ${detail}`);
+        console.error('[agent home] start failed', { status: res.status, body: rawText });
         setSubmitting(false);
         return;
       }
       router.push(`/agent/${data.conversationId}`);
-    } catch {
-      toast.error('Failed to start agent');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown error';
+      toast.error(`Failed to start agent: ${msg}`);
       setSubmitting(false);
     }
   };

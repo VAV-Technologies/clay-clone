@@ -3,7 +3,7 @@
 // the assistant reply, and return the new messages plus updated status.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { db, schema } from '@/lib/db';
+import { db, schema, ensureAgentTables } from '@/lib/db';
 import { eq, asc } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
 import { runPlannerTurn, type PlannerHistoryItem } from '@/lib/agent/planner';
@@ -13,6 +13,7 @@ export const maxDuration = 120;
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    await ensureAgentTables().catch(() => undefined);
     const body = await request.json().catch(() => ({}));
     const message = (body.message as string | undefined)?.trim();
     if (!message) {

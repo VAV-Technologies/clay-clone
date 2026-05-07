@@ -2,7 +2,7 @@
 // message thread, and (if launched) a snapshot of the linked campaign.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { db, schema } from '@/lib/db';
+import { db, schema, ensureAgentTables } from '@/lib/db';
 import { eq, asc } from 'drizzle-orm';
 import type { CampaignStep } from '@/lib/db/schema';
 
@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    await ensureAgentTables().catch(() => undefined);
     const [conversation] = await db
       .select()
       .from(schema.agentConversations)

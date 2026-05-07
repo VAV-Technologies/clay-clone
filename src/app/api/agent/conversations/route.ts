@@ -10,7 +10,7 @@
 // is added later) should allow these or require the standard token.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { db, schema } from '@/lib/db';
+import { db, schema, ensureAgentTables } from '@/lib/db';
 import { desc, eq } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
 import { runPlannerTurn, deriveTitle } from '@/lib/agent/planner';
@@ -20,6 +20,19 @@ export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
+    // Defensive: guarantees the agent tables exist on Turso before the first
+    // insert of a freshly-deployed instance can race against the migration.
+    try {
+      await ensureAgentTables();
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'unknown';
+      console.error('[agent/conversations] ensureAgentTables failed:', errMsg);
+      return NextResponse.json(
+        { error: `Database not ready: ${errMsg}` },
+        { status: 500 },
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const prompt = (body.prompt as string | undefined)?.trim();
     if (!prompt) {
@@ -134,6 +147,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   try {
+    await ensureAgentTables().catch(() => undefined); // silent — empty list is fine if it fails
     const rows = await db
       .select()
       .from(schema.agentConversations)

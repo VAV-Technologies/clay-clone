@@ -11,6 +11,61 @@ const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
 let db: ReturnType<typeof drizzleSqlite> | ReturnType<typeof drizzleLibsql>;
 let libsqlClient: Client | null = null;
 
+// Memoized promise that ensures the agent_conversations / agent_messages
+// tables exist on Turso. Agent endpoints await this before inserting so the
+// first request after a deploy can't lose the race against the
+// fire-and-forget migration IIFE.
+let agentTablesReadyPromise: Promise<void> | null = null;
+
+export function ensureAgentTables(): Promise<void> {
+  if (!libsqlClient) return Promise.resolve(); // local SQLite already ran sync DDL
+  if (agentTablesReadyPromise) return agentTablesReadyPromise;
+  agentTablesReadyPromise = (async () => {
+    const exec = async (sql: string) => {
+      try {
+        await libsqlClient!.execute(sql);
+      } catch (err) {
+        const msg = (err as Error).message || '';
+        console.error('[ensureAgentTables] failed:', msg, '\n' + sql.slice(0, 200));
+        throw err;
+      }
+    };
+    await exec(`
+      CREATE TABLE IF NOT EXISTS agent_conversations (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'planning',
+        initial_prompt TEXT NOT NULL,
+        campaign_id TEXT,
+        plan_json TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+    await exec(`
+      CREATE TABLE IF NOT EXISTS agent_messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        plan_json TEXT,
+        tool_name TEXT,
+        tool_args TEXT,
+        tool_result TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (conversation_id) REFERENCES agent_conversations(id) ON DELETE CASCADE
+      )
+    `);
+    await exec('CREATE INDEX IF NOT EXISTS idx_agent_messages_conv ON agent_messages(conversation_id)');
+    await exec('CREATE INDEX IF NOT EXISTS idx_agent_conversations_updated ON agent_conversations(updated_at)');
+  })();
+  // If the migration fails, allow it to be retried on the next call.
+  agentTablesReadyPromise.catch(() => {
+    agentTablesReadyPromise = null;
+  });
+  return agentTablesReadyPromise;
+}
+
 if (TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
   // Production: Use Turso
   libsqlClient = createClient({
@@ -43,45 +98,11 @@ if (TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
     };
     await tryAdd("ALTER TABLE enrichment_configs ADD COLUMN web_search_enabled integer DEFAULT 0 NOT NULL");
     await tryAdd("ALTER TABLE enrichment_configs ADD COLUMN web_search_provider text DEFAULT 'spider'");
-
-    // Agent conversations + messages — created lazily on Turso (CREATE TABLE
-    // IF NOT EXISTS is a no-op when the table already exists).
-    const tryExec = async (sql: string) => {
-      try { await libsqlClient!.execute(sql); }
-      catch (err: unknown) {
-        const msg = (err as Error).message || '';
-        console.error('[migrate] CREATE failed:', msg);
-      }
-    };
-    await tryExec(`
-      CREATE TABLE IF NOT EXISTS agent_conversations (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'planning',
-        initial_prompt TEXT NOT NULL,
-        campaign_id TEXT,
-        plan_json TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
-    `);
-    await tryExec(`
-      CREATE TABLE IF NOT EXISTS agent_messages (
-        id TEXT PRIMARY KEY,
-        conversation_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        plan_json TEXT,
-        tool_name TEXT,
-        tool_args TEXT,
-        tool_result TEXT,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (conversation_id) REFERENCES agent_conversations(id) ON DELETE CASCADE
-      )
-    `);
-    await tryExec('CREATE INDEX IF NOT EXISTS idx_agent_messages_conv ON agent_messages(conversation_id)');
-    await tryExec('CREATE INDEX IF NOT EXISTS idx_agent_conversations_updated ON agent_conversations(updated_at)');
   })();
+
+  // Kick agent-table migration in the background; agent endpoints also await
+  // ensureAgentTables() defensively so a cold start can't insert before DDL.
+  void ensureAgentTables().catch((err) => console.error('[boot] ensureAgentTables failed:', err));
 } else {
   // Development: Use local SQLite
   const sqlite = new Database('dataflow.db');
