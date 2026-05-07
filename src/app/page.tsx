@@ -35,16 +35,12 @@ interface Project {
   parentId?: string | null;
 }
 
-function formatRelativeTime(dateInput: string | Date): string {
+function formatModified(dateInput: string | Date): string {
   const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
   const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (days === 0) return 'today';
-  if (days === 1) return 'yesterday';
-  if (days < 7) return `${days} days ago`;
-  if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
   return date.toLocaleDateString();
 }
 
@@ -93,12 +89,12 @@ function ProjectRow({
       </div>
 
       {/* Modified */}
-      <div className="w-32 text-sm text-white/40 hidden sm:block">
-        {formatRelativeTime(project.updatedAt)}
+      <div className="w-32 hidden sm:flex items-center justify-center text-sm text-white/40 self-stretch border-l border-white/10">
+        {formatModified(project.updatedAt)}
       </div>
 
       {/* Menu */}
-      <div className="w-10 flex justify-end">
+      <div className="w-10 flex items-center justify-end self-stretch border-l border-white/10 pl-1">
         <button
           ref={menuBtnRef}
           onClick={(e) => {
@@ -477,10 +473,10 @@ function DashboardContent() {
           ) : (
             <>
               {/* Table Header */}
-              <div className="flex items-center px-4 py-3 border-b border-white/10 bg-white/[0.02]">
+              <div className="flex items-stretch px-4 py-3 border-b border-white/10 bg-white/[0.02]">
                 <div className="flex-1 text-xs font-medium text-white/40 uppercase tracking-wider">Name</div>
-                <div className="w-32 text-xs font-medium text-white/40 uppercase tracking-wider hidden sm:block">Modified</div>
-                <div className="w-10"></div>
+                <div className="w-32 hidden sm:flex items-center justify-center text-xs font-medium text-white/40 uppercase tracking-wider border-l border-white/10">Modified</div>
+                <div className="w-10 border-l border-white/10"></div>
               </div>
 
               {/* Rows */}

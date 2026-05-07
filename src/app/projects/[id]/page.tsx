@@ -37,6 +37,15 @@ interface ChildRow {
 
 type CreateKind = 'folder' | 'workbook';
 
+function formatModified(dateInput: string | Date): string {
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  return date.toLocaleDateString();
+}
+
 function ProjectContent() {
   const params = useParams();
   const router = useRouter();
@@ -391,10 +400,10 @@ function ProjectContent() {
         {children.length > 0 ? (
           <div className="bg-white/5 backdrop-blur-md border border-white/10">
             {/* Table Header */}
-            <div className="flex items-center px-4 py-3 border-b border-white/10 bg-white/[0.02]">
+            <div className="flex items-stretch px-4 py-3 border-b border-white/10 bg-white/[0.02]">
               <div className="flex-1 text-xs font-medium text-white/40 uppercase tracking-wider">Name</div>
-              <div className="w-32 text-xs font-medium text-white/40 uppercase tracking-wider hidden sm:block">Modified</div>
-              <div className="w-10"></div>
+              <div className="w-32 hidden sm:flex items-center justify-center text-xs font-medium text-white/40 uppercase tracking-wider border-l border-white/10">Modified</div>
+              <div className="w-10 border-l border-white/10"></div>
             </div>
 
             {/* Rows */}
@@ -402,7 +411,7 @@ function ProjectContent() {
               {children.map((row) => (
                 <div
                   key={row.id}
-                  className="flex items-center px-4 py-3 hover:bg-white/[0.03] transition-colors group"
+                  className="flex items-stretch px-4 py-3 hover:bg-white/[0.03] transition-colors group"
                 >
                   {/* Clickable content area */}
                   <div
@@ -423,12 +432,12 @@ function ProjectContent() {
                   </div>
 
                   {/* Modified date */}
-                  <div className="w-32 text-sm text-white/40 hidden sm:block">
-                    {new Date(row.updatedAt).toLocaleDateString()}
+                  <div className="w-32 hidden sm:flex items-center justify-center text-sm text-white/40 self-stretch border-l border-white/10">
+                    {formatModified(row.updatedAt)}
                   </div>
 
                   {/* Menu button */}
-                  <div className="w-10 flex justify-end">
+                  <div className="w-10 flex items-center justify-end self-stretch border-l border-white/10 pl-1">
                     <button
                       type="button"
                       ref={(el) => { menuBtnRefs.current[row.id] = el; }}
