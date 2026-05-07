@@ -337,7 +337,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, o
   }
 
   return (
-    <div className="flex flex-col h-full border border-white/10 bg-midnight-100/60 backdrop-blur-xl shadow-2xl overflow-hidden">
+    <div className="flex flex-col h-full border border-white/10 bg-white/[0.02] backdrop-blur-md shadow-2xl overflow-hidden">
       {/* Toolbar - Row/column controls and actions */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/[0.02]">
         <div className="flex items-center gap-1">
@@ -640,6 +640,8 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, o
                   key={row.id}
                   className={cn(
                     'absolute left-0 flex',
+                    // Column striping on data cells (3rd+ children); checkbox + row-number stay neutral
+                    '[&>:nth-child(2n+4)]:bg-white/[0.03]',
                     isSelected ? 'bg-lavender/10' : 'hover:bg-white/[0.02]'
                   )}
                   style={{

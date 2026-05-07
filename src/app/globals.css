@@ -93,7 +93,7 @@ body {
   }
 
   .glass-header {
-    @apply bg-midnight-100/80 border-b border-white/10;
+    @apply bg-lavender/[0.08] border-b border-lavender/20;
   }
 
   .glass-dropdown {
