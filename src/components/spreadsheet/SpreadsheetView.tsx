@@ -11,9 +11,6 @@ import { ColumnHeader } from './ColumnHeader';
 import { Cell } from './Cell';
 import { FilterBar } from './FilterBar';
 import { EnrichmentDataViewer } from './EnrichmentDataViewer';
-import { BatchEnrichmentPanel } from '@/components/enrichment/BatchEnrichmentPanel';
-import { FindEmailPanel } from '@/components/email/FindEmailPanel';
-import { LookUpPanel } from '@/components/lookup/LookUpPanel';
 import { RowDisplayControl } from './RowDisplayControl';
 import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { AddFilterButton } from './AddFilterButton';
@@ -25,6 +22,9 @@ interface SpreadsheetViewProps {
   onAddClayData?: () => void;
   onAddAiArcData?: () => void;
   onAddWattdata?: () => void;
+  onOpenLookUp?: () => void;
+  onOpenBatchEnrich?: () => void;
+  onOpenFindEmail?: () => void;
 }
 
 const ROW_HEIGHT = 43;
@@ -51,7 +51,7 @@ interface EnrichmentDataState {
   metadata?: CellMetadata;
 }
 
-export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, onAddAiArcData, onAddWattdata }: SpreadsheetViewProps) {
+export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, onAddAiArcData, onAddWattdata, onOpenLookUp, onOpenBatchEnrich, onOpenFindEmail }: SpreadsheetViewProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
   // State for enrichment data viewer
@@ -61,15 +61,6 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, o
     columnId: '',
     data: {},
   });
-
-  // State for batch enrichment panel
-  const [isBatchEnrichmentOpen, setIsBatchEnrichmentOpen] = useState(false);
-
-  // State for find email panel
-  const [isFindEmailOpen, setIsFindEmailOpen] = useState(false);
-
-  // State for look up panel
-  const [isLookUpOpen, setIsLookUpOpen] = useState(false);
 
   // Actions dropdown
   const [isActionsOpen, setIsActionsOpen] = useState(false);
@@ -448,7 +439,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, o
                     Formula
                   </button>
                   <button
-                    onClick={() => { setIsActionsOpen(false); setIsLookUpOpen(true); }}
+                    onClick={() => { setIsActionsOpen(false); onOpenLookUp?.(); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
                   >
                     <div className="w-7 h-7 bg-emerald-500/10 flex items-center justify-center">
@@ -466,7 +457,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, o
                     Real-Time Enrich
                   </button>
                   <button
-                    onClick={() => { setIsActionsOpen(false); setIsBatchEnrichmentOpen(true); }}
+                    onClick={() => { setIsActionsOpen(false); onOpenBatchEnrich?.(); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
                   >
                     <div className="w-7 h-7 bg-amber-500/10 flex items-center justify-center">
@@ -475,7 +466,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, o
                     Batch Enrich
                   </button>
                   <button
-                    onClick={() => { setIsActionsOpen(false); setIsFindEmailOpen(true); }}
+                    onClick={() => { setIsActionsOpen(false); onOpenFindEmail?.(); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
                   >
                     <div className="w-7 h-7 bg-cyan-500/10 flex items-center justify-center">
@@ -717,25 +708,6 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, o
         columnId={enrichmentDataState.columnId}
         tableId={tableId}
         onExtractToColumn={handleExtractToColumn}
-      />
-
-      {/* Batch Enrichment Panel */}
-      <BatchEnrichmentPanel
-        isOpen={isBatchEnrichmentOpen}
-        onClose={() => setIsBatchEnrichmentOpen(false)}
-      />
-
-      {/* Find Email Panel */}
-      <FindEmailPanel
-        isOpen={isFindEmailOpen}
-        onClose={() => setIsFindEmailOpen(false)}
-      />
-
-      {/* Look Up Panel */}
-      <LookUpPanel
-        isOpen={isLookUpOpen}
-        onClose={() => setIsLookUpOpen(false)}
-        tableId={tableId}
       />
 
     </div>

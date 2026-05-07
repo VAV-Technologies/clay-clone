@@ -311,7 +311,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
   const canRun = formula.trim() && !isProcessing;
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[480px] z-50 flex flex-col bg-midnight-100/95 backdrop-blur-xl border-l border-white/10 shadow-2xl">
+    <div className="absolute inset-y-0 right-0 w-96 z-30 flex flex-col bg-midnight-100 border-l border-white/10 shadow-2xl">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
         <div className="flex items-center gap-3">

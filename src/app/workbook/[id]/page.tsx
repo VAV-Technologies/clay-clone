@@ -10,7 +10,10 @@ import { SpreadsheetView } from '@/components/spreadsheet';
 import { SheetTabs } from '@/components/spreadsheet/SheetTabs';
 import { CSVImportModal } from '@/components/import/CSVImportModal';
 import { EnrichmentPanel } from '@/components/enrichment/EnrichmentPanel';
+import { BatchEnrichmentPanel } from '@/components/enrichment/BatchEnrichmentPanel';
 import { FormulaPanel } from '@/components/formula/FormulaPanel';
+import { LookUpPanel } from '@/components/lookup/LookUpPanel';
+import { FindEmailPanel } from '@/components/email/FindEmailPanel';
 import { AddDataModal } from '@/components/data/AddDataModal';
 import { AddAiArcDataModal } from '@/components/data/AddAiArcDataModal';
 import { AddWattdataModal } from '@/components/data/AddWattdataModal';
@@ -39,6 +42,9 @@ function WorkbookContent() {
   const [isAddDataOpen, setIsAddDataOpen] = useState(false);
   const [isAiArcDataOpen, setIsAiArcDataOpen] = useState(false);
   const [isWattdataOpen, setIsWattdataOpen] = useState(false);
+  const [isLookUpOpen, setIsLookUpOpen] = useState(false);
+  const [isBatchEnrichmentOpen, setIsBatchEnrichmentOpen] = useState(false);
+  const [isFindEmailOpen, setIsFindEmailOpen] = useState(false);
 
   // Load workbook on mount
   useEffect(() => {
@@ -132,9 +138,9 @@ function WorkbookContent() {
             </div>
           </div>
 
-          {/* Spreadsheet */}
+          {/* Spreadsheet + slide-in panels (rendered absolute inside this wrapper) */}
           {tableId && (
-            <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-hidden relative">
               <SpreadsheetView
                 tableId={tableId}
                 onEnrich={handleOpenEnrichment}
@@ -142,6 +148,38 @@ function WorkbookContent() {
                 onAddClayData={() => setIsAddDataOpen(true)}
                 onAddAiArcData={() => setIsAiArcDataOpen(true)}
                 onAddWattdata={() => setIsWattdataOpen(true)}
+                onOpenLookUp={() => setIsLookUpOpen(true)}
+                onOpenBatchEnrich={() => setIsBatchEnrichmentOpen(true)}
+                onOpenFindEmail={() => setIsFindEmailOpen(true)}
+              />
+
+              <EnrichmentPanel
+                isOpen={isEnrichmentOpen}
+                onClose={() => { setIsEnrichmentOpen(false); setEditEnrichmentColumnId(null); }}
+                editColumnId={editEnrichmentColumnId}
+              />
+
+              <FormulaPanel
+                isOpen={isFormulaOpen}
+                onClose={() => { setIsFormulaOpen(false); setEditFormulaColumnId(null); }}
+                tableId={tableId}
+                columnId={editFormulaColumnId || undefined}
+              />
+
+              <LookUpPanel
+                isOpen={isLookUpOpen}
+                onClose={() => setIsLookUpOpen(false)}
+                tableId={tableId}
+              />
+
+              <BatchEnrichmentPanel
+                isOpen={isBatchEnrichmentOpen}
+                onClose={() => setIsBatchEnrichmentOpen(false)}
+              />
+
+              <FindEmailPanel
+                isOpen={isFindEmailOpen}
+                onClose={() => setIsFindEmailOpen(false)}
               />
             </div>
           )}
@@ -159,19 +197,6 @@ function WorkbookContent() {
             onClose={() => setIsImportModalOpen(false)}
             tableId={tableId}
             onImportComplete={handleImportComplete}
-          />
-
-          <EnrichmentPanel
-            isOpen={isEnrichmentOpen}
-            onClose={() => { setIsEnrichmentOpen(false); setEditEnrichmentColumnId(null); }}
-            editColumnId={editEnrichmentColumnId}
-          />
-
-          <FormulaPanel
-            isOpen={isFormulaOpen}
-            onClose={() => { setIsFormulaOpen(false); setEditFormulaColumnId(null); }}
-            tableId={tableId}
-            columnId={editFormulaColumnId || undefined}
           />
 
           <AddDataModal
