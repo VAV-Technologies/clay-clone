@@ -187,7 +187,61 @@ export const campaigns = sqliteTable('campaigns', {
   completedAt: integer('completed_at', { mode: 'timestamp' }),
 });
 
-export type CampaignStepType = 'create_workbook' | 'search_companies' | 'search_people' | 'create_sheet' | 'import_rows' | 'filter_rows' | 'find_emails' | 'lookup' | 'enrich' | 'cleanup';
+export type CampaignStepType =
+  | 'create_workbook'
+  | 'search_companies'
+  | 'search_people'
+  | 'create_sheet'
+  | 'import_rows'
+  | 'filter_rows'
+  | 'find_domains'
+  | 'qualify_titles'
+  | 'find_emails'
+  | 'find_emails_waterfall'
+  | 'clean_company_name'
+  | 'clean_person_name'
+  | 'materialize_send_ready'
+  | 'lookup'
+  | 'enrich'
+  | 'cleanup';
+
+// Agent conversation thread (one per campaign-build session)
+export const agentConversations = sqliteTable('agent_conversations', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  status: text('status', {
+    enum: ['planning', 'awaiting_approval', 'previewing', 'running', 'complete', 'error', 'cancelled'],
+  }).notNull().default('planning'),
+  initialPrompt: text('initial_prompt').notNull(),
+  campaignId: text('campaign_id'),
+  planJson: text('plan_json', { mode: 'json' }).$type<unknown>(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const agentMessages = sqliteTable('agent_messages', {
+  id: text('id').primaryKey(),
+  conversationId: text('conversation_id').notNull()
+    .references(() => agentConversations.id, { onDelete: 'cascade' }),
+  role: text('role', { enum: ['user', 'assistant', 'tool', 'system'] }).notNull(),
+  content: text('content').notNull(),
+  planJson: text('plan_json', { mode: 'json' }).$type<unknown>(),
+  toolName: text('tool_name'),
+  toolArgs: text('tool_args', { mode: 'json' }).$type<unknown>(),
+  toolResult: text('tool_result', { mode: 'json' }).$type<unknown>(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const agentConversationsRelations = relations(agentConversations, ({ many }) => ({
+  messages: many(agentMessages),
+}));
+
+export const agentMessagesRelations = relations(agentMessages, ({ one }) => ({
+  conversation: one(agentConversations, {
+    fields: [agentMessages.conversationId],
+    references: [agentConversations.id],
+  }),
+}));
 
 export interface CampaignStep {
   type: CampaignStepType;
@@ -253,4 +307,8 @@ export type BatchEnrichmentJob = typeof batchEnrichmentJobs.$inferSelect;
 export type NewBatchEnrichmentJob = typeof batchEnrichmentJobs.$inferInsert;
 export type Campaign = typeof campaigns.$inferSelect;
 export type NewCampaign = typeof campaigns.$inferInsert;
+export type AgentConversation = typeof agentConversations.$inferSelect;
+export type NewAgentConversation = typeof agentConversations.$inferInsert;
+export type AgentMessage = typeof agentMessages.$inferSelect;
+export type NewAgentMessage = typeof agentMessages.$inferInsert;
 

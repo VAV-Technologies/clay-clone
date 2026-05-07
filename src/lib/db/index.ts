@@ -43,6 +43,44 @@ if (TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
     };
     await tryAdd("ALTER TABLE enrichment_configs ADD COLUMN web_search_enabled integer DEFAULT 0 NOT NULL");
     await tryAdd("ALTER TABLE enrichment_configs ADD COLUMN web_search_provider text DEFAULT 'spider'");
+
+    // Agent conversations + messages — created lazily on Turso (CREATE TABLE
+    // IF NOT EXISTS is a no-op when the table already exists).
+    const tryExec = async (sql: string) => {
+      try { await libsqlClient!.execute(sql); }
+      catch (err: unknown) {
+        const msg = (err as Error).message || '';
+        console.error('[migrate] CREATE failed:', msg);
+      }
+    };
+    await tryExec(`
+      CREATE TABLE IF NOT EXISTS agent_conversations (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'planning',
+        initial_prompt TEXT NOT NULL,
+        campaign_id TEXT,
+        plan_json TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+    await tryExec(`
+      CREATE TABLE IF NOT EXISTS agent_messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        plan_json TEXT,
+        tool_name TEXT,
+        tool_args TEXT,
+        tool_result TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (conversation_id) REFERENCES agent_conversations(id) ON DELETE CASCADE
+      )
+    `);
+    await tryExec('CREATE INDEX IF NOT EXISTS idx_agent_messages_conv ON agent_messages(conversation_id)');
+    await tryExec('CREATE INDEX IF NOT EXISTS idx_agent_conversations_updated ON agent_conversations(updated_at)');
   })();
 } else {
   // Development: Use local SQLite
@@ -232,6 +270,33 @@ function runLocalMigrations(sqlite: Database.Database) {
       completed_at INTEGER
     );
 
+    -- Agent conversations + messages (in-app campaign builder chat)
+    CREATE TABLE IF NOT EXISTS agent_conversations (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'planning',
+      initial_prompt TEXT NOT NULL,
+      campaign_id TEXT,
+      plan_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      plan_json TEXT,
+      tool_name TEXT,
+      tool_args TEXT,
+      tool_result TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (conversation_id) REFERENCES agent_conversations(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_messages_conv ON agent_messages(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_conversations_updated ON agent_conversations(updated_at);
   `);
 }
 
