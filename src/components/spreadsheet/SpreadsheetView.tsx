@@ -27,7 +27,7 @@ interface SpreadsheetViewProps {
   onAddWattdata?: () => void;
 }
 
-const ROW_HEIGHT = 36;
+const ROW_HEIGHT = 43;
 const HEADER_HEIGHT = 40;
 const CHECKBOX_WIDTH = 40;
 const ROW_NUMBER_WIDTH = 50;
