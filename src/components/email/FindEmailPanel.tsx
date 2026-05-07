@@ -244,7 +244,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
 
   if (!isOpen) return null;
 
-  const selectClasses = 'w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-lavender';
+  const selectClasses = 'select-chevron w-full bg-white/5 border border-white/10 pl-3 pr-9 py-2 text-sm text-white focus:outline-none focus:border-lavender';
 
   return (
     <div className="fixed inset-y-0 right-0 w-96 glass-sidebar flex flex-col z-40 animate-slide-in">

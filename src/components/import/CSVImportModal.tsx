@@ -352,7 +352,7 @@ export function CSVImportModal({
                             updateMapping(header, { type: 'existing', columnId });
                           }
                         }}
-                        className="w-full bg-white/5 border border-white/10 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-lavender"
+                        className="select-chevron w-full bg-white/5 border border-white/10 pl-2 pr-9 py-1.5 text-sm text-white focus:outline-none focus:border-lavender"
                       >
                         <option value="skip" className="bg-midnight-100">Skip this column</option>
                         <option value="new" className="bg-midnight-100">+ Create new column</option>

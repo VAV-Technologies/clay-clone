@@ -176,8 +176,7 @@ export function ColumnFilterDropdown({
               <select
                 value={operator}
                 onChange={(e) => setOperator(e.target.value as FilterOperator)}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none appearance-none cursor-pointer"
-                style={{ backgroundImage: 'none' }}
+                className="select-chevron w-full pl-3 pr-9 py-2 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer"
               >
                 {OPERATORS.map((op) => (
                   <option key={op} value={op} className="bg-midnight-100 text-white">

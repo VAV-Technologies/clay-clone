@@ -157,8 +157,8 @@ export function FilterBar() {
   if (!showFilters && filterRows.length === 0) return null;
 
   return (
-    <div className="flex-shrink-0 border-b border-white/10 bg-white/[0.02]">
-      <div className="p-3 space-y-2">
+    <div className="flex-shrink-0 border-b border-white/10 p-3">
+      <div className="border border-lavender/30 bg-lavender/[0.04] p-3 space-y-2">
         {filterRows.map((row, index) => {
           const needsValue = !['is_empty', 'is_not_empty'].includes(row.operator);
 
@@ -186,7 +186,7 @@ export function FilterBar() {
                 onChange={(e) => {
                   updateFilterRow(row.id, 'columnId', e.target.value);
                 }}
-                className="w-44 pl-3 pr-10 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
+                className="select-chevron w-44 pl-3 pr-9 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
               >
                 <option value="" className="bg-midnight-100 text-white/50">
                   Select column
@@ -204,7 +204,7 @@ export function FilterBar() {
                 onChange={(e) => {
                   updateFilterRow(row.id, 'operator', e.target.value);
                 }}
-                className="w-48 pl-3 pr-10 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
+                className="select-chevron w-48 pl-3 pr-9 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
               >
                 {OPERATORS.map((op) => (
                   <option key={op} value={op} className="bg-midnight-100 text-white">
