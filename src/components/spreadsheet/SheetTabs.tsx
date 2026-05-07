@@ -63,10 +63,9 @@ export function SheetTabs() {
   };
 
   return (
-    <div className="flex-shrink-0 flex items-stretch border-t border-white/10 bg-midnight-100/60 overflow-hidden rounded-b-2xl">
-      {sheets.map((sheet, index) => {
+    <div className="flex-shrink-0 flex items-stretch border-t border-white/10 bg-midnight-100/60 overflow-hidden">
+      {sheets.map((sheet) => {
         const isActive = activeSheetId === sheet.id;
-        const isFirst = index === 0;
 
         return (
           <button
@@ -76,8 +75,6 @@ export function SheetTabs() {
             onDoubleClick={() => handleStartRename(sheet.id)}
             className={cn(
               'relative flex items-center h-11 px-5 text-sm transition-colors whitespace-nowrap',
-              // First tab curves to match card corner, rest are square
-              isFirst ? 'rounded-bl-2xl' : '',
               // Right divider between tabs
               'border-r border-white/[0.08]',
               // Active/inactive states
@@ -128,7 +125,7 @@ export function SheetTabs() {
         <>
           <div className="fixed inset-0 z-[99]" onClick={() => setContextMenu(null)} />
           <div
-            className="fixed z-[100] min-w-[140px] py-1 bg-midnight-100 border border-white/10 rounded-lg shadow-xl"
+            className="fixed z-[100] min-w-[140px] py-1 bg-midnight-100 border border-white/10 shadow-xl"
             style={{ left: contextMenu.x, top: contextMenu.y - 80 }}
           >
             <button

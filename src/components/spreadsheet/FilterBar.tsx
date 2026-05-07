@@ -171,7 +171,7 @@ export function FilterBar() {
                 <button
                   onClick={toggleFilterLogic}
                   className={cn(
-                    'w-16 px-2 py-1 rounded text-xs font-medium transition-colors flex-shrink-0 text-center',
+                    'w-16 px-2 py-1 text-xs font-medium transition-colors flex-shrink-0 text-center',
                     'bg-lavender/20 text-lavender border border-lavender/30',
                     'hover:bg-lavender/30'
                   )}
@@ -186,7 +186,7 @@ export function FilterBar() {
                 onChange={(e) => {
                   updateFilterRow(row.id, 'columnId', e.target.value);
                 }}
-                className="w-44 pl-3 pr-10 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
+                className="w-44 pl-3 pr-10 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
               >
                 <option value="" className="bg-midnight-100 text-white/50">
                   Select column
@@ -204,7 +204,7 @@ export function FilterBar() {
                 onChange={(e) => {
                   updateFilterRow(row.id, 'operator', e.target.value);
                 }}
-                className="w-48 pl-3 pr-10 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
+                className="w-48 pl-3 pr-10 py-1.5 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none cursor-pointer flex-shrink-0"
               >
                 {OPERATORS.map((op) => (
                   <option key={op} value={op} className="bg-midnight-100 text-white">
@@ -226,7 +226,7 @@ export function FilterBar() {
                   }}
                   placeholder="Enter value..."
                   className={cn(
-                    'flex-1 min-w-[120px] px-3 py-1.5 rounded-lg bg-white/5 border text-white text-sm placeholder:text-white/30 focus:border-lavender focus:outline-none',
+                    'flex-1 min-w-[120px] px-3 py-1.5 bg-white/5 border text-white text-sm placeholder:text-white/30 focus:border-lavender focus:outline-none',
                     row.isApplied ? 'border-lavender/30' : 'border-white/10'
                   )}
                 />
@@ -240,7 +240,7 @@ export function FilterBar() {
                   onClick={() => applyFilter(row)}
                   disabled={needsValue && !row.value.trim()}
                   className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex-shrink-0',
+                    'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors flex-shrink-0',
                     'bg-lavender text-midnight hover:bg-lavender/90',
                     'disabled:opacity-50 disabled:cursor-not-allowed'
                   )}
@@ -252,7 +252,7 @@ export function FilterBar() {
 
               {/* Applied indicator */}
               {row.isApplied && (
-                <span className="px-2 py-1 rounded text-xs text-lavender bg-lavender/10 flex-shrink-0">
+                <span className="px-2 py-1 text-xs text-lavender bg-lavender/10 flex-shrink-0">
                   Applied
                 </span>
               )}
@@ -260,7 +260,7 @@ export function FilterBar() {
               {/* Remove Button */}
               <button
                 onClick={() => removeFilterRow(row.id)}
-                className="p-1.5 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
+                className="p-1.5 text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -272,7 +272,7 @@ export function FilterBar() {
         <div className="flex items-center gap-3 pt-1">
           <button
             onClick={addNewFilterRow}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-lavender hover:bg-lavender/10 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-lavender hover:bg-lavender/10 transition-colors"
           >
             <Plus className="w-4 h-4" />
             <span>Add filter</span>
@@ -281,7 +281,7 @@ export function FilterBar() {
           {filters.length > 0 && (
             <button
               onClick={handleClearAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Clear all</span>

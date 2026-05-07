@@ -357,7 +357,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
             <button
               ref={actionsButtonRef}
               onClick={() => setIsActionsOpen(!isActionsOpen)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium
                          bg-lavender/20 border border-lavender/30 text-white
                          hover:bg-lavender/30 transition-all"
             >
@@ -370,7 +370,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
               <>
                 <div className="fixed inset-0 z-[99]" onClick={() => setIsActionsOpen(false)} />
                 <div
-                  className="fixed z-[100] w-52 py-1.5 bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl"
+                  className="fixed z-[100] w-52 py-1.5 bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-2xl"
                   style={{
                     top: (actionsButtonRef.current?.getBoundingClientRect().bottom ?? 0) + 6,
                     right: window.innerWidth - (actionsButtonRef.current?.getBoundingClientRect().right ?? 0),
@@ -380,7 +380,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                     onClick={() => { setIsActionsOpen(false); onFormula?.(); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-white/[0.06] flex items-center justify-center">
+                    <div className="w-7 h-7 bg-white/[0.06] flex items-center justify-center">
                       <Code className="w-3.5 h-3.5 text-white/60" />
                     </div>
                     Formula
@@ -389,7 +389,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                     onClick={() => { setIsActionsOpen(false); setIsLookUpOpen(true); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                    <div className="w-7 h-7 bg-emerald-500/10 flex items-center justify-center">
                       <Link2 className="w-3.5 h-3.5 text-emerald-400" />
                     </div>
                     Look Up
@@ -398,7 +398,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                     onClick={() => { setIsActionsOpen(false); onEnrich?.(); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-lavender/10 flex items-center justify-center">
+                    <div className="w-7 h-7 bg-lavender/10 flex items-center justify-center">
                       <Sparkles className="w-3.5 h-3.5 text-lavender" />
                     </div>
                     Real-Time Enrich
@@ -407,7 +407,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                     onClick={() => { setIsActionsOpen(false); setIsBatchEnrichmentOpen(true); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                    <div className="w-7 h-7 bg-amber-500/10 flex items-center justify-center">
                       <Clock className="w-3.5 h-3.5 text-amber-400" />
                     </div>
                     Batch Enrich
@@ -416,7 +416,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                     onClick={() => { setIsActionsOpen(false); setIsFindEmailOpen(true); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white/80 hover:bg-white/[0.06] transition-colors"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-cyan-500/10 flex items-center justify-center">
+                    <div className="w-7 h-7 bg-cyan-500/10 flex items-center justify-center">
                       <Mail className="w-3.5 h-3.5 text-cyan-400" />
                     </div>
                     Find Email
@@ -462,7 +462,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                     clearSelection();
                   }
                 }}
-                className="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-lavender"
+                className="w-4 h-4 border-white/20 bg-white/5 checked:bg-lavender"
               />
             </div>
 
@@ -492,7 +492,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
             >
               <button
                 onClick={handleAddColumn}
-                className="p-1 text-white/40 hover:text-white hover:bg-white/10 rounded transition-colors"
+                className="p-1 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -596,7 +596,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
                       checked={isSelected}
                       onChange={() => selectRow(row.id, true)}
                       onClick={(e) => e.stopPropagation()}
-                      className="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-lavender"
+                      className="w-4 h-4 border-white/20 bg-white/5 checked:bg-lavender"
                     />
                   </div>
 
@@ -634,7 +634,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula }: SpreadsheetVie
           >
             <button
               onClick={handleAddRow}
-              className="flex items-center gap-2 px-3 py-1 text-sm text-white/40 hover:text-white hover:bg-white/5 rounded transition-colors"
+              className="flex items-center gap-2 px-3 py-1 text-sm text-white/40 hover:text-white hover:bg-white/5 transition-colors"
             >
               <Plus className="w-4 h-4" />
               Add row

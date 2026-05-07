@@ -49,7 +49,7 @@ function NumberInput({ label, value, onChange, placeholder }: {
   return (
     <div>
       <label className="text-xs text-white/50 mb-1 block">{label}</label>
-      <div className="flex border border-white/10 rounded-lg overflow-hidden focus-within:border-emerald-400">
+      <div className="flex border border-white/10 overflow-hidden focus-within:border-emerald-400">
         <input
           type="text"
           inputMode="numeric"
@@ -85,7 +85,7 @@ function TextInput({ label, value, onChange, placeholder }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-400"
+        className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-400"
       />
     </div>
   );
@@ -303,7 +303,7 @@ export function AddWattdataModal({ isOpen, onClose, tableId, workbookId, onCompl
         {/* ─── Step 1: Configure ─────────────────── */}
         {step === 'configure' && (
           <div className="p-4 space-y-4">
-            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20">
               <Sparkles className="w-4 h-4 text-emerald-400" />
               <span className="text-xs text-emerald-300">Powered by Wattdata — emails delivered directly, no separate finder needed</span>
             </div>
@@ -315,7 +315,7 @@ export function AddWattdataModal({ isOpen, onClose, tableId, workbookId, onCompl
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="e.g. 'Marketing directors at SaaS companies in Australia'&#10;'C-suite executives in healthcare 100-1000 employees'&#10;'Real estate investors in California'"
                 rows={5}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-400 resize-none"
+                className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-400 resize-none"
               />
               <p className="text-xs text-white/40 mt-1">Wattdata will use semantic search to find matching traits. Be as specific as possible.</p>
             </div>
@@ -328,7 +328,7 @@ export function AddWattdataModal({ isOpen, onClose, tableId, workbookId, onCompl
             <NumberInput label="Results Limit" value={limit} onChange={setLimit} placeholder="1000" />
 
             {error && (
-              <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+              <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
                 <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
                 <p className="text-sm text-red-400">{error}</p>
               </div>
@@ -355,7 +355,7 @@ export function AddWattdataModal({ isOpen, onClose, tableId, workbookId, onCompl
           const fetchCount = Math.min(Number(limit) || 1000, estimatedTotal || 1000);
           return (
             <div className="p-4 space-y-4">
-              <div className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+              <div className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-500/20">
                 <Search className="w-6 h-6 text-emerald-400 flex-shrink-0" />
                 <div>
                   <p className="text-lg font-semibold text-white">~{(estimatedTotal || 0).toLocaleString()} People</p>
@@ -368,7 +368,7 @@ export function AddWattdataModal({ isOpen, onClose, tableId, workbookId, onCompl
                   <p className="text-xs text-white/50 mb-2">Matched traits ({discoveredTraits.length}):</p>
                   <div className="flex flex-wrap gap-1.5">
                     {discoveredTraits.slice(0, 8).map(t => (
-                      <span key={t.trait_hash} className="text-[11px] px-2 py-1 bg-white/5 border border-white/10 rounded text-white/60">
+                      <span key={t.trait_hash} className="text-[11px] px-2 py-1 bg-white/5 border border-white/10 text-white/60">
                         {t.name}: <span className="text-white/80">{t.value}</span>
                         <span className="text-white/30 ml-1">({Math.round(t.similarity_score * 100)}%)</span>
                       </span>
@@ -378,7 +378,7 @@ export function AddWattdataModal({ isOpen, onClose, tableId, workbookId, onCompl
               )}
 
               {previewPeople.length > 0 && (
-                <div className="border border-white/10 rounded-lg overflow-hidden">
+                <div className="border border-white/10 overflow-hidden">
                   <p className="px-3 py-2 text-xs text-white/50 bg-white/[0.03] border-b border-white/10">
                     Sample preview ({previewPeople.length} of ~{(estimatedTotal || 0).toLocaleString()})
                   </p>
@@ -430,7 +430,7 @@ export function AddWattdataModal({ isOpen, onClose, tableId, workbookId, onCompl
         {/* ─── Results ─────────────── */}
         {step === 'results' && (
           <div className="p-4 space-y-4">
-            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20">
               <Check className="w-5 h-5 text-emerald-400" />
               <p className="text-sm text-emerald-400">
                 Fetched {resultPeople.length} people
@@ -441,7 +441,7 @@ export function AddWattdataModal({ isOpen, onClose, tableId, workbookId, onCompl
             </div>
 
             {resultPeople.length > 0 && (
-              <div className="border border-white/10 rounded-lg overflow-hidden">
+              <div className="border border-white/10 overflow-hidden">
                 <div className="overflow-x-auto max-h-64">
                   <table className="w-full text-sm">
                     <thead className="bg-white/[0.03]">
@@ -475,7 +475,7 @@ export function AddWattdataModal({ isOpen, onClose, tableId, workbookId, onCompl
             )}
 
             {error && (
-              <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+              <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
                 <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
                 <p className="text-sm text-red-400">{error}</p>
               </div>

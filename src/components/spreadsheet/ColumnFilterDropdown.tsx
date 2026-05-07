@@ -138,7 +138,7 @@ export function ColumnFilterDropdown({
           setIsOpen(!isOpen);
         }}
         className={cn(
-          'p-1 rounded transition-colors',
+          'p-1 transition-colors',
           hasActiveFilter
             ? 'text-lavender'
             : 'text-white/40 opacity-0 group-hover:opacity-100 hover:text-white/70'
@@ -151,7 +151,7 @@ export function ColumnFilterDropdown({
       {/* Dropdown */}
       {isOpen && (
         <div
-          className="absolute top-full left-0 mt-2 z-50 w-72 rounded-xl bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-xl overflow-hidden"
+          className="absolute top-full left-0 mt-2 z-50 w-72 bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-xl overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="p-4 space-y-4">
@@ -176,7 +176,7 @@ export function ColumnFilterDropdown({
               <select
                 value={operator}
                 onChange={(e) => setOperator(e.target.value as FilterOperator)}
-                className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none appearance-none cursor-pointer"
+                className="w-full px-3 py-2 bg-white/5 border border-white/10 text-white text-sm focus:border-lavender focus:outline-none appearance-none cursor-pointer"
                 style={{ backgroundImage: 'none' }}
               >
                 {OPERATORS.map((op) => (
@@ -198,7 +198,7 @@ export function ColumnFilterDropdown({
                   onChange={(e) => setValue(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Enter value..."
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/30 focus:border-lavender focus:outline-none"
+                  className="w-full px-3 py-2 bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/30 focus:border-lavender focus:outline-none"
                 />
               </div>
             )}
@@ -208,7 +208,7 @@ export function ColumnFilterDropdown({
               onClick={handleApply}
               disabled={needsValue && !value.trim()}
               className={cn(
-                'w-full py-2 rounded-lg text-sm font-medium transition-colors',
+                'w-full py-2 text-sm font-medium transition-colors',
                 'bg-lavender text-midnight hover:bg-lavender/90',
                 'disabled:opacity-50 disabled:cursor-not-allowed'
               )}

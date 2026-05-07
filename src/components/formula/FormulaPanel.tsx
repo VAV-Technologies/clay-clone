@@ -315,7 +315,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-lavender/20">
+          <div className="p-2 bg-lavender/20">
             <Code className="w-5 h-5 text-lavender" />
           </div>
           <div>
@@ -331,7 +331,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
         </div>
         <button
           onClick={onClose}
-          className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+          className="p-2 text-white/50 hover:text-white hover:bg-white/10 transition-colors"
         >
           <X className="w-5 h-5" />
         </button>
@@ -349,16 +349,16 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
             value={outputColumnName}
             onChange={(e) => setOutputColumnName(e.target.value)}
             placeholder="Enter column name..."
-            className="w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:border-lavender focus:outline-none"
+            className="w-full px-4 py-2.5 bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:border-lavender focus:outline-none"
           />
         </div>
 
         {/* Mode Toggle */}
-        <div className="flex gap-2 p-1 rounded-lg bg-white/5">
+        <div className="flex gap-2 p-1 bg-white/5">
           <button
             onClick={() => setMode('manual')}
             className={cn(
-              'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
+              'flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium transition-colors',
               mode === 'manual'
                 ? 'bg-lavender text-midnight'
                 : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -370,7 +370,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
           <button
             onClick={() => setMode('ai')}
             className={cn(
-              'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
+              'flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium transition-colors',
               mode === 'ai'
                 ? 'bg-lavender text-midnight'
                 : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -395,7 +395,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
                   key={col.id}
                   onClick={() => insertColumnReference(col.name)}
                   className={cn(
-                    'px-3 py-1.5 rounded-full text-sm transition-colors',
+                    'px-3 py-1.5 text-sm transition-colors',
                     isReferenced
                       ? 'bg-lavender/30 text-lavender border border-lavender/50'
                       : 'bg-white/10 text-white/70 border border-white/10 hover:bg-white/20 hover:text-white'
@@ -420,7 +420,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
               onChange={(e) => setFormula(e.target.value)}
               placeholder={'{{Email}}?.split("@")[1] || ""'}
               rows={4}
-              className="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 text-white font-mono text-sm placeholder:text-white/30 focus:border-lavender focus:outline-none resize-none"
+              className="w-full px-4 py-3 bg-black/40 border border-white/10 text-white font-mono text-sm placeholder:text-white/30 focus:border-lavender focus:outline-none resize-none"
             />
             <p className="mt-2 text-xs text-white/40">
               Available: Math, String, Array, Date, _ (Lodash), Excel functions (IF, VLOOKUP, etc.)
@@ -436,7 +436,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
                   <button
                     key={idx}
                     onClick={() => handleInsertExample(example.formula)}
-                    className="px-2 py-1 rounded text-xs bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 transition-colors"
+                    className="px-2 py-1 text-xs bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 transition-colors"
                     title={example.formula}
                   >
                     {example.description}
@@ -460,7 +460,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
                 onChange={(e) => setAiDescription(e.target.value)}
                 placeholder="Extract the domain from {{Email}}"
                 rows={3}
-                className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:border-lavender focus:outline-none resize-none"
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:border-lavender focus:outline-none resize-none"
               />
             </div>
 
@@ -483,7 +483,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
             </GlassButton>
 
             {generateError && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+              <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
                 <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
                 <p className="text-sm text-red-400">{generateError}</p>
               </div>
@@ -494,7 +494,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
                 <label className="block text-sm font-medium text-white/70">
                   Generated Formula
                 </label>
-                <div className="p-4 rounded-lg bg-midnight-200 border border-white/10">
+                <div className="p-4 bg-midnight-200 border border-white/10">
                   <code className="text-sm text-lavender font-mono break-all">
                     {generatedFormula}
                   </code>
@@ -519,7 +519,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
             <label className="block text-sm font-medium text-white/70 mb-2">Preview (Row 1)</label>
             <div
               className={cn(
-                'p-4 rounded-lg border',
+                'p-4 border',
                 previewResult.error
                   ? 'bg-red-500/10 border-red-500/20'
                   : 'bg-green-500/10 border-green-500/20'
@@ -544,7 +544,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
 
         {/* Error */}
         {error && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+          <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
             <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
             <p className="text-sm text-red-400">{error}</p>
           </div>
@@ -559,7 +559,7 @@ export function FormulaPanel({ isOpen, onClose, tableId, columnId }: FormulaPane
                 {progress.completed} / {progress.total}
               </span>
             </div>
-            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-2 bg-white/10 overflow-hidden">
               <div
                 className="h-full bg-lavender transition-all duration-300"
                 style={{

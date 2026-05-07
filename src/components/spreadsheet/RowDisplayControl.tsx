@@ -81,7 +81,7 @@ export function RowDisplayControl() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors',
+          'flex items-center gap-1.5 px-2 py-1 text-sm transition-colors',
           'hover:bg-white/10',
           isFiltered ? 'text-lavender' : 'text-white/50'
         )}
@@ -101,7 +101,7 @@ export function RowDisplayControl() {
 
       {/* Dropdown Panel */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-64 p-3 rounded-lg bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-xl">
+        <div className="absolute top-full left-0 mt-1 z-50 w-64 p-3 bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-xl">
           <div className="space-y-3">
             {/* Show rows input */}
             <div className="space-y-1.5">
@@ -113,7 +113,7 @@ export function RowDisplayControl() {
                 onKeyDown={handleKeyDown}
                 placeholder="All"
                 min="1"
-                className="w-full px-3 py-1.5 text-sm bg-white/5 border border-white/10 rounded-md text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
+                className="w-full px-3 py-1.5 text-sm bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
               />
             </div>
 
@@ -128,7 +128,7 @@ export function RowDisplayControl() {
                 placeholder="1"
                 min="1"
                 max={totalRows}
-                className="w-full px-3 py-1.5 text-sm bg-white/5 border border-white/10 rounded-md text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
+                className="w-full px-3 py-1.5 text-sm bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
               />
             </div>
 
@@ -143,14 +143,14 @@ export function RowDisplayControl() {
             <div className="flex gap-2 pt-1">
               <button
                 onClick={handleReset}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition-colors"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Show All
               </button>
               <button
                 onClick={handleApply}
-                className="flex-1 px-3 py-1.5 text-sm rounded-md bg-lavender/20 text-lavender hover:bg-lavender/30 transition-colors"
+                className="flex-1 px-3 py-1.5 text-sm bg-lavender/20 text-lavender hover:bg-lavender/30 transition-colors"
               >
                 Apply
               </button>

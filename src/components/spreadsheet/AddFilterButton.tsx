@@ -17,7 +17,7 @@ export function AddFilterButton() {
     <button
       onClick={handleClick}
       className={cn(
-        'flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors',
+        'flex items-center gap-1.5 px-2 py-1 text-sm transition-colors',
         'hover:bg-white/10',
         isActive ? 'text-lavender' : 'text-white/50'
       )}
@@ -25,7 +25,7 @@ export function AddFilterButton() {
       <Filter className="w-3.5 h-3.5" />
       <span>Filter</span>
       {filters.length > 0 && (
-        <span className="px-1.5 py-0.5 rounded-full bg-lavender/20 text-xs text-lavender">
+        <span className="px-1.5 py-0.5 bg-lavender/20 text-xs text-lavender">
           {filters.length}
         </span>
       )}

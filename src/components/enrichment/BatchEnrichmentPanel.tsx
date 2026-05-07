@@ -414,13 +414,13 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
         <div className="flex items-center gap-2">
           <Clock className="w-5 h-5 text-amber-400" />
           <h2 className="font-semibold text-white">Batch Enrichment</h2>
-          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/20 text-amber-400">
+          <span className="px-2 py-0.5 text-xs font-medium bg-amber-500/20 text-amber-400">
             50% Cheaper
           </span>
         </div>
         <button
           onClick={onClose}
-          className="p-1 hover:bg-white/10 rounded transition-colors"
+          className="p-1 hover:bg-white/10 transition-colors"
         >
           <X className="w-5 h-5 text-white/60" />
         </button>
@@ -448,7 +448,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                 key={m.id}
                 onClick={() => setModel(m.id)}
                 className={cn(
-                  'w-full flex items-center justify-between p-2.5 rounded-lg',
+                  'w-full flex items-center justify-between p-2.5',
                   'border transition-all',
                   model === m.id
                     ? 'bg-blue-500/10 border-blue-500/30'
@@ -473,7 +473,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
             value={outputColumnName}
             onChange={(e) => setOutputColumnName(e.target.value)}
             placeholder="e.g., AI Summary"
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-amber-500/50"
+            className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-amber-500/50"
           />
         </div>
 
@@ -488,14 +488,14 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="e.g., Research the company {{Company}} and provide a brief summary..."
-            className="w-full h-32 p-3 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 resize-none focus:outline-none focus:border-amber-500/50"
+            className="w-full h-32 p-3 bg-white/5 border border-white/10 text-sm text-white placeholder:text-white/30 resize-none focus:outline-none focus:border-amber-500/50"
           />
           {/* Optimize Prompt Button */}
           <button
             onClick={handleOptimizePrompt}
             disabled={!prompt.trim() || isOptimizing}
             className={cn(
-              'flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-all',
+              'flex items-center gap-2 px-3 py-1.5 text-sm transition-all',
               'bg-gradient-to-r from-purple-500/20 to-pink-500/20',
               'border border-purple-500/30 hover:border-purple-500/50',
               'text-purple-300 hover:text-purple-200',
@@ -527,7 +527,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                 key={col.id}
                 onClick={() => insertVariable(col.name)}
                 className={cn(
-                  'px-3 py-1.5 text-sm rounded-full transition-colors',
+                  'px-3 py-1.5 text-sm transition-colors',
                   usedVariables.some(v => v.toLowerCase() === col.name.toLowerCase())
                     ? 'bg-amber-500/30 text-amber-300 border border-amber-500/30'
                     : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
@@ -561,13 +561,13 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                 }
               }}
               placeholder="e.g., city, country, email..."
-              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-500/50"
+              className="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-500/50"
             />
             <button
               onClick={addOutputColumn}
               disabled={!newOutputColumn.trim()}
               className={cn(
-                'px-3 py-2 rounded-lg transition-colors',
+                'px-3 py-2 transition-colors',
                 'bg-emerald-500/20 border border-emerald-500/30',
                 'hover:bg-emerald-500/30 hover:border-emerald-500/50',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
@@ -583,7 +583,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
               {outputColumns.map((col, index) => (
                 <div
                   key={index}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-500/30"
                 >
                   <span className="text-sm text-emerald-300">{col}</span>
                   <button
@@ -616,7 +616,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
               <button
                 onClick={loadActiveJobs}
                 disabled={isLoadingJobs}
-                className="p-1 hover:bg-white/10 rounded transition-colors"
+                className="p-1 hover:bg-white/10 transition-colors"
               >
                 <RefreshCw className={cn("w-4 h-4 text-white/40", isLoadingJobs && "animate-spin")} />
               </button>
@@ -676,7 +676,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <span className={cn(
-                              "px-2 py-0.5 text-xs font-medium rounded-full",
+                              "px-2 py-0.5 text-xs font-medium",
                               getStatusColor(groupStatus)
                             )}>
                               {groupStatus}
@@ -702,7 +702,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                               </span>
                             )}
                           </div>
-                          <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div className="w-full h-1.5 bg-white/10 overflow-hidden">
                             <div
                               className="h-full bg-amber-400 transition-all"
                               style={{ width: `${groupTotalRows > 0 ? (groupProcessedCount / groupTotalRows) * 100 : 0}%` }}
@@ -716,7 +716,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                             <div
                               key={job.id}
                               className={cn(
-                                "px-2 py-1 text-xs rounded-md flex items-center gap-1.5",
+                                "px-2 py-1 text-xs flex items-center gap-1.5",
                                 job.status === 'complete' ? 'bg-emerald-500/20 text-emerald-400' :
                                 job.status === 'error' ? 'bg-red-500/20 text-red-400' :
                                 'bg-amber-500/20 text-amber-400'
@@ -740,7 +740,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                       <GlassCard key={job.id} padding="sm" className="space-y-2">
                         <div className="flex items-center justify-between">
                           <span className={cn(
-                            "px-2 py-0.5 text-xs font-medium rounded-full",
+                            "px-2 py-0.5 text-xs font-medium",
                             getStatusColor(job.status)
                           )}>
                             {job.status}
@@ -762,7 +762,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                         </div>
 
                         {job.status === 'processing' && (
-                          <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div className="w-full h-1.5 bg-white/10 overflow-hidden">
                             <div
                               className="h-full bg-amber-400 transition-all"
                               style={{ width: `${job.totalRows > 0 ? (job.processedCount / job.totalRows) * 100 : 0}%` }}
@@ -797,7 +797,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                 ) : (
                   <>
                     <p className="text-white/60 text-xs mt-1">
-                      Job ID: <code className="text-white/80 bg-white/5 px-1 rounded">{submittedJobId}</code>
+                      Job ID: <code className="text-white/80 bg-white/5 px-1">{submittedJobId}</code>
                     </p>
                     <p className="text-white/60 text-xs mt-1">
                       Processing {getRowCountText()}. Results will appear in 1-24 hours.
@@ -807,14 +807,14 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
 
                 {/* Show created columns */}
                 {(outputColumnName || createdColumns.length > 0) && (
-                  <div className="mt-2 p-2 bg-white/5 rounded">
+                  <div className="mt-2 p-2 bg-white/5">
                     <p className="text-xs text-white/50 mb-1">Data will populate these columns:</p>
                     <div className="flex flex-wrap gap-1">
-                      <span className="px-2 py-0.5 text-xs bg-amber-500/20 text-amber-300 rounded">
+                      <span className="px-2 py-0.5 text-xs bg-amber-500/20 text-amber-300">
                         {outputColumnName}
                       </span>
                       {createdColumns.map(col => (
-                        <span key={col.id} className="px-2 py-0.5 text-xs bg-emerald-500/20 text-emerald-300 rounded">
+                        <span key={col.id} className="px-2 py-0.5 text-xs bg-emerald-500/20 text-emerald-300">
                           {col.name}
                         </span>
                       ))}
@@ -842,7 +842,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
 
         {/* Error */}
         {error && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+          <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
             <AlertCircle className="w-4 h-4 text-red-400 mt-0.5" />
             <p className="text-sm text-red-400">{error}</p>
           </div>
@@ -886,7 +886,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
       {/* Prompt Optimizer Modal */}
       {showOptimizerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-white/10">
               <div className="flex items-center gap-2">
@@ -895,7 +895,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
               </div>
               <button
                 onClick={handleDeclineOptimizedPrompt}
-                className="p-1 hover:bg-white/10 rounded transition-colors"
+                className="p-1 hover:bg-white/10 transition-colors"
               >
                 <X className="w-5 h-5 text-white/60" />
               </button>
@@ -922,7 +922,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                         <Sparkles className="w-4 h-4 text-purple-400" />
                         Optimized Prompt
                       </h4>
-                      <div className="p-4 bg-white/5 border border-white/10 rounded-lg max-h-64 overflow-y-auto">
+                      <div className="p-4 bg-white/5 border border-white/10 max-h-64 overflow-y-auto">
                         <pre className="text-sm text-white/80 whitespace-pre-wrap font-mono">
                           {optimizedPrompt}
                         </pre>
@@ -937,7 +937,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                         <Database className="w-4 h-4 text-emerald-400" />
                         Recommended Data Guide ({recommendedDataGuide.length} field{recommendedDataGuide.length !== 1 ? 's' : ''})
                       </h4>
-                      <div className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
+                      <div className="bg-white/5 border border-white/10 overflow-hidden">
                         <table className="w-full text-sm">
                           <thead className="bg-white/5 border-b border-white/10">
                             <tr>
@@ -975,7 +975,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                 onClick={handleRetryOptimize}
                 disabled={isOptimizing}
                 className={cn(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors',
+                  'flex items-center gap-2 px-4 py-2 transition-colors',
                   'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white',
                   'disabled:opacity-50 disabled:cursor-not-allowed'
                 )}
@@ -985,7 +985,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
               </button>
               <button
                 onClick={handleDeclineOptimizedPrompt}
-                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors"
               >
                 Decline
               </button>
@@ -993,7 +993,7 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
                 onClick={handleAcceptOptimizedPrompt}
                 disabled={(!optimizedPrompt && recommendedDataGuide.length === 0) || isOptimizing}
                 className={cn(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors',
+                  'flex items-center gap-2 px-4 py-2 transition-colors',
                   'bg-gradient-to-r from-purple-500 to-emerald-500 text-white',
                   'hover:from-purple-600 hover:to-emerald-600',
                   'disabled:opacity-50 disabled:cursor-not-allowed'

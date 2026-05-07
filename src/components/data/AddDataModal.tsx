@@ -71,7 +71,7 @@ const COMPANY_SIZE_CODE_MAP: Record<string, string> = {
 function FilterSection({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="border border-white/10 rounded-lg overflow-hidden">
+    <div className="border border-white/10 overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -80,7 +80,7 @@ function FilterSection({ title, count, children }: { title: string; count: numbe
         <span className="text-sm font-medium text-white/70">{title}</span>
         <div className="flex items-center gap-2">
           {count > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-cyan-500/20 text-cyan-400 rounded-full">
+            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-cyan-500/20 text-cyan-400">
               {count}
             </span>
           )}
@@ -103,7 +103,7 @@ function TextFilterInput({ label, value, onChange, placeholder }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || 'Comma-separated values...'}
-        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
+        className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
       />
     </div>
   );
@@ -118,7 +118,7 @@ function NumberFilterInput({ label, value, onChange, placeholder }: {
   return (
     <div>
       <label className="text-xs text-white/50 mb-1 block">{label}</label>
-      <div className="flex border border-white/10 rounded-lg overflow-hidden focus-within:border-lavender">
+      <div className="flex border border-white/10 overflow-hidden focus-within:border-lavender">
         <input
           type="text"
           inputMode="numeric"
@@ -157,7 +157,7 @@ function CheckboxGroup({ options, selected, onChange }: {
           type="button"
           onClick={() => toggle(opt)}
           className={cn(
-            'px-2 py-1 text-xs rounded-md border transition-colors',
+            'px-2 py-1 text-xs border transition-colors',
             selected.includes(opt)
               ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'
               : 'bg-white/5 border-white/10 text-white/50 hover:text-white/70'
@@ -503,7 +503,7 @@ export function AddDataModal({ isOpen, onClose, tableId, workbookId, onComplete 
 
   if (!isOpen) return null;
 
-  const selectClasses = 'w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 pr-9 text-sm text-white focus:outline-none focus:border-lavender appearance-none bg-[length:16px_16px] bg-[position:right_0.5rem_center] bg-no-repeat bg-[url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2716%27%20height%3D%2716%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27rgba(255%2C255%2C255%2C0.4)%27%20stroke-width%3D%272%27%3E%3Cpath%20d%3D%27M6%209l6%206%206-6%27/%3E%3C/svg%3E")]';
+  const selectClasses = 'w-full bg-white/5 border border-white/10 px-3 py-2 pr-9 text-sm text-white focus:outline-none focus:border-lavender appearance-none bg-[length:16px_16px] bg-[position:right_0.5rem_center] bg-no-repeat bg-[url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2716%27%20height%3D%2716%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27rgba(255%2C255%2C255%2C0.4)%27%20stroke-width%3D%272%27%3E%3Cpath%20d%3D%27M6%209l6%206%206-6%27/%3E%3C/svg%3E")]';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add Data — People Search" size="full">
@@ -513,7 +513,7 @@ export function AddDataModal({ isOpen, onClose, tableId, workbookId, onComplete 
         {step === 'configure' && (
           <div className="p-4 space-y-4">
             {/* Search Type Toggle */}
-            <div className="flex rounded-lg border border-white/10 overflow-hidden">
+            <div className="flex border border-white/10 overflow-hidden">
               <button type="button" onClick={() => setSearchType('people')}
                 className={cn('flex-1 px-3 py-2 text-sm font-medium transition-colors border-r border-white/10',
                   searchType === 'people' ? 'bg-cyan-500/20 text-white' : 'bg-white/5 text-white/50')}>
@@ -529,7 +529,7 @@ export function AddDataModal({ isOpen, onClose, tableId, workbookId, onComplete 
             {/* People: Domain Input */}
             {searchType === 'people' && <div className="space-y-2">
               <label className="text-sm font-medium text-white/70">Company Domains</label>
-              <div className="flex rounded-lg border border-white/10 overflow-hidden mb-2">
+              <div className="flex border border-white/10 overflow-hidden mb-2">
                 <button
                   type="button"
                   onClick={() => setDomainMode('manual')}
@@ -554,7 +554,7 @@ export function AddDataModal({ isOpen, onClose, tableId, workbookId, onComplete 
                   onChange={(e) => setManualDomains(e.target.value)}
                   placeholder="google.com, stripe.com, meta.com&#10;(one per line or comma-separated)"
                   rows={3}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender resize-none"
+                  className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender resize-none"
                 />
               ) : (
                 <select value={domainColumnId} onChange={e => setDomainColumnId(e.target.value)} className={selectClasses}>
@@ -652,7 +652,7 @@ export function AddDataModal({ isOpen, onClose, tableId, workbookId, onComplete 
                 </div>
                 <label className="flex items-center gap-2 text-sm text-white/60 mt-2">
                   <input type="checkbox" checked={includePast} onChange={e => setIncludePast(e.target.checked)}
-                    className="rounded border-white/20 bg-white/5" />
+                    className="border-white/20 bg-white/5" />
                   Include past experiences
                 </label>
               </FilterSection>
@@ -699,7 +699,7 @@ export function AddDataModal({ isOpen, onClose, tableId, workbookId, onComplete 
                     <textarea value={cSemantic} onChange={e => setCSemantic(e.target.value)}
                       placeholder="Describe the type of company you're looking for..."
                       rows={2}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender resize-none" />
+                      className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender resize-none" />
                   </div>
                 </FilterSection>
 
@@ -720,7 +720,7 @@ export function AddDataModal({ isOpen, onClose, tableId, workbookId, onComplete 
 
             {/* Error */}
             {error && (
-              <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+              <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
                 <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
                 <p className="text-sm text-red-400">{error}</p>
               </div>
@@ -763,13 +763,13 @@ export function AddDataModal({ isOpen, onClose, tableId, workbookId, onComplete 
 
           return (
             <div className="p-4 space-y-4">
-              <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+              <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20">
                 <Check className="w-5 h-5 text-emerald-400" />
                 <p className="text-sm text-emerald-400">Found {items.length} {label}</p>
               </div>
 
               {items.length > 0 && (
-                <div className="border border-white/10 rounded-lg overflow-hidden">
+                <div className="border border-white/10 overflow-hidden">
                   <div className="overflow-x-auto max-h-64">
                     <table className="w-full text-sm">
                       <thead className="bg-white/[0.03]">
@@ -822,7 +822,7 @@ export function AddDataModal({ isOpen, onClose, tableId, workbookId, onComplete 
               )}
 
               {error && (
-                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
                   <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
                   <p className="text-sm text-red-400">{error}</p>
                 </div>

@@ -244,7 +244,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
 
   if (!isOpen) return null;
 
-  const selectClasses = 'w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-lavender';
+  const selectClasses = 'w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-lavender';
 
   return (
     <div className="fixed inset-y-0 right-0 w-96 glass-sidebar flex flex-col z-40 animate-slide-in">
@@ -254,7 +254,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
           <Mail className="w-5 h-5 text-cyan-400" />
           <h2 className="font-semibold text-white">Find Email</h2>
         </div>
-        <button onClick={onClose} className="p-1 hover:bg-white/10 rounded transition-colors">
+        <button onClick={onClose} className="p-1 hover:bg-white/10 transition-colors">
           <X className="w-5 h-5 text-white/60" />
         </button>
       </div>
@@ -264,7 +264,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
         {/* Provider Toggle */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-white/70">Provider</label>
-          <div className="flex rounded-lg border border-white/10 overflow-hidden">
+          <div className="flex border border-white/10 overflow-hidden">
             <button
               onClick={() => setProvider('ninjer')}
               className={cn(
@@ -309,7 +309,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
         {/* Input Mode Toggle */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-white/70">Input Mode</label>
-          <div className="flex rounded-lg border border-white/10 overflow-hidden">
+          <div className="flex border border-white/10 overflow-hidden">
             <button
               onClick={() => setInputMode('full_name')}
               className={cn(
@@ -410,7 +410,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
 
         {/* Error */}
         {error && (
-          <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+          <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
             <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
             <p className="text-sm text-red-400">{error}</p>
           </div>
@@ -426,9 +426,9 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
               </span>
               <span>{progress.completed} / {progress.total}</span>
             </div>
-            <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+            <div className="w-full h-1.5 bg-white/10 overflow-hidden">
               <div
-                className="h-full bg-cyan-400 rounded-full transition-all duration-300"
+                className="h-full bg-cyan-400 transition-all duration-300"
                 style={{ width: `${progress.total ? (progress.completed / progress.total) * 100 : 0}%` }}
               />
             </div>
@@ -437,7 +437,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
 
         {/* Results Summary */}
         {resultSummary && !isRunning && !isTesting && (
-          <div className="p-3 bg-white/5 border border-white/10 rounded-lg space-y-1.5">
+          <div className="p-3 bg-white/5 border border-white/10 space-y-1.5">
             <p className="text-sm font-medium text-white/80">Results</p>
             <div className="grid grid-cols-2 gap-1 text-xs">
               {resultSummary.found > 0 && (

@@ -144,7 +144,7 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
 
   if (!isOpen) return null;
 
-  const selectClasses = 'w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 pr-9 text-sm text-white focus:outline-none focus:border-lavender appearance-none bg-[length:16px_16px] bg-[position:right_0.5rem_center] bg-no-repeat bg-[url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2716%27%20height%3D%2716%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27rgba(255%2C255%2C255%2C0.4)%27%20stroke-width%3D%272%27%3E%3Cpath%20d%3D%27M6%209l6%206%206-6%27/%3E%3C/svg%3E")]';
+  const selectClasses = 'w-full bg-white/5 border border-white/10 px-3 py-2 pr-9 text-sm text-white focus:outline-none focus:border-lavender appearance-none bg-[length:16px_16px] bg-[position:right_0.5rem_center] bg-no-repeat bg-[url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2716%27%20height%3D%2716%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27rgba(255%2C255%2C255%2C0.4)%27%20stroke-width%3D%272%27%3E%3Cpath%20d%3D%27M6%209l6%206%206-6%27/%3E%3C/svg%3E")]';
 
   return (
     <div className="fixed inset-y-0 right-0 w-96 glass-sidebar flex flex-col z-40 animate-slide-in">
@@ -154,7 +154,7 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
           <Link2 className="w-5 h-5 text-emerald-400" />
           <h2 className="font-semibold text-white">Look Up</h2>
         </div>
-        <button onClick={onClose} className="p-1 hover:bg-white/10 rounded transition-colors">
+        <button onClick={onClose} className="p-1 hover:bg-white/10 transition-colors">
           <X className="w-5 h-5 text-white/60" />
         </button>
       </div>
@@ -234,14 +234,14 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
               type="text"
               value={newColumnName}
               onChange={e => setNewColumnName(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
+              className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
             />
           </div>
         )}
 
         {/* Error */}
         {error && (
-          <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+          <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
             <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
             <p className="text-sm text-red-400">{error}</p>
           </div>
@@ -249,7 +249,7 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
 
         {/* Result */}
         {result && (
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg space-y-1">
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 space-y-1">
             <div className="flex items-center gap-2">
               <Check className="w-4 h-4 text-emerald-400" />
               <p className="text-sm text-emerald-400 font-medium">Look up complete</p>

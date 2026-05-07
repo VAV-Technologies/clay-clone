@@ -95,7 +95,7 @@ function WorkbookContent() {
       <AnimatedBackground />
 
       <div className="relative z-10 p-4 lg:p-6 h-full">
-        <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl
+        <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 overflow-hidden shadow-2xl
                         w-[95%] lg:w-[90%] mx-auto
                         h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)]
                         flex flex-col">
@@ -116,7 +116,7 @@ function WorkbookContent() {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setIsImportModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
                 title="Import CSV"
               >
                 <Upload className="w-4 h-4" />
@@ -124,7 +124,7 @@ function WorkbookContent() {
               </button>
               <button
                 onClick={handleExport}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
                 title="Export CSV"
               >
                 <Download className="w-4 h-4" />
@@ -132,7 +132,7 @@ function WorkbookContent() {
               </button>
               <button
                 onClick={() => setIsAddDataOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
                 title="Add Clay Data"
               >
                 <UserPlus className="w-4 h-4" />
@@ -140,7 +140,7 @@ function WorkbookContent() {
               </button>
               <button
                 onClick={() => setIsAiArcDataOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-violet-300/70 hover:text-violet-200 hover:bg-violet-500/10 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-violet-300/70 hover:text-violet-200 hover:bg-violet-500/10 transition-colors"
                 title="Add AI Ark Data"
               >
                 <UserPlus className="w-4 h-4" />
@@ -148,7 +148,7 @@ function WorkbookContent() {
               </button>
               <button
                 onClick={() => setIsWattdataOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-emerald-300/70 hover:text-emerald-200 hover:bg-emerald-500/10 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-emerald-300/70 hover:text-emerald-200 hover:bg-emerald-500/10 transition-colors"
                 title="Add Wattdata"
               >
                 <UserPlus className="w-4 h-4" />

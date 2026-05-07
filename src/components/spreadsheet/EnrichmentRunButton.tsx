@@ -276,7 +276,7 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
       <button
         onClick={handleButtonClick}
         className={cn(
-          'flex items-center justify-center w-5 h-5 rounded transition-colors',
+          'flex items-center justify-center w-5 h-5 transition-colors',
           'border',
           isRunning
             ? 'text-red-400 bg-red-500/20 border-red-500/30 hover:bg-red-500/30'
@@ -293,7 +293,7 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
 
       {/* Progress indicator */}
       {isRunning && activeJob && (
-        <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-white/10 rounded overflow-hidden">
+        <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-white/10 overflow-hidden">
           <div
             className="h-full bg-emerald-400 transition-all duration-300"
             style={{ width: `${progressPercent}%` }}
@@ -305,7 +305,7 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
       {isDropdownOpen && !isRunning && (
         <div className="absolute top-full left-0 mt-1 z-50 min-w-[200px]
                         bg-[#1a1a2e]/95 backdrop-blur-xl border border-white/10
-                        rounded-lg shadow-xl overflow-hidden">
+                        shadow-xl overflow-hidden">
           {hasBatchJobs ? (
             // Simplified menu when batch jobs are active
             <>
@@ -384,7 +384,7 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
                         }
                       }}
                       className="w-20 px-2 py-1 text-sm bg-white/10 border border-white/20
-                                 rounded text-white focus:outline-none focus:border-cyan-400"
+                                 text-white focus:outline-none focus:border-cyan-400"
                     />
                     <button
                       onClick={() => {
@@ -394,7 +394,7 @@ export function EnrichmentRunButton({ column, tableId }: EnrichmentRunButtonProp
                         }
                       }}
                       className="px-2 py-1 text-sm bg-cyan-500/20 border border-cyan-500/30
-                                 rounded text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+                                 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
                     >
                       Run
                     </button>

@@ -262,7 +262,7 @@ export function ColumnHeader({ column, tableId, onEnrichmentClick, onFormulaClic
             if (e.key === 'Escape') setIsRenaming(false);
           }}
           onBlur={handleRename}
-          className="flex-1 min-w-0 bg-white/10 border border-lavender/50 rounded px-1 text-sm outline-none"
+          className="flex-1 min-w-0 bg-white/10 border border-lavender/50 px-1 text-sm outline-none"
         />
       ) : isEnrichmentColumn ? (
         // For enrichment columns: left-click shows menu, right-click opens enrichment panel

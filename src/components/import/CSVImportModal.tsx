@@ -261,7 +261,7 @@ export function CSVImportModal({
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
             className={cn(
-              'border-2 border-dashed border-white/20 rounded-xl p-8',
+              'border-2 border-dashed border-white/20 p-8',
               'flex flex-col items-center justify-center gap-4',
               'transition-colors hover:border-lavender/50 cursor-pointer'
             )}
@@ -285,7 +285,7 @@ export function CSVImportModal({
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20">
               <AlertCircle className="w-4 h-4 text-red-400" />
               <span className="text-sm text-red-400">{error}</span>
             </div>
@@ -296,7 +296,7 @@ export function CSVImportModal({
       {step === 'mapping' && parsedData && (
         <div className="space-y-4">
           {/* File info */}
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-white/5">
+          <div className="flex items-center gap-3 p-3 bg-white/5">
             <FileSpreadsheet className="w-5 h-5 text-lavender" />
             <div>
               <p className="text-sm font-medium text-white">{file?.name}</p>
@@ -324,7 +324,7 @@ export function CSVImportModal({
                 return (
                   <div
                     key={header}
-                    className="flex items-center gap-3 p-2 rounded-lg bg-white/5"
+                    className="flex items-center gap-3 p-2 bg-white/5"
                   >
                     {/* CSV Column Name */}
                     <div className="w-32 flex-shrink-0">
@@ -352,7 +352,7 @@ export function CSVImportModal({
                             updateMapping(header, { type: 'existing', columnId });
                           }
                         }}
-                        className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-lavender"
+                        className="w-full bg-white/5 border border-white/10 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-lavender"
                       >
                         <option value="skip" className="bg-midnight-100">Skip this column</option>
                         <option value="new" className="bg-midnight-100">+ Create new column</option>
@@ -375,7 +375,7 @@ export function CSVImportModal({
                         value={mapping.name}
                         onChange={(e) => updateMapping(header, { type: 'new', name: e.target.value })}
                         placeholder="Column name"
-                        className="w-32 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-lavender"
+                        className="w-32 bg-white/5 border border-white/10 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-lavender"
                       />
                     )}
                   </div>
@@ -387,7 +387,7 @@ export function CSVImportModal({
           {/* Preview */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-white/70">Preview</label>
-            <div className="overflow-x-auto max-h-40 rounded-lg border border-white/10">
+            <div className="overflow-x-auto max-h-40 border border-white/10">
               <table className="w-full text-xs">
                 <thead className="bg-midnight-100 sticky top-0 z-10">
                   <tr>
@@ -431,7 +431,7 @@ export function CSVImportModal({
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20">
               <AlertCircle className="w-4 h-4 text-red-400" />
               <span className="text-sm text-red-400">{error}</span>
             </div>
@@ -466,7 +466,7 @@ export function CSVImportModal({
               </>
             ) : (
               <>
-                <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
+                <div className="w-12 h-12 bg-green-500/20 flex items-center justify-center">
                   <Check className="w-6 h-6 text-green-400" />
                 </div>
                 <p className="text-white/70">Import complete!</p>
@@ -478,7 +478,7 @@ export function CSVImportModal({
           </div>
 
           {/* Progress bar */}
-          <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+          <div className="w-full h-2 bg-white/10 overflow-hidden">
             <div
               className="h-full bg-lavender transition-all duration-300"
               style={{ width: `${progress}%` }}

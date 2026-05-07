@@ -89,7 +89,7 @@ export function EnrichmentDataViewer({
             {dataEntries.map(([key, value]) => (
               <div
                 key={key}
-                className="group relative flex items-start gap-3 p-3 rounded-lg bg-lavender/10 border border-lavender/30
+                className="group relative flex items-start gap-3 p-3 bg-lavender/10 border border-lavender/30
                          hover:bg-lavender/20 hover:border-lavender/50 transition-colors cursor-pointer"
                 onClick={() => handleDatapointClick(key)}
               >
@@ -117,19 +117,19 @@ export function EnrichmentDataViewer({
 
             <div className="grid grid-cols-2 gap-2">
               {/* Input Tokens */}
-              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30">
                 <div className="text-xs text-blue-400 mb-1">Input Tokens</div>
                 <div className="text-sm text-white font-medium">{metadata.inputTokens.toLocaleString()}</div>
               </div>
 
               {/* Output Tokens */}
-              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30">
                 <div className="text-xs text-blue-400 mb-1">Output Tokens</div>
                 <div className="text-sm text-white font-medium">{metadata.outputTokens.toLocaleString()}</div>
               </div>
 
               {/* Time Taken */}
-              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30">
                 <div className="flex items-center gap-1 text-xs text-blue-400 mb-1">
                   <Clock className="w-3 h-3" />
                   Time Taken
@@ -138,7 +138,7 @@ export function EnrichmentDataViewer({
               </div>
 
               {/* Total Cost */}
-              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30">
                 <div className="flex items-center gap-1 text-xs text-blue-400 mb-1">
                   <Coins className="w-3 h-3" />
                   Total Cost
@@ -149,14 +149,14 @@ export function EnrichmentDataViewer({
               {/* Web Search tiles — only when this row used the Spider tool */}
               {(metadata.webSearchCalls ?? 0) > 0 && (
                 <>
-                  <div className="p-3 rounded-lg bg-lavender/10 border border-lavender/30">
+                  <div className="p-3 bg-lavender/10 border border-lavender/30">
                     <div className="flex items-center gap-1 text-xs text-lavender mb-1">
                       <Globe className="w-3 h-3" />
                       Web Searches
                     </div>
                     <div className="text-sm text-white font-medium">{metadata.webSearchCalls}</div>
                   </div>
-                  <div className="p-3 rounded-lg bg-lavender/10 border border-lavender/30">
+                  <div className="p-3 bg-lavender/10 border border-lavender/30">
                     <div className="flex items-center gap-1 text-xs text-lavender mb-1">
                       <Coins className="w-3 h-3" />
                       Search Cost
@@ -168,7 +168,7 @@ export function EnrichmentDataViewer({
 
               {/* Forced To Finish Early - only show if true */}
               {metadata.forcedToFinishEarly && (
-                <div className="col-span-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                <div className="col-span-2 p-3 bg-amber-500/10 border border-amber-500/30">
                   <div className="text-xs text-amber-400 mb-1">Warning</div>
                   <div className="text-sm text-amber-200">Response was forced to finish early (cost limit)</div>
                 </div>
@@ -179,7 +179,7 @@ export function EnrichmentDataViewer({
 
         {/* Confirmation dialog */}
         {confirmKey && (
-          <div className="mt-4 p-4 rounded-lg bg-lavender/10 border border-lavender/30">
+          <div className="mt-4 p-4 bg-lavender/10 border border-lavender/30">
             <p className="text-sm text-white mb-3">
               Create a new column <span className="font-semibold text-lavender">"{formatKeyForDisplay(confirmKey)}"</span> with this data for all rows in the table?
             </p>

@@ -172,7 +172,7 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
     if (status === 'processing') {
       return (
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-lavender/20 text-lavender">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-lavender/20 text-lavender">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span className="text-xs font-medium">Processing</span>
           </div>
@@ -182,7 +182,7 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
 
     if (status === 'batch_submitted' || status === 'batch_processing') {
       return (
-        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-500/20 text-amber-400">
           <Clock className="w-3 h-3" />
           <span className="text-xs font-medium">
             {status === 'batch_submitted' ? 'Request Sent' : 'Processing'}
@@ -201,7 +201,7 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
             onMouseLeave={() => handleErrorHover(false)}
             className="flex items-center gap-2 relative"
           >
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">
+            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-red-500/20 text-red-400">
               <AlertCircle className="w-3 h-3" />
               <span className="text-xs font-medium">Error</span>
             </div>
@@ -212,7 +212,7 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
               className="fixed z-[9999] pointer-events-none"
               style={{ left: tooltipPosition.x, top: tooltipPosition.y }}
             >
-              <div className="bg-red-950/95 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-200 shadow-xl max-w-[300px]">
+              <div className="bg-red-950/95 border border-red-500/30 px-3 py-2 text-xs text-red-200 shadow-xl max-w-[300px]">
                 <div className="font-medium text-red-400 mb-1">Error Details</div>
                 <div className="break-words">{errorMessage}</div>
               </div>
@@ -226,7 +226,7 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
     if (status === 'complete') {
       return (
         <div className="flex items-center gap-2 cursor-pointer group/badge">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400
+          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/20 text-emerald-400
                         group-hover/badge:bg-emerald-500/30 transition-colors">
             <CheckCircle2 className="w-3 h-3" />
             <span className="text-xs font-medium">Completed</span>
@@ -239,7 +239,7 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
     // Pending status - actually queued to run
     if (status === 'pending') {
       return (
-        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-500/20 text-amber-400">
           <span className="text-xs font-medium">In Queue</span>
         </div>
       );
@@ -247,7 +247,7 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
 
     // No status - never been run
     return (
-      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 text-white/40">
+      <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white/5 text-white/40">
         <span className="text-xs font-medium">Not Run</span>
       </div>
     );
@@ -352,7 +352,7 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
           {isEnrichmentColumn && status !== 'processing' && status !== 'batch_submitted' && status !== 'batch_processing' && !isRetrying && (
             <button
               onClick={handleRetryCell}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded bg-white/10 hover:bg-lavender/20
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 bg-white/10 hover:bg-lavender/20
                          opacity-0 group-hover:opacity-100 transition-opacity z-10"
               title="Retry enrichment"
             >
@@ -371,9 +371,12 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
   );
 }, (prev, next) => {
   return (
-    prev.column === next.column &&
     prev.row.data[prev.column.id] === next.row.data[next.column.id] &&
     prev.isEditing === next.isEditing &&
+    prev.column.id === next.column.id &&
+    prev.column.width === next.column.width &&
+    prev.column.type === next.column.type &&
+    prev.column.enrichmentConfigId === next.column.enrichmentConfigId &&
     prev.row.id === next.row.id
   );
 });

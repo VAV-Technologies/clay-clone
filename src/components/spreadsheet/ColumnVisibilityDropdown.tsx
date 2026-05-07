@@ -44,7 +44,7 @@ export function ColumnVisibilityDropdown() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors',
+          'flex items-center gap-1.5 px-2 py-1 text-sm transition-colors',
           'hover:bg-white/10',
           hasHiddenColumns ? 'text-lavender' : 'text-white/50'
         )}
@@ -60,7 +60,7 @@ export function ColumnVisibilityDropdown() {
 
       {/* Dropdown Panel */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-64 rounded-lg bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-xl overflow-hidden">
+        <div className="absolute top-full left-0 mt-1 z-50 w-64 bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-xl overflow-hidden">
           {/* Header with Show All */}
           {hasHiddenColumns && (
             <div className="px-3 py-2 border-b border-white/10">
@@ -93,7 +93,7 @@ export function ColumnVisibilityDropdown() {
                   {/* Checkbox indicator */}
                   <div
                     className={cn(
-                      'w-4 h-4 rounded border flex items-center justify-center',
+                      'w-4 h-4 border flex items-center justify-center',
                       isHidden
                         ? 'border-white/20 bg-transparent'
                         : 'border-lavender bg-lavender/20'

@@ -81,7 +81,7 @@ const COMPANY_OUTPUT_COLUMNS = [
 function FilterSection({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="border border-white/10 rounded-lg overflow-hidden">
+    <div className="border border-white/10 overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -90,7 +90,7 @@ function FilterSection({ title, count, children }: { title: string; count: numbe
         <span className="text-sm font-medium text-white/70">{title}</span>
         <div className="flex items-center gap-2">
           {count > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-violet-500/20 text-violet-400 rounded-full">
+            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-violet-500/20 text-violet-400">
               {count}
             </span>
           )}
@@ -113,7 +113,7 @@ function TextFilterInput({ label, value, onChange, placeholder }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || 'Comma-separated values...'}
-        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-violet-400"
+        className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-violet-400"
       />
     </div>
   );
@@ -128,7 +128,7 @@ function NumberFilterInput({ label, value, onChange, placeholder }: {
   return (
     <div>
       <label className="text-xs text-white/50 mb-1 block">{label}</label>
-      <div className="flex border border-white/10 rounded-lg overflow-hidden focus-within:border-violet-400">
+      <div className="flex border border-white/10 overflow-hidden focus-within:border-violet-400">
         <input
           type="text"
           inputMode="numeric"
@@ -167,7 +167,7 @@ function CheckboxGroup({ options, selected, onChange }: {
           type="button"
           onClick={() => toggle(opt)}
           className={cn(
-            'px-2 py-1 text-xs rounded-md border transition-colors',
+            'px-2 py-1 text-xs border transition-colors',
             selected.includes(opt)
               ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
               : 'bg-white/5 border-white/10 text-white/50 hover:text-white/70'
@@ -194,7 +194,7 @@ function SizeCheckboxGroup({ selected, onChange }: {
           type="button"
           onClick={() => toggle(opt.label)}
           className={cn(
-            'px-2 py-1 text-xs rounded-md border transition-colors',
+            'px-2 py-1 text-xs border transition-colors',
             selected.includes(opt.label)
               ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
               : 'bg-white/5 border-white/10 text-white/50 hover:text-white/70'
@@ -527,7 +527,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
 
   if (!isOpen) return null;
 
-  const selectClasses = 'w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 pr-9 text-sm text-white focus:outline-none focus:border-violet-400 appearance-none bg-[length:16px_16px] bg-[position:right_0.5rem_center] bg-no-repeat bg-[url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2716%27%20height%3D%2716%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27rgba(255%2C255%2C255%2C0.4)%27%20stroke-width%3D%272%27%3E%3Cpath%20d%3D%27M6%209l6%206%206-6%27/%3E%3C/svg%3E")]';
+  const selectClasses = 'w-full bg-white/5 border border-white/10 px-3 py-2 pr-9 text-sm text-white focus:outline-none focus:border-violet-400 appearance-none bg-[length:16px_16px] bg-[position:right_0.5rem_center] bg-no-repeat bg-[url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2716%27%20height%3D%2716%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27rgba(255%2C255%2C255%2C0.4)%27%20stroke-width%3D%272%27%3E%3Cpath%20d%3D%27M6%209l6%206%206-6%27/%3E%3C/svg%3E")]';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add AI Ark Data" size="full">
@@ -537,13 +537,13 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
         {step === 'configure' && (
           <div className="p-4 space-y-4">
             {/* Header badge */}
-            <div className="flex items-center gap-2 p-2 bg-violet-500/10 border border-violet-500/20 rounded-lg">
+            <div className="flex items-center gap-2 p-2 bg-violet-500/10 border border-violet-500/20">
               <Zap className="w-4 h-4 text-violet-400" />
               <span className="text-xs text-violet-300">Powered by AI Ark — 400M+ profiles, 68M+ companies</span>
             </div>
 
             {/* Search Type Toggle */}
-            <div className="flex rounded-lg border border-white/10 overflow-hidden">
+            <div className="flex border border-white/10 overflow-hidden">
               <button type="button" onClick={() => setSearchType('people')}
                 className={cn('flex-1 px-3 py-2 text-sm font-medium transition-colors border-r border-white/10',
                   searchType === 'people' ? 'bg-violet-500/20 text-white' : 'bg-white/5 text-white/50')}>
@@ -664,7 +664,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
 
             {/* Error */}
             {error && (
-              <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+              <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
                 <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
                 <p className="text-sm text-red-400">{error}</p>
               </div>
@@ -699,7 +699,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
           return (
             <div className="p-4 space-y-4">
               {/* Estimated total banner */}
-              <div className="flex items-center gap-3 p-4 bg-violet-500/10 border border-violet-500/20 rounded-lg">
+              <div className="flex items-center gap-3 p-4 bg-violet-500/10 border border-violet-500/20">
                 <Search className="w-6 h-6 text-violet-400 flex-shrink-0" />
                 <div>
                   <p className="text-lg font-semibold text-white">
@@ -711,7 +711,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
 
               {/* Preview table */}
               {previewItems.length > 0 && (
-                <div className="border border-white/10 rounded-lg overflow-hidden">
+                <div className="border border-white/10 overflow-hidden">
                   <p className="px-3 py-2 text-xs text-white/50 bg-white/[0.03] border-b border-white/10">
                     Sample preview ({previewItems.length} of ~{(estimatedTotal || 0).toLocaleString()})
                   </p>
@@ -793,7 +793,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
 
           return (
             <div className="p-4 space-y-4">
-              <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+              <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20">
                 <Check className="w-5 h-5 text-emerald-400" />
                 <p className="text-sm text-emerald-400">
                   Found {items.length} {label}
@@ -804,7 +804,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
               </div>
 
               {items.length > 0 && (
-                <div className="border border-white/10 rounded-lg overflow-hidden">
+                <div className="border border-white/10 overflow-hidden">
                   <div className="overflow-x-auto max-h-64">
                     <table className="w-full text-sm">
                       <thead className="bg-white/[0.03]">
@@ -859,7 +859,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
               )}
 
               {error && (
-                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
                   <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
                   <p className="text-sm text-red-400">{error}</p>
                 </div>

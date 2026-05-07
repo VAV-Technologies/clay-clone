@@ -678,7 +678,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         </div>
         <button
           onClick={onClose}
-          className="p-1 hover:bg-white/10 rounded transition-colors"
+          className="p-1 hover:bg-white/10 transition-colors"
         >
           <X className="w-5 h-5 text-white/60" />
         </button>
@@ -703,7 +703,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                   onClick={() => m.enabled && setModel(m.id)}
                   disabled={!m.enabled}
                   className={cn(
-                    'w-full flex items-center justify-between p-2.5 rounded-lg',
+                    'w-full flex items-center justify-between p-2.5',
                     'border transition-all',
                     !m.enabled && 'opacity-40 cursor-not-allowed',
                     model === m.id
@@ -736,7 +736,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                   onClick={() => m.enabled && setModel(m.id)}
                   disabled={!m.enabled}
                   className={cn(
-                    'w-full flex items-center justify-between p-2.5 rounded-lg',
+                    'w-full flex items-center justify-between p-2.5',
                     'border transition-all',
                     !m.enabled && 'opacity-40 cursor-not-allowed',
                     model === m.id
@@ -801,7 +801,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
               value={outputColumnName}
               onChange={(e) => setOutputColumnName(e.target.value)}
               placeholder="e.g., AI Summary"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
+              className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
             />
             <p className="text-xs text-white/40">
               A new column will be created with this name
@@ -820,14 +820,14 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="e.g., Research the company {{Company}} and provide a brief summary..."
-            className="w-full h-32 p-3 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 resize-none focus:outline-none focus:border-lavender"
+            className="w-full h-32 p-3 bg-white/5 border border-white/10 text-sm text-white placeholder:text-white/30 resize-none focus:outline-none focus:border-lavender"
           />
           {/* Optimize Prompt Button */}
           <button
             onClick={handleOptimizePrompt}
             disabled={!prompt.trim() || isOptimizing}
             className={cn(
-              'flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-all',
+              'flex items-center gap-2 px-3 py-1.5 text-sm transition-all',
               'bg-gradient-to-r from-purple-500/20 to-pink-500/20',
               'border border-purple-500/30 hover:border-purple-500/50',
               'text-purple-300 hover:text-purple-200',
@@ -859,7 +859,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                 key={col.id}
                 onClick={() => insertVariable(col.name)}
                 className={cn(
-                  'px-3 py-1.5 text-sm rounded-full transition-colors',
+                  'px-3 py-1.5 text-sm transition-colors',
                   usedVariables.some(v => v.toLowerCase() === col.name.toLowerCase())
                     ? 'bg-lavender/30 text-lavender border border-lavender/30'
                     : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
@@ -894,13 +894,13 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                 }
               }}
               placeholder="e.g., city, country, email..."
-              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-500/50"
+              className="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-500/50"
             />
             <button
               onClick={addOutputColumn}
               disabled={!newOutputColumn.trim()}
               className={cn(
-                'px-3 py-2 rounded-lg transition-colors',
+                'px-3 py-2 transition-colors',
                 'bg-emerald-500/20 border border-emerald-500/30',
                 'hover:bg-emerald-500/30 hover:border-emerald-500/50',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
@@ -917,7 +917,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
               {outputColumns.map((col, index) => (
                 <div
                   key={index}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-500/30"
                 >
                   <span className="text-sm text-emerald-300">{col}</span>
                   <button
@@ -996,7 +996,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                     min="0.001"
                     value={maxCostPerRow}
                     onChange={(e) => setMaxCostPerRow(parseFloat(e.target.value) || 0.01)}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-lavender"
+                    className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-lavender"
                   />
                   <p className="text-xs text-white/40">
                     Enrichment stops when cumulative cost exceeds limit
@@ -1011,7 +1011,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                 type="checkbox"
                 checked={runOnEmpty}
                 onChange={(e) => setRunOnEmpty(e.target.checked)}
-                className="w-4 h-4 rounded border-white/20 bg-white/5"
+                className="w-4 h-4 border-white/20 bg-white/5"
               />
               <span className="text-sm text-white/70">Only enrich empty cells</span>
             </label>
@@ -1026,7 +1026,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             </p>
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {testResults.map((result, index) => (
-                <div key={index} className="p-2 bg-white/5 rounded-lg">
+                <div key={index} className="p-2 bg-white/5">
                   <p className="text-xs text-white/40 mb-1">Row {index + 1}</p>
                   <p className="text-sm text-white/70 whitespace-pre-wrap">{result}</p>
                 </div>
@@ -1037,7 +1037,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
 
         {/* Error */}
         {error && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+          <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20">
             <AlertCircle className="w-4 h-4 text-red-400 mt-0.5" />
             <p className="text-sm text-red-400">{error}</p>
           </div>
@@ -1052,7 +1052,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                 {progress.completed} / {progress.total}
               </span>
             </div>
-            <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+            <div className="w-full h-2 bg-white/10 overflow-hidden">
               <div
                 className="h-full bg-lavender transition-all"
                 style={{
@@ -1145,7 +1145,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       {/* Prompt Optimizer Modal */}
       {showOptimizerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-white/10">
               <div className="flex items-center gap-2">
@@ -1154,7 +1154,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
               </div>
               <button
                 onClick={handleDeclineOptimizedPrompt}
-                className="p-1 hover:bg-white/10 rounded transition-colors"
+                className="p-1 hover:bg-white/10 transition-colors"
               >
                 <X className="w-5 h-5 text-white/60" />
               </button>
@@ -1181,7 +1181,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                         <Sparkles className="w-4 h-4 text-purple-400" />
                         Optimized Prompt
                       </h4>
-                      <div className="p-4 bg-white/5 border border-white/10 rounded-lg max-h-64 overflow-y-auto">
+                      <div className="p-4 bg-white/5 border border-white/10 max-h-64 overflow-y-auto">
                         <pre className="text-sm text-white/80 whitespace-pre-wrap font-mono">
                           {optimizedPrompt}
                         </pre>
@@ -1199,7 +1199,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                       <p className="text-xs text-white/40">
                         These output fields will be created to store the AI&apos;s structured response.
                       </p>
-                      <div className="border border-white/10 rounded-lg overflow-hidden">
+                      <div className="border border-white/10 overflow-hidden">
                         <table className="w-full text-sm">
                           <thead className="bg-white/5">
                             <tr>
@@ -1237,7 +1237,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                 onClick={handleRetryOptimize}
                 disabled={isOptimizing}
                 className={cn(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors',
+                  'flex items-center gap-2 px-4 py-2 transition-colors',
                   'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white',
                   'disabled:opacity-50 disabled:cursor-not-allowed'
                 )}
@@ -1247,7 +1247,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
               </button>
               <button
                 onClick={handleDeclineOptimizedPrompt}
-                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors"
               >
                 Decline
               </button>
@@ -1255,7 +1255,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
                 onClick={handleAcceptOptimizedPrompt}
                 disabled={(!optimizedPrompt && recommendedDataGuide.length === 0) || isOptimizing}
                 className={cn(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors',
+                  'flex items-center gap-2 px-4 py-2 transition-colors',
                   'bg-gradient-to-r from-purple-500 to-emerald-500 text-white',
                   'hover:from-purple-600 hover:to-emerald-600',
                   'disabled:opacity-50 disabled:cursor-not-allowed'

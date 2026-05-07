@@ -55,10 +55,10 @@ export function ConditionSection({
   const hasCondition = !!columnId;
   const needsValue = !NO_VALUE_OPERATORS.includes(operator);
 
-  const selectClasses = 'w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-lavender appearance-none bg-[length:16px_16px] bg-[position:right_0.5rem_center] bg-no-repeat bg-[url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2716%27%20height%3D%2716%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27rgba(255%2C255%2C255%2C0.4)%27%20stroke-width%3D%272%27%3E%3Cpath%20d%3D%27M6%209l6%206%206-6%27/%3E%3C/svg%3E")]';
+  const selectClasses = 'w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-lavender appearance-none bg-[length:16px_16px] bg-[position:right_0.5rem_center] bg-no-repeat bg-[url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2716%27%20height%3D%2716%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27rgba(255%2C255%2C255%2C0.4)%27%20stroke-width%3D%272%27%3E%3Cpath%20d%3D%27M6%209l6%206%206-6%27/%3E%3C/svg%3E")]';
 
   return (
-    <div className="border border-white/10 rounded-lg overflow-hidden">
+    <div className="border border-white/10 overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -70,7 +70,7 @@ export function ConditionSection({
         </div>
         <div className="flex items-center gap-2">
           {hasCondition && (
-            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/20 text-amber-400 rounded-full">
+            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/20 text-amber-400">
               {matchCount.toLocaleString()} / {totalCount.toLocaleString()}
             </span>
           )}
@@ -122,7 +122,7 @@ export function ConditionSection({
                 value={value}
                 onChange={(e) => onValueChange(e.target.value)}
                 placeholder="Enter value..."
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
+                className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
               />
             </div>
           )}
