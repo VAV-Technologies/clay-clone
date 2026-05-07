@@ -803,7 +803,11 @@ function PlanCard({
         })}
       </div>
 
-      {(status === 'planning' || status === 'awaiting_approval') && (
+      {/* Show the Approve button while the user can still kick off a launch.
+          'previewing' is included so a refresh after a preview already ran
+          (or one I triggered server-side) still surfaces the button — clicking
+          it re-fires /preview and repopulates the gate. */}
+      {(status === 'planning' || status === 'awaiting_approval' || status === 'previewing') && (
         <div className="mt-4 flex justify-end">
           <button
             onClick={onApprove}
