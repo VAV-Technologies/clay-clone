@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
-import { DM_Mono, DM_Serif_Display } from 'next/font/google';
+import { DM_Sans, DM_Serif_Display } from 'next/font/google';
 import { AnimatedBackground } from '@/components/ui/AnimatedBackground';
 import './globals.css';
 
-const dmMono = DM_Mono({
+const dmSans = DM_Sans({
   subsets: ['latin'],
-  weight: ['300', '400', '500'],
-  variable: '--font-dm-mono',
+  weight: ['400', '500', '700'],
+  variable: '--font-dm-sans',
 });
 
 const dmSerifDisplay = DM_Serif_Display({
@@ -27,8 +27,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`dark ${dmMono.variable} ${dmSerifDisplay.variable}`}>
-      <body className={dmMono.className}>
+    <html lang="en" className={`dark ${dmSans.variable} ${dmSerifDisplay.variable}`}>
+      <body className={dmSans.className}>
         <AnimatedBackground />
         {children}
       </body>

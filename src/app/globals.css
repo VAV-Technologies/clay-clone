@@ -38,7 +38,7 @@ body {
 body {
   color: white;
   background: var(--midnight-blue);
-  font-family: var(--font-dm-mono), ui-monospace, monospace;
+  font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Custom scrollbar */

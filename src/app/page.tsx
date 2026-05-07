@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
-  Search,
   FolderPlus,
   FileSpreadsheet,
   Folder,
@@ -74,8 +73,8 @@ function ProjectRow({
       <div className="flex items-center gap-4">
         <div
           className={cn(
-            'p-2',
-            isFolder ? 'bg-amber-500/20' : 'bg-lavender/20'
+            'w-11 h-11 flex items-center justify-center border',
+            isFolder ? 'border-amber-400/40' : 'border-lavender/40'
           )}
         >
           {isFolder ? (
@@ -369,7 +368,7 @@ function DashboardContent() {
       <header className="relative z-10 border-b border-white/10 bg-midnight/50 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center">
-            <h1 className="text-2xl font-display text-white tracking-tight">DataFlow</h1>
+            <h1 className="text-2xl font-display text-white tracking-tight">Dataflow</h1>
           </div>
           <a
             href="/api-docs"
@@ -384,13 +383,12 @@ function DashboardContent() {
       <main className="relative z-10 max-w-4xl mx-auto px-6 py-6">
         {/* Search Bar */}
         <div className="relative mb-4">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search workbooks..."
-            className="w-full pl-12 pr-4 py-3
+            className="w-full px-4 py-3
                        bg-white/5 border border-white/10
                        text-white placeholder:text-white/40
                        focus:border-lavender focus:outline-none focus:ring-2 focus:ring-lavender/20
@@ -450,7 +448,7 @@ function DashboardContent() {
         </div>
 
         {/* Projects List */}
-        <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 shadow-2xl">
+        <div className="bg-white/5 backdrop-blur-md border border-white/10 shadow-2xl">
           {isLoading ? (
             <div className="p-12 text-center">
               <div className="animate-spin w-8 h-8 border-2 border-lavender border-t-transparent rounded-full mx-auto" />

@@ -359,7 +359,7 @@ function ProjectContent() {
                 </span>
               ))}
               <ChevronRight className="w-3 h-3 text-white/30 shrink-0" />
-              <h1 className="text-lg font-semibold text-white truncate">{folder.name}</h1>
+              <h1 className="text-sm font-medium text-white truncate">{folder.name}</h1>
             </nav>
           </div>
         </div>
@@ -389,7 +389,7 @@ function ProjectContent() {
 
         {/* Children List - Row Layout */}
         {children.length > 0 ? (
-          <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10">
+          <div className="bg-white/5 backdrop-blur-md border border-white/10">
             {/* Table Header */}
             <div className="flex items-center px-4 py-3 border-b border-white/10 bg-white/[0.02]">
               <div className="flex-1 text-xs font-medium text-white/40 uppercase tracking-wider">Name</div>
@@ -409,11 +409,11 @@ function ProjectContent() {
                     className="flex items-center gap-3 flex-1 cursor-pointer min-w-0"
                     onClick={() => handleOpen(row)}
                   >
-                    <div className={`w-9 h-9 flex items-center justify-center flex-shrink-0 ${row.type === 'folder' ? 'bg-amber-400/15' : 'bg-lavender/20'}`}>
+                    <div className={`w-11 h-11 flex items-center justify-center flex-shrink-0 border ${row.type === 'folder' ? 'border-amber-400/40' : 'border-lavender/40'}`}>
                       {row.type === 'folder' ? (
-                        <Folder className="w-4 h-4 text-amber-300" />
+                        <Folder className="w-5 h-5 text-amber-300" />
                       ) : (
-                        <FileSpreadsheet className="w-4 h-4 text-lavender" />
+                        <FileSpreadsheet className="w-5 h-5 text-lavender" />
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -506,7 +506,7 @@ function ProjectContent() {
             </div>
           </div>
         ) : (
-          <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 p-12 text-center">
+          <div className="bg-white/5 backdrop-blur-md border border-white/10 p-12 text-center">
             <div className="w-16 h-16 bg-white/5 flex items-center justify-center mx-auto mb-4">
               <FileSpreadsheet className="w-8 h-8 text-white/20" />
             </div>
