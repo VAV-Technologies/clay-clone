@@ -375,7 +375,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, o
               <>
                 <div className="fixed inset-0 z-[99]" onClick={() => setIsAddDataOpen(false)} />
                 <div
-                  className="fixed z-[100] w-52 py-1.5 bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-2xl"
+                  className="fixed z-[100] w-52 bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-2xl"
                   style={{
                     top: (addDataButtonRef.current?.getBoundingClientRect().bottom ?? 0) + 6,
                     right: window.innerWidth - (addDataButtonRef.current?.getBoundingClientRect().right ?? 0),
@@ -432,7 +432,7 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, o
               <>
                 <div className="fixed inset-0 z-[99]" onClick={() => setIsActionsOpen(false)} />
                 <div
-                  className="fixed z-[100] w-52 py-1.5 bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-2xl"
+                  className="fixed z-[100] w-52 bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-2xl"
                   style={{
                     top: (actionsButtonRef.current?.getBoundingClientRect().bottom ?? 0) + 6,
                     right: window.innerWidth - (actionsButtonRef.current?.getBoundingClientRect().right ?? 0),
