@@ -93,11 +93,32 @@ body {
   }
 
   .glass-header {
-    @apply bg-lavender/[0.08] border-b border-lavender/20;
+    @apply bg-midnight-100 border-b border-lavender/30;
   }
 
   .glass-dropdown {
     @apply bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-glass;
+  }
+
+  /* Muted checkbox: outline-only when unchecked, faint lavender check when checked */
+  .checkbox-muted {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid rgba(147, 147, 255, 0.3);
+    background-color: transparent;
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+  }
+  .checkbox-muted:checked {
+    border-color: rgba(147, 147, 255, 0.5);
+    background-color: rgba(147, 147, 255, 0.1);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239393ff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+    background-size: 12px 12px;
+    background-position: center;
+    background-repeat: no-repeat;
   }
 
   /* Drop-down chevron: hides native arrow + paints a custom one with proper edge spacing */

@@ -524,13 +524,13 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, o
                     clearSelection();
                   }
                 }}
-                className="w-4 h-4 border-white/20 bg-white/5 checked:bg-lavender"
+                className="checkbox-muted"
               />
             </div>
 
             {/* Row number column header */}
             <div
-              className="flex items-center justify-center border-r border-white/10 flex-shrink-0 text-xs text-white/40"
+              className="flex items-center justify-center border-r border-white/10 flex-shrink-0 text-xs text-lavender/30"
               style={{ width: ROW_NUMBER_WIDTH, minWidth: ROW_NUMBER_WIDTH }}
             >
               #
@@ -660,13 +660,13 @@ export function SpreadsheetView({ tableId, onEnrich, onFormula, onAddClayData, o
                       checked={isSelected}
                       onChange={() => selectRow(row.id, true)}
                       onClick={(e) => e.stopPropagation()}
-                      className="w-4 h-4 border-white/20 bg-white/5 checked:bg-lavender"
+                      className="checkbox-muted"
                     />
                   </div>
 
                   {/* Row number */}
                   <div
-                    className="flex items-center justify-center border-r border-b border-white/[0.05] flex-shrink-0 text-xs text-white/40"
+                    className="flex items-center justify-center border-r border-b border-white/[0.05] flex-shrink-0 text-xs text-lavender/30"
                     style={{ width: ROW_NUMBER_WIDTH, minWidth: ROW_NUMBER_WIDTH }}
                   >
                     {virtualRow.index + 1}
