@@ -350,7 +350,7 @@ function TablesContent() {
       <AnimatedBackground />
       <AppNav />
 
-      <main className="relative z-10 max-w-6xl mx-auto px-6 py-6">
+      <main className="relative z-10 max-w-4xl mx-auto px-6 py-6">
         {/* Search Bar */}
         <div className="relative mb-4">
           <input

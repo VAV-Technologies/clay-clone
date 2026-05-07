@@ -24,7 +24,7 @@ export function AppNav() {
 
   return (
     <header className="relative z-10 border-b border-white/10 bg-midnight/50 backdrop-blur-sm">
-      <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
+      <div className="max-w-4xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
         {/* Logo (also a home link) */}
         <Link href="/" className="flex items-center flex-shrink-0">
           <h1 className="text-2xl font-display text-white tracking-tight">Dataflow</h1>
