@@ -339,22 +339,29 @@ function AgentChatPage() {
 
       {/* Sidebar */}
       <aside className="relative z-10 w-72 border-r border-white/10 bg-midnight/60 backdrop-blur-sm flex flex-col h-full">
-        <div className="p-4 border-b border-white/10 flex items-center gap-2">
+        {/* Row 1: just the back arrow — same height as the main header */}
+        <div className="px-4 py-3 border-b border-white/10 flex items-center h-[53px]">
           <button
             onClick={() => router.push('/')}
-            className="p-1.5 hover:bg-white/5 transition"
+            className="p-1.5 hover:bg-white/5 transition flex items-center gap-2 text-white/60 hover:text-white text-sm"
             title="Back to home"
           >
-            <ArrowLeft className="w-4 h-4 text-white/60" />
+            <ArrowLeft className="w-4 h-4" />
+            <span>Home</span>
           </button>
+        </div>
+
+        {/* Row 2: New campaign — its own block above the past conversations list */}
+        <div className="px-3 py-3 border-b border-white/10">
           <button
             onClick={() => router.push('/')}
-            className="flex-1 flex items-center gap-2 px-3 py-1.5 border border-white/10 hover:border-white/30 transition text-sm text-white/80"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-white/10 hover:border-white/30 hover:bg-white/[0.03] transition text-sm text-white/80"
           >
             <Plus className="w-4 h-4" />
             New campaign
           </button>
         </div>
+
         <div className="flex-1 min-h-0 overflow-y-auto py-2">
           <div className="px-4 py-2 text-xs uppercase tracking-wider text-white/30">
             Past conversations
@@ -382,26 +389,23 @@ function AgentChatPage() {
 
       {/* Main pane */}
       <div className="relative z-10 flex-1 flex flex-col min-w-0 h-full">
-        {/* Header */}
-        <header className="border-b border-white/10 bg-midnight/50 backdrop-blur-sm px-6 py-3 flex items-center justify-between">
-          <div className="min-w-0">
-            <h1 className="text-lg font-medium text-white truncate">{conversation.title}</h1>
-            <div className="text-xs text-white/40 mt-0.5">
-              <StatusPill status={conversation.status} />
-              {campaign && (
-                <span className="ml-2">
-                  · Campaign {campaign.progress.completedSteps}/{campaign.progress.totalSteps}{' '}
-                  steps
-                </span>
-              )}
-            </div>
+        {/* Header — single line, height-matched to the sidebar's back-arrow row */}
+        <header className="border-b border-white/10 bg-midnight/50 backdrop-blur-sm px-6 py-3 flex items-center justify-between gap-4 h-[53px]">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <h1 className="text-base font-medium text-white truncate">{conversation.title}</h1>
+            <StatusPill status={conversation.status} />
+            {campaign && (
+              <span className="text-xs text-white/40 hidden sm:inline">
+                · {campaign.progress.completedSteps}/{campaign.progress.totalSteps} steps
+              </span>
+            )}
           </div>
           {campaign?.workbookId && (
             <a
               href={`/workbook/${campaign.workbookId}`}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1 px-3 py-1 text-sm border border-white/10 hover:border-white/30 transition text-white/70"
+              className="flex items-center gap-1 px-3 py-1 text-xs border border-white/10 hover:border-white/30 transition text-white/70 flex-shrink-0"
             >
               Open workbook <ExternalLink className="w-3 h-3" />
             </a>
@@ -454,7 +458,7 @@ function AgentChatPage() {
               e.preventDefault();
               sendMessage();
             }}
-            className="flex items-end gap-2"
+            className="flex items-stretch gap-2"
           >
             <textarea
               value={input}
@@ -471,17 +475,17 @@ function AgentChatPage() {
                   ? 'Type "approve" to launch, or ask for changes...'
                   : 'Refine the plan, ask questions...'
               }
-              rows={2}
-              className="flex-1 px-3 py-2 bg-white/5 border border-white/10 backdrop-blur-md
-                         text-white placeholder:text-white/30
+              rows={1}
+              className="flex-1 h-10 px-3 py-2 bg-white/5 border border-white/10 backdrop-blur-md
+                         text-white placeholder:text-white/30 leading-6
                          focus:border-lavender focus:outline-none focus:ring-2 focus:ring-lavender/20
                          resize-none disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={!input.trim() || sending}
-              className="p-2.5 bg-lavender/20 border border-lavender/30 hover:bg-lavender/30
-                         disabled:opacity-30 disabled:cursor-not-allowed transition"
+              className="h-10 w-10 flex items-center justify-center bg-lavender/20 border border-lavender/30 hover:bg-lavender/30
+                         disabled:opacity-30 disabled:cursor-not-allowed transition flex-shrink-0"
               title="Send"
             >
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 text-lavender" />}
@@ -729,35 +733,59 @@ function PlanCard({
         {plan.stages.map((stage, i) => {
           const open = expandedStages.has(i);
           return (
-            <div key={i} className="border border-white/5">
-              <button
-                onClick={() => toggleStage(i)}
-                className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-white/[0.02] transition"
-              >
+            // Whole stage box is the clickable target so hover highlights
+            // both the title and the expanded body together.
+            <div
+              key={i}
+              onClick={() => toggleStage(i)}
+              className="border border-white/10 hover:border-white/20 hover:bg-white/[0.02] transition cursor-pointer"
+            >
+              <div className="flex items-center gap-2 px-3 py-2.5">
                 {open ? (
-                  <ChevronDown className="w-4 h-4 text-white/40 mt-0.5 flex-shrink-0" />
+                  <ChevronDown className="w-4 h-4 text-white/40 flex-shrink-0" />
                 ) : (
-                  <ChevronRight className="w-4 h-4 text-white/40 mt-0.5 flex-shrink-0" />
+                  <ChevronRight className="w-4 h-4 text-white/40 flex-shrink-0" />
                 )}
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-white">{stage.title}</div>
-                  <div className="text-xs text-white/50 mt-0.5">{stage.summary}</div>
-                </div>
-              </button>
+                <div className="text-sm text-white/90 flex-1 min-w-0 truncate">{stage.title}</div>
+              </div>
+
               {open && (
-                <div className="px-9 pb-3 text-xs space-y-2">
-                  {stage.notes && stage.notes.length > 0 && (
-                    <div className="text-white/50 space-y-0.5">
-                      {stage.notes.map((n, j) => (
-                        <div key={j}>· {n}</div>
-                      ))}
+                <>
+                  {/* Divider between the stage title and its body */}
+                  <div className="border-t border-white/10" />
+
+                  <div className="px-3 py-3 space-y-3">
+                    <p className="text-sm text-white/70 leading-relaxed">{stage.summary}</p>
+
+                    {stage.notes && stage.notes.length > 0 && (
+                      <ul className="text-xs text-white/50 space-y-1">
+                        {stage.notes.map((n, j) => (
+                          <li key={j} className="flex gap-2">
+                            <span className="text-white/25 flex-shrink-0">·</span>
+                            <span>{n}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-white/30 mb-2">
+                        {stage.steps.length} step{stage.steps.length === 1 ? '' : 's'}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {stage.steps.map((s, j) => (
+                          <div
+                            key={j}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 border border-white/10 bg-white/[0.03] text-white/70 text-[11px]"
+                          >
+                            <span className="text-white/30 tabular-nums">{j + 1}</span>
+                            <span>{humanizeStep(s.type)}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  )}
-                  <div className="text-white/40">
-                    {stage.steps.length} step{stage.steps.length === 1 ? '' : 's'}:{' '}
-                    {stage.steps.map(s => s.type).join(' → ')}
                   </div>
-                </div>
+                </>
               )}
             </div>
           );
