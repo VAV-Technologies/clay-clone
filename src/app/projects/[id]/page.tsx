@@ -389,9 +389,9 @@ function ProjectContent() {
 
         {/* Children List - Row Layout */}
         {children.length > 0 ? (
-          <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 rounded-xl">
+          <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10">
             {/* Table Header */}
-            <div className="flex items-center px-4 py-3 border-b border-white/10 bg-white/[0.02] rounded-t-xl">
+            <div className="flex items-center px-4 py-3 border-b border-white/10 bg-white/[0.02]">
               <div className="flex-1 text-xs font-medium text-white/40 uppercase tracking-wider">Name</div>
               <div className="w-32 text-xs font-medium text-white/40 uppercase tracking-wider hidden sm:block">Modified</div>
               <div className="w-10"></div>
@@ -409,7 +409,7 @@ function ProjectContent() {
                     className="flex items-center gap-3 flex-1 cursor-pointer min-w-0"
                     onClick={() => handleOpen(row)}
                   >
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${row.type === 'folder' ? 'bg-amber-400/15' : 'bg-lavender/20'}`}>
+                    <div className={`w-9 h-9 flex items-center justify-center flex-shrink-0 ${row.type === 'folder' ? 'bg-amber-400/15' : 'bg-lavender/20'}`}>
                       {row.type === 'folder' ? (
                         <Folder className="w-4 h-4 text-amber-300" />
                       ) : (
@@ -437,7 +437,7 @@ function ProjectContent() {
                         e.stopPropagation();
                         setOpenMenuId(openMenuId === row.id ? null : row.id);
                       }}
-                      className="p-1.5 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100"
+                      className="p-1.5 hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100"
                     >
                       <MoreHorizontal className="w-4 h-4 text-white/50" />
                     </button>
@@ -452,7 +452,7 @@ function ProjectContent() {
                           }}
                         />
                         <div
-                          className="fixed z-[100] min-w-[160px] py-1 bg-midnight-100 border border-white/10 rounded-xl shadow-xl"
+                          className="fixed z-[100] min-w-[160px] py-1 bg-midnight-100 border border-white/10 shadow-xl"
                           style={{
                             top: (menuBtnRefs.current[row.id]?.getBoundingClientRect().bottom ?? 0) + 4,
                             right: window.innerWidth - (menuBtnRefs.current[row.id]?.getBoundingClientRect().right ?? 0),
@@ -506,8 +506,8 @@ function ProjectContent() {
             </div>
           </div>
         ) : (
-          <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 rounded-2xl p-12 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mx-auto mb-4">
+          <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 p-12 text-center">
+            <div className="w-16 h-16 bg-white/5 flex items-center justify-center mx-auto mb-4">
               <FileSpreadsheet className="w-8 h-8 text-white/20" />
             </div>
             <h3 className="text-lg font-medium text-white mb-1">

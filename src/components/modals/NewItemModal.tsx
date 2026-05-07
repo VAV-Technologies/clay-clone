@@ -42,12 +42,12 @@ export function NewItemModal({ type, isOpen, onClose, onCreate }: NewItemModalPr
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-md mx-4 bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+      <div className="relative w-full max-w-md mx-4 bg-midnight-100/95 backdrop-blur-xl border border-white/10 p-6 shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className={cn(
-              'p-2 rounded-lg',
+              'p-2',
               isFolder ? 'bg-amber-500/20' : 'bg-lavender/20'
             )}>
               {isFolder ? (
@@ -62,7 +62,7 @@ export function NewItemModal({ type, isOpen, onClose, onCreate }: NewItemModalPr
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            className="p-2 hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5 text-white/70" />
           </button>
@@ -78,7 +78,7 @@ export function NewItemModal({ type, isOpen, onClose, onCreate }: NewItemModalPr
               onChange={(e) => setName(e.target.value)}
               placeholder={isFolder ? 'My Folder' : 'My Workbook'}
               autoFocus
-              className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10
+              className="w-full px-4 py-3 bg-white/5 border border-white/10
                          text-white placeholder:text-white/30
                          focus:border-lavender focus:outline-none focus:ring-2 focus:ring-lavender/20"
             />
@@ -88,7 +88,7 @@ export function NewItemModal({ type, isOpen, onClose, onCreate }: NewItemModalPr
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-3 rounded-lg bg-white/10 text-white
+              className="flex-1 px-4 py-3 bg-white/10 text-white
                          hover:bg-white/15 transition-colors"
             >
               Cancel
@@ -96,7 +96,7 @@ export function NewItemModal({ type, isOpen, onClose, onCreate }: NewItemModalPr
             <button
               type="submit"
               disabled={!name.trim()}
-              className="flex-1 px-4 py-3 rounded-lg bg-lavender text-midnight font-medium
+              className="flex-1 px-4 py-3 bg-lavender text-midnight font-medium
                          hover:bg-lavender/90 transition-colors
                          disabled:opacity-50 disabled:cursor-not-allowed"
             >

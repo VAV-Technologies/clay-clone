@@ -93,7 +93,7 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
     <div
       className={cn(
         'flex items-start gap-3 p-4 min-w-[300px] max-w-[400px]',
-        'bg-midnight-100/95 backdrop-blur-xl border rounded-xl shadow-glass',
+        'bg-midnight-100/95 backdrop-blur-xl border shadow-glass',
         'animate-slide-in',
         bgColors[toast.type]
       )}

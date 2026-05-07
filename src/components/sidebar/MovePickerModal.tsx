@@ -86,7 +86,7 @@ export function MovePickerModal({ target, projects, onClose, onMove }: MovePicke
               disabled={dest.isCurrent}
               onClick={() => onMove(dest.id)}
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left',
+                'w-full flex items-center gap-3 px-3 py-2.5 text-left',
                 'transition-colors duration-150',
                 dest.isCurrent
                   ? 'text-white/40 cursor-not-allowed bg-white/5'

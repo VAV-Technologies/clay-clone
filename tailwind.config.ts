@@ -8,6 +8,11 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['var(--font-dm-mono)', 'ui-monospace', 'monospace'],
+        mono: ['var(--font-dm-mono)', 'ui-monospace', 'monospace'],
+        display: ['var(--font-display)', 'serif'],
+      },
       colors: {
         midnight: {
           DEFAULT: '#0d0d39',

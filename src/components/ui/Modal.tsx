@@ -68,7 +68,7 @@ export function Modal({
     >
       <div
         className={cn(
-          'w-full bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-glass animate-scale-in',
+          'w-full bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-glass animate-scale-in',
           sizeClasses[size]
         )}
       >

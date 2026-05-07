@@ -65,7 +65,7 @@ export function Dropdown({ trigger, items, align = 'left', className }: Dropdown
           ref={menuRef}
           className={cn(
             'fixed z-[100] min-w-[160px] py-1',
-            'bg-midnight-100/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-glass',
+            'bg-midnight-100/95 backdrop-blur-xl border border-white/10 shadow-glass',
             'animate-scale-in origin-top'
           )}
           style={{ top: position.top, left: position.left }}

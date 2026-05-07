@@ -14,7 +14,7 @@ export const GlassCard = forwardRef<HTMLDivElement, GlassCardProps>(
       <div
         ref={ref}
         className={cn(
-          'rounded-2xl border backdrop-blur-xl',
+          'border backdrop-blur-xl',
           'transition-all duration-300',
 
           // Variant styles

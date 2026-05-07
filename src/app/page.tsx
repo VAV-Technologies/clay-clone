@@ -10,7 +10,6 @@ import {
   FileSpreadsheet,
   Folder,
   MoreVertical,
-  Sparkles,
   Trash2,
   HardDrive,
   Pencil,
@@ -75,7 +74,7 @@ function ProjectRow({
       <div className="flex items-center gap-4">
         <div
           className={cn(
-            'p-2 rounded-lg',
+            'p-2',
             isFolder ? 'bg-amber-500/20' : 'bg-lavender/20'
           )}
         >
@@ -100,7 +99,7 @@ function ProjectRow({
             e.stopPropagation();
             setShowMenu(!showMenu);
           }}
-          className="p-2 rounded-lg opacity-0 group-hover:opacity-100
+          className="p-2 opacity-0 group-hover:opacity-100
                      hover:bg-white/10 transition-all"
         >
           <MoreVertical className="w-4 h-4 text-white/50" />
@@ -116,7 +115,7 @@ function ProjectRow({
               }}
             />
             <div
-              className="fixed z-[100] bg-midnight-100 border border-white/10 rounded-lg shadow-xl min-w-[160px] py-1"
+              className="fixed z-[100] bg-midnight-100 border border-white/10 shadow-xl min-w-[160px] py-1"
               style={{
                 top: (menuBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
                 right: window.innerWidth - (menuBtnRef.current?.getBoundingClientRect().right ?? 0),
@@ -369,15 +368,12 @@ function DashboardContent() {
       {/* Header */}
       <header className="relative z-10 border-b border-white/10 bg-midnight/50 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-lavender/20 flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-lavender" />
-            </div>
-            <h1 className="text-xl font-bold text-white">DataFlow</h1>
+          <div className="flex items-center">
+            <h1 className="text-2xl font-display text-white tracking-tight">DataFlow</h1>
           </div>
           <a
             href="/api-docs"
-            className="px-3 py-1.5 text-sm text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-colors"
+            className="px-3 py-1.5 text-sm text-white/60 hover:text-white border border-white/10 hover:border-white/20 transition-colors"
           >
             API Docs
           </a>
@@ -394,7 +390,7 @@ function DashboardContent() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search workbooks..."
-            className="w-full pl-12 pr-4 py-3 rounded-xl
+            className="w-full pl-12 pr-4 py-3
                        bg-white/5 border border-white/10
                        text-white placeholder:text-white/40
                        focus:border-lavender focus:outline-none focus:ring-2 focus:ring-lavender/20
@@ -406,7 +402,7 @@ function DashboardContent() {
         <div className="flex items-center justify-between mb-8">
           {/* Left: Storage */}
           {storageStats ? (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm">
+            <div className="flex items-center gap-2 px-4 py-3 bg-white/5 border border-white/10 text-sm">
               <HardDrive className="w-4 h-4 text-lavender" />
               <span className="text-white/70">
                 {storageStats.storage.estimatedMB < 1
@@ -414,10 +410,10 @@ function DashboardContent() {
                   : `${storageStats.storage.estimatedMB} MB`}
               </span>
               <span className="text-white/40">/ {storageStats.storage.maxGB} GB</span>
-              <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden ml-1">
+              <div className="w-16 h-1.5 bg-white/10 overflow-hidden ml-1">
                 <div
                   className={cn(
-                    "h-full rounded-full transition-all",
+                    "h-full transition-all",
                     storageStats.storage.usagePercent > 80 ? "bg-red-500" :
                     storageStats.storage.usagePercent > 50 ? "bg-amber-500" : "bg-lavender"
                   )}
@@ -431,7 +427,7 @@ function DashboardContent() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowNewModal('folder')}
-              className="flex items-center justify-center gap-2 w-40 py-3 rounded-xl text-sm
+              className="flex items-center justify-center gap-2 w-40 py-3 text-sm
                          bg-white/5 border border-white/10
                          text-white hover:bg-white/10 hover:border-white/20
                          transition-all duration-200 backdrop-blur-md"
@@ -442,7 +438,7 @@ function DashboardContent() {
 
             <button
               onClick={() => setShowNewModal('table')}
-              className="flex items-center justify-center gap-2 w-40 py-3 rounded-xl text-sm
+              className="flex items-center justify-center gap-2 w-40 py-3 text-sm
                          bg-lavender/20 border border-lavender/30
                          text-white hover:bg-lavender/30
                          transition-all duration-200 backdrop-blur-md"
@@ -454,14 +450,14 @@ function DashboardContent() {
         </div>
 
         {/* Projects List */}
-        <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl">
+        <div className="bg-midnight-100/60 backdrop-blur-xl border border-white/10 shadow-2xl">
           {isLoading ? (
             <div className="p-12 text-center">
               <div className="animate-spin w-8 h-8 border-2 border-lavender border-t-transparent rounded-full mx-auto" />
             </div>
           ) : filteredProjects.length === 0 ? (
             <div className="p-12 text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
+              <div className="w-16 h-16 mx-auto mb-4 bg-white/5 flex items-center justify-center">
                 <Folder className="w-8 h-8 text-white/30" />
               </div>
               <p className="text-white/50">

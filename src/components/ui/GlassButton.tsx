@@ -16,7 +16,7 @@ export const GlassButton = forwardRef<HTMLButtonElement, GlassButtonProps>(
         ref={ref}
         className={cn(
           // Base styles
-          'relative overflow-hidden rounded-lg font-medium transition-all duration-300',
+          'relative overflow-hidden font-medium transition-all duration-300',
           'border backdrop-blur-md',
           'focus:outline-none focus:ring-2 focus:ring-lavender/50',
           'active:scale-[0.98]',
