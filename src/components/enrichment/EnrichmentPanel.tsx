@@ -36,22 +36,13 @@ interface ModelOption {
   id: string;
   name: string;
   description: string;
-  enabled?: boolean;
 }
 
+// Only models with live Azure deployments. Adding a new model here requires
+// a matching deployment + key in azure-openai.ts / env.
 const AZURE_MODELS: ModelOption[] = [
-  { id: 'gpt-4o', name: 'GPT-4o', description: 'Latest GPT-4 multimodal' },
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and cost-effective' },
-  { id: 'gpt-5', name: 'GPT-5', description: 'Next-gen flagship model' },
-  { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Batch API only' },
-  { id: 'gpt-5-mini', name: 'GPT-5 Mini', description: 'Fast and affordable', enabled: true },
-  { id: 'gpt-5-nano', name: 'GPT-5 Nano', description: 'Ultra-fast and lightweight', enabled: true },
-  { id: 'gpt-5-turbo', name: 'GPT-5 Turbo', description: 'Fast GPT-5 variant' },
-];
-
-const DEEPSEEK_MODELS: ModelOption[] = [
-  { id: 'deepseek-chat', name: 'DeepSeek V3', description: 'Fast, cost-effective' },
-  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', description: 'Deep reasoning mode' },
+  { id: 'gpt-5-mini', name: 'GPT-5 Mini', description: 'Fast and affordable' },
+  { id: 'gpt-5-nano', name: 'GPT-5 Nano', description: 'Ultra-fast and lightweight' },
 ];
 
 export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPanelProps) {
@@ -690,70 +681,26 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
         <div className="space-y-3 pb-4 border-b border-white/10">
           <label className="text-sm font-medium text-white/70">Model</label>
 
-          {/* Azure OpenAI Section */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-blue-400" />
-              <span className="text-xs font-medium text-white/50 uppercase tracking-wide">Azure OpenAI</span>
-            </div>
-            <div className="space-y-1.5">
-              {AZURE_MODELS.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => m.enabled && setModel(m.id)}
-                  disabled={!m.enabled}
-                  className={cn(
-                    'w-full flex items-center justify-between p-2.5',
-                    'border transition-all',
-                    !m.enabled && 'opacity-40 cursor-not-allowed',
-                    model === m.id
-                      ? 'bg-blue-500/10 border-blue-500/30'
-                      : m.enabled
-                        ? 'bg-white/5 border-white/10 hover:border-white/20'
-                        : 'bg-white/5 border-white/10'
-                  )}
-                >
-                  <div className="text-left">
-                    <p className="text-sm font-medium text-white">{m.name}</p>
-                    <p className="text-xs text-white/50">{m.description}</p>
-                  </div>
-                  {model === m.id && <Check className="w-4 h-4 text-blue-400" />}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* DeepSeek Section */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-400" />
-              <span className="text-xs font-medium text-white/50 uppercase tracking-wide">DeepSeek</span>
-            </div>
-            <div className="space-y-1.5">
-              {DEEPSEEK_MODELS.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => m.enabled && setModel(m.id)}
-                  disabled={!m.enabled}
-                  className={cn(
-                    'w-full flex items-center justify-between p-2.5',
-                    'border transition-all',
-                    !m.enabled && 'opacity-40 cursor-not-allowed',
-                    model === m.id
-                      ? 'bg-emerald-500/10 border-emerald-500/30'
-                      : m.enabled
-                        ? 'bg-white/5 border-white/10 hover:border-white/20'
-                        : 'bg-white/5 border-white/10'
-                  )}
-                >
-                  <div className="text-left">
-                    <p className="text-sm font-medium text-white">{m.name}</p>
-                    <p className="text-xs text-white/50">{m.description}</p>
-                  </div>
-                  {model === m.id && <Check className="w-4 h-4 text-emerald-400" />}
-                </button>
-              ))}
-            </div>
+          <div className="space-y-1.5">
+            {AZURE_MODELS.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setModel(m.id)}
+                className={cn(
+                  'w-full flex items-center justify-between p-2.5',
+                  'border transition-all',
+                  model === m.id
+                    ? 'bg-blue-500/10 border-blue-500/30'
+                    : 'bg-white/5 border-white/10 hover:border-white/20'
+                )}
+              >
+                <div className="text-left">
+                  <p className="text-sm font-medium text-white">{m.name}</p>
+                  <p className="text-xs text-white/50">{m.description}</p>
+                </div>
+                {model === m.id && <Check className="w-4 h-4 text-blue-400" />}
+              </button>
+            ))}
           </div>
         </div>
 
