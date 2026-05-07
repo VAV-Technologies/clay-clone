@@ -14,7 +14,7 @@ function CopyButton({ text }: { text: string }) {
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <button onClick={handle} className="p-1 hover:bg-white/10 rounded transition-colors" title="Copy">
+    <button onClick={handle} className="p-1 hover:bg-white/10 transition-colors" title="Copy">
       {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-white/40" />}
     </button>
   );
@@ -32,12 +32,12 @@ function Endpoint({ method, path, description, body, response, curl }: {
   };
 
   return (
-    <div className="border border-white/[0.08] rounded-lg overflow-hidden">
+    <div className="border border-white/[0.08] overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left"
       >
-        <span className={`px-2 py-0.5 text-xs font-mono font-bold rounded ${methodColors[method] || 'bg-white/10 text-white/60'}`}>
+        <span className={`px-2 py-0.5 text-xs font-mono font-bold ${methodColors[method] || 'bg-white/10 text-white/60'}`}>
           {method}
         </span>
         <code className="text-sm text-white/80 font-mono flex-1">{path}</code>
@@ -54,14 +54,14 @@ function Endpoint({ method, path, description, body, response, curl }: {
                 <span className="text-xs text-white/40 font-medium">Request Body</span>
                 <CopyButton text={body} />
               </div>
-              <pre className="text-xs text-white/70 bg-black/20 rounded-lg p-3 overflow-x-auto font-mono">{body}</pre>
+              <pre className="text-xs text-white/70 bg-black/20 p-3 overflow-x-auto font-mono">{body}</pre>
             </div>
           )}
 
           {response && (
             <div>
               <span className="text-xs text-white/40 font-medium">Response</span>
-              <pre className="text-xs text-white/70 bg-black/20 rounded-lg p-3 overflow-x-auto font-mono mt-1">{response}</pre>
+              <pre className="text-xs text-white/70 bg-black/20 p-3 overflow-x-auto font-mono mt-1">{response}</pre>
             </div>
           )}
 
@@ -71,7 +71,7 @@ function Endpoint({ method, path, description, body, response, curl }: {
                 <span className="text-xs text-white/40 font-medium">curl</span>
                 <CopyButton text={curl} />
               </div>
-              <pre className="text-xs text-emerald-400/80 bg-black/20 rounded-lg p-3 overflow-x-auto font-mono">{curl}</pre>
+              <pre className="text-xs text-emerald-400/80 bg-black/20 p-3 overflow-x-auto font-mono">{curl}</pre>
             </div>
           )}
         </div>
@@ -94,9 +94,9 @@ function WorkflowStep({ step, title, description, endpoint, curl, notes }: {
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="border border-white/[0.08] rounded-lg overflow-hidden">
+    <div className="border border-white/[0.08] overflow-hidden">
       <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left">
-        <span className="w-7 h-7 rounded-full bg-lavender/20 text-lavender text-xs font-bold flex items-center justify-center flex-shrink-0">{step}</span>
+        <span className="w-7 h-7 bg-lavender/20 text-lavender text-xs font-bold flex items-center justify-center flex-shrink-0">{step}</span>
         <span className="text-sm text-white font-medium flex-1">{title}</span>
         {endpoint && <code className="text-xs text-white/40 font-mono hidden sm:block">{endpoint}</code>}
         <ChevronDown className={`w-4 h-4 text-white/30 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -110,7 +110,7 @@ function WorkflowStep({ step, title, description, endpoint, curl, notes }: {
                 <span className="text-xs text-white/40 font-medium">API Call</span>
                 <CopyButton text={curl} />
               </div>
-              <pre className="text-xs text-emerald-400/80 bg-black/20 rounded-lg p-3 overflow-x-auto font-mono whitespace-pre-wrap">{curl}</pre>
+              <pre className="text-xs text-emerald-400/80 bg-black/20 p-3 overflow-x-auto font-mono whitespace-pre-wrap">{curl}</pre>
             </div>
           )}
           {notes && notes.length > 0 && (
@@ -150,7 +150,7 @@ export default function APIDocsPage() {
                 URL.revokeObjectURL(url);
               });
             }}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-sm text-white/70 hover:text-white transition-colors"
+            className="flex items-center gap-2 px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-sm text-white/70 hover:text-white transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Download MD</span>
@@ -160,29 +160,29 @@ export default function APIDocsPage() {
 
       <main className="max-w-4xl mx-auto px-6 py-8 space-y-2">
         {/* Auth + API Key */}
-        <div className="p-4 bg-lavender/10 border border-lavender/20 rounded-xl space-y-3">
+        <div className="p-4 bg-lavender/10 border border-lavender/20 space-y-3">
           <h2 className="text-lg font-semibold text-white">Authentication &amp; API Key</h2>
           <p className="text-sm text-white/60">All API requests require a Bearer token in the Authorization header:</p>
           <div className="flex items-center gap-2">
-            <pre className="text-sm text-lavender bg-black/20 rounded-lg px-3 py-2 font-mono flex-1">Authorization: Bearer YOUR_API_KEY</pre>
+            <pre className="text-sm text-lavender bg-black/20 px-3 py-2 font-mono flex-1">Authorization: Bearer YOUR_API_KEY</pre>
             <CopyButton text="Authorization: Bearer YOUR_API_KEY" />
           </div>
           <div className="text-sm text-white/50 space-y-2 pt-1">
             <p className="text-white/70 font-medium text-xs">Where to get your API key:</p>
             <div className="space-y-1 text-xs">
-              <p>1. Set the <code className="text-lavender/80 bg-black/20 px-1.5 py-0.5 rounded">DATAFLOW_API_KEY</code> environment variable in your <code className="text-lavender/80 bg-black/20 px-1.5 py-0.5 rounded">.env.local</code> file:</p>
-              <pre className="text-emerald-400/80 bg-black/20 rounded-lg p-2 font-mono">DATAFLOW_API_KEY=your-secret-key-here</pre>
-              <p>2. For production (Vercel), set it via CLI: <code className="text-lavender/80 bg-black/20 px-1.5 py-0.5 rounded">vercel env add DATAFLOW_API_KEY</code></p>
+              <p>1. Set the <code className="text-lavender/80 bg-black/20 px-1.5 py-0.5">DATAFLOW_API_KEY</code> environment variable in your <code className="text-lavender/80 bg-black/20 px-1.5 py-0.5">.env.local</code> file:</p>
+              <pre className="text-emerald-400/80 bg-black/20 p-2 font-mono">DATAFLOW_API_KEY=your-secret-key-here</pre>
+              <p>2. For production (Vercel), set it via CLI: <code className="text-lavender/80 bg-black/20 px-1.5 py-0.5">vercel env add DATAFLOW_API_KEY</code></p>
               <p>3. Use any string as your key — there is no signup. You define the key, the API checks it.</p>
             </div>
           </div>
-          <pre className="text-xs text-emerald-400/80 bg-black/20 rounded-lg p-3 font-mono">
+          <pre className="text-xs text-emerald-400/80 bg-black/20 p-3 font-mono">
 {`# Test your key:\ncurl -H "${H}" ${B}/api/stats`}
           </pre>
         </div>
 
         {/* Claude Code Launcher */}
-        <div className="p-4 bg-emerald-500/5 border border-emerald-500/15 rounded-xl space-y-3">
+        <div className="p-4 bg-emerald-500/5 border border-emerald-500/15 space-y-3">
           <div className="flex items-center gap-2">
             <Terminal className="w-5 h-5 text-emerald-400" />
             <h2 className="text-lg font-semibold text-white">Use with Claude Code</h2>
@@ -194,25 +194,25 @@ export default function APIDocsPage() {
                 <span className="text-xs text-white/40 font-medium">Slash command (from the project directory)</span>
                 <CopyButton text='/campaign Find companies in Jakarta with 50+ employees and get their CMOs&apos; emails' />
               </div>
-              <pre className="text-xs text-emerald-400/80 bg-black/20 rounded-lg p-3 font-mono">/campaign Find companies in Jakarta with 50+ employees and get their CMOs&apos; emails</pre>
+              <pre className="text-xs text-emerald-400/80 bg-black/20 p-3 font-mono">/campaign Find companies in Jakarta with 50+ employees and get their CMOs&apos; emails</pre>
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-white/40 font-medium">Or launch directly from terminal</span>
                 <CopyButton text='claude "/campaign Find SaaS companies in Berlin with 200+ employees, get their VP Sales, and find emails"' />
               </div>
-              <pre className="text-xs text-emerald-400/80 bg-black/20 rounded-lg p-3 font-mono">claude &quot;/campaign Find SaaS companies in Berlin with 200+ employees, get their VP Sales, and find emails&quot;</pre>
+              <pre className="text-xs text-emerald-400/80 bg-black/20 p-3 font-mono">claude &quot;/campaign Find SaaS companies in Berlin with 200+ employees, get their VP Sales, and find emails&quot;</pre>
             </div>
           </div>
           <div className="text-xs text-white/40 space-y-1 pt-1">
-            <p>The <code className="text-emerald-400/60 bg-black/20 px-1 py-0.5 rounded">/campaign</code> command is defined in <code className="text-emerald-400/60 bg-black/20 px-1 py-0.5 rounded">.claude/commands/campaign.md</code> — it reads the full API reference, picks the right workflow, and executes step by step via curl.</p>
+            <p>The <code className="text-emerald-400/60 bg-black/20 px-1 py-0.5">/campaign</code> command is defined in <code className="text-emerald-400/60 bg-black/20 px-1 py-0.5">.claude/commands/campaign.md</code> — it reads the full API reference, picks the right workflow, and executes step by step via curl.</p>
             <p>Works with: company search, people search, email finding, AI enrichment, data cleaning, cross-sheet lookup, CSV export — the full pipeline.</p>
           </div>
         </div>
 
         {/* AI Agent Workflow Guide */}
         <div className="mt-8 space-y-4">
-          <div className="p-4 bg-lavender/5 border border-lavender/15 rounded-xl space-y-2">
+          <div className="p-4 bg-lavender/5 border border-lavender/15 space-y-2">
             <h2 className="text-lg font-semibold text-white">AI Agent Workflow Guide</h2>
             <p className="text-sm text-white/50">Step-by-step playbooks for end-to-end campaign execution. Each workflow shows exactly which endpoints to call, in what order, with what data. Designed so an AI agent can mechanically execute a full campaign from a natural language request.</p>
           </div>
@@ -535,13 +535,13 @@ export default function APIDocsPage() {
           </div>
 
           {/* ═══════════════ BEST PRACTICES ═══════════════ */}
-          <div className="p-4 bg-lavender/5 border border-lavender/15 rounded-xl space-y-2 mt-8">
+          <div className="p-4 bg-lavender/5 border border-lavender/15 space-y-2 mt-8">
             <h2 className="text-lg font-semibold text-white">Best Practices &amp; Agent Optimization</h2>
             <p className="text-sm text-white/50">Rules and patterns for the AI agent to always follow.</p>
           </div>
 
           {/* Decision routing */}
-          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+          <div className="p-4 bg-white/[0.03] border border-white/10 space-y-3">
             <h3 className="text-sm font-semibold text-white">1. Routing: Which workflow to use</h3>
             <div className="text-xs text-white/50 space-y-2">
               <p><span className="text-white/70 font-medium">User says companies + people + emails</span> → Workflow 1 (full pipeline). &quot;Find SaaS companies in Berlin and get their CTOs&apos; emails&quot;</p>
@@ -555,7 +555,7 @@ export default function APIDocsPage() {
           </div>
 
           {/* Search strategy */}
-          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+          <div className="p-4 bg-white/[0.03] border border-white/10 space-y-3">
             <h3 className="text-sm font-semibold text-white">2. Search Strategy: Getting the best results</h3>
             <div className="text-xs text-white/50 space-y-2">
               <p><span className="text-white/70 font-medium">Company search — use specific filters first, then broaden.</span> Start with country + industry + size. If too few results, remove the industry filter or use semantic_description instead (AI-powered fuzzy matching).</p>
@@ -569,7 +569,7 @@ export default function APIDocsPage() {
           </div>
 
           {/* Data quality */}
-          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+          <div className="p-4 bg-white/[0.03] border border-white/10 space-y-3">
             <h3 className="text-sm font-semibold text-white">3. Data Quality: Always clean before processing</h3>
             <div className="text-xs text-white/50 space-y-2">
               <p><span className="text-white/70 font-medium">Always filter out rows with empty domains before Find Email.</span> Email finding requires a domain. Rows without one will always fail — delete them first to save time and API calls.</p>
@@ -581,7 +581,7 @@ export default function APIDocsPage() {
           </div>
 
           {/* Tool selection */}
-          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+          <div className="p-4 bg-white/[0.03] border border-white/10 space-y-3">
             <h3 className="text-sm font-semibold text-white">4. Tool Selection: When to use what</h3>
             <div className="text-xs space-y-1">
               <div className="grid grid-cols-[120px_1fr_1fr] gap-2 text-white/50">
@@ -628,7 +628,7 @@ export default function APIDocsPage() {
           </div>
 
           {/* Ordering and dependencies */}
-          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+          <div className="p-4 bg-white/[0.03] border border-white/10 space-y-3">
             <h3 className="text-sm font-semibold text-white">5. Operation Order: What depends on what</h3>
             <div className="text-xs text-white/50 space-y-2">
               <p><span className="text-white/70 font-medium">Always create workbook → sheet → columns → rows, in that order.</span> Each step needs the ID from the previous step.</p>
@@ -641,7 +641,7 @@ export default function APIDocsPage() {
           </div>
 
           {/* Performance */}
-          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+          <div className="p-4 bg-white/[0.03] border border-white/10 space-y-3">
             <h3 className="text-sm font-semibold text-white">6. Performance &amp; Timing</h3>
             <div className="text-xs text-white/50 space-y-2">
               <p><span className="text-white/70 font-medium">Company search:</span> 100-1000 results in 30s-2min. 5000+ results in 3-5min.</p>
@@ -656,7 +656,7 @@ export default function APIDocsPage() {
           </div>
 
           {/* Cost optimization */}
-          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+          <div className="p-4 bg-white/[0.03] border border-white/10 space-y-3">
             <h3 className="text-sm font-semibold text-white">7. Cost Optimization</h3>
             <div className="text-xs text-white/50 space-y-2">
               <p><span className="text-white/70 font-medium">Use Formula instead of AI when possible.</span> Extracting domains, combining names, cleaning URLs — all free with formulas. AI enrichment costs per row.</p>
@@ -669,7 +669,7 @@ export default function APIDocsPage() {
           </div>
 
           {/* Column naming conventions */}
-          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+          <div className="p-4 bg-white/[0.03] border border-white/10 space-y-3">
             <h3 className="text-sm font-semibold text-white">8. Naming Conventions</h3>
             <div className="text-xs text-white/50 space-y-2">
               <p><span className="text-white/70 font-medium">Workbook names:</span> Describe the campaign. &quot;Jakarta CMO Campaign&quot;, &quot;Series A SaaS Companies Q2&quot;, &quot;CRM Enrichment 2026-04&quot;</p>
@@ -682,7 +682,7 @@ export default function APIDocsPage() {
           </div>
 
           {/* Error handling */}
-          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+          <div className="p-4 bg-white/[0.03] border border-white/10 space-y-3">
             <h3 className="text-sm font-semibold text-white">9. Error Handling</h3>
             <div className="text-xs text-white/50 space-y-2">
               <p><span className="text-white/70 font-medium">Search returns 0 results:</span> Broaden filters. Remove the most restrictive filter (often industry or company size). Try semantic_description instead of hard filters.</p>
@@ -695,7 +695,7 @@ export default function APIDocsPage() {
           </div>
 
           {/* Data flow diagrams */}
-          <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+          <div className="p-4 bg-white/[0.03] border border-white/10 space-y-3">
             <h3 className="text-sm font-semibold text-white">Data Flow Patterns</h3>
             <pre className="text-xs text-white/50 font-mono leading-relaxed">{`FULL PIPELINE (Workflow 1):
 Workbook
@@ -896,7 +896,7 @@ Any Sheet:
         </Section>
 
         {/* Add Data Filter Reference */}
-        <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-4">
+        <div className="p-4 bg-white/[0.03] border border-white/10 space-y-4">
           <h3 className="text-sm font-semibold text-white">Add Data — People Search Filters</h3>
           <div className="grid grid-cols-1 gap-3 text-xs">
             <div>
@@ -989,7 +989,7 @@ Any Sheet:
         </Section>
 
         {/* Data Types Reference */}
-        <div className="mt-12 p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+        <div className="mt-12 p-4 bg-white/[0.03] border border-white/10 space-y-3">
           <h2 className="text-lg font-semibold text-white">Reference</h2>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>

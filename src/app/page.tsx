@@ -13,6 +13,7 @@ import {
   HardDrive,
   Pencil,
   FolderInput,
+  ChevronRight,
 } from 'lucide-react';
 import { ToastProvider, useToast, Modal, GlassButton, GlassInput } from '@/components/ui';
 import { NewItemModal } from '@/components/modals/NewItemModal';
@@ -66,14 +67,16 @@ function ProjectRow({
 
   return (
     <div
-      onClick={onClick}
-      className="flex items-center justify-between px-6 py-4
-                 hover:bg-white/5 cursor-pointer transition-colors group"
+      className="flex items-center px-4 py-3 hover:bg-white/[0.03] transition-colors group"
     >
-      <div className="flex items-center gap-4">
+      {/* Clickable content area */}
+      <div
+        className="flex items-center gap-3 flex-1 cursor-pointer min-w-0"
+        onClick={onClick}
+      >
         <div
           className={cn(
-            'w-11 h-11 flex items-center justify-center border',
+            'w-11 h-11 flex items-center justify-center flex-shrink-0 border',
             isFolder ? 'border-amber-400/40' : 'border-lavender/40'
           )}
         >
@@ -83,22 +86,26 @@ function ProjectRow({
             <FileSpreadsheet className="w-5 h-5 text-lavender" />
           )}
         </div>
-        <div>
-          <p className="text-white font-medium">{project.name}</p>
-          <p className="text-sm text-white/40">
-            Updated {formatRelativeTime(project.updatedAt)}
-          </p>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-medium text-white truncate">{project.name}</h3>
         </div>
+        <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/40 transition-colors flex-shrink-0 hidden sm:block" />
       </div>
 
-      <div>
+      {/* Modified */}
+      <div className="w-32 text-sm text-white/40 hidden sm:block">
+        {formatRelativeTime(project.updatedAt)}
+      </div>
+
+      {/* Menu */}
+      <div className="w-10 flex justify-end">
         <button
           ref={menuBtnRef}
           onClick={(e) => {
             e.stopPropagation();
             setShowMenu(!showMenu);
           }}
-          className="p-2 opacity-0 group-hover:opacity-100
+          className="p-1.5 opacity-0 group-hover:opacity-100
                      hover:bg-white/10 transition-all"
         >
           <MoreVertical className="w-4 h-4 text-white/50" />
@@ -468,18 +475,28 @@ function DashboardContent() {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-white/5">
-              {filteredProjects.map((project) => (
-                <ProjectRow
-                  key={project.id}
-                  project={project}
-                  onClick={() => handleOpenProject(project)}
-                  onRename={() => openRename(project)}
-                  onMove={() => openMove(project)}
-                  onDelete={() => handleDelete(project)}
-                />
-              ))}
-            </div>
+            <>
+              {/* Table Header */}
+              <div className="flex items-center px-4 py-3 border-b border-white/10 bg-white/[0.02]">
+                <div className="flex-1 text-xs font-medium text-white/40 uppercase tracking-wider">Name</div>
+                <div className="w-32 text-xs font-medium text-white/40 uppercase tracking-wider hidden sm:block">Modified</div>
+                <div className="w-10"></div>
+              </div>
+
+              {/* Rows */}
+              <div className="divide-y divide-white/[0.05]">
+                {filteredProjects.map((project) => (
+                  <ProjectRow
+                    key={project.id}
+                    project={project}
+                    onClick={() => handleOpenProject(project)}
+                    onRename={() => openRename(project)}
+                    onMove={() => openMove(project)}
+                    onDelete={() => handleDelete(project)}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
       </main>
