@@ -104,6 +104,47 @@ async function listMissingOrJunkDomainRowIds(tableId: string, columnId: string):
     .map(r => r.id);
 }
 
+// A cell counts as "has a real email" only if the value matches an email
+// shape. This catches provider sentinels like TryKitt's literal
+// "no-results-found", "not_found", "skipped", "error", and similar that
+// some find-email upstreams write into the value column instead of leaving
+// it empty. Without this, rows with sentinel strings sneak past the
+// is_empty filter and end up in the Send-Ready sheet with garbage.
+function isValidEmailValue(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  const s = String(value).trim();
+  if (!s) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+async function listInvalidEmailRowIds(tableId: string, emailColumnId: string): Promise<string[]> {
+  const all = await db.select().from(schema.rows).where(eq(schema.rows.tableId, tableId));
+  return all
+    .filter(r => !isValidEmailValue((r.data as Record<string, CellValue>)[emailColumnId]?.value))
+    .map(r => r.id);
+}
+
+// The enrichment runner stores the cell value as "N datapoints" when the
+// model returned a multi-key JSON object instead of plain text — the actual
+// values live on cell.enrichmentData. Recover the first non-empty string
+// from there. For normal plain-text cells this just returns the value.
+function resolveEnrichedText(cell: CellValue | undefined): string | null {
+  if (!cell) return null;
+  const raw = cell.value;
+  const str = raw === undefined || raw === null ? '' : String(raw).trim();
+  // Placeholder pattern from enrichment-runner.ts (e.g. "4 datapoints")
+  if (/^\d+\s+datapoints?$/i.test(str)) {
+    const data = cell.enrichmentData;
+    if (data && typeof data === 'object') {
+      for (const v of Object.values(data)) {
+        if (typeof v === 'string' && v.trim()) return v.trim();
+      }
+    }
+    return null;
+  }
+  return str || null;
+}
+
 async function listAllRowIds(tableId: string): Promise<string[]> {
   const all = await db.select().from(schema.rows).where(eq(schema.rows.tableId, tableId));
   return all.map(r => r.id);
@@ -748,8 +789,10 @@ export async function executeStep(
         if (stillProcessing === 0) break;
       }
 
-      // Pass 2: Ninjer for rows still empty
-      const stillEmpty1 = await listEmptyRowIds(sheet.tableId, emailColId);
+      // Pass 2: Ninjer for rows still without a *valid* email. listInvalid
+      // catches both empties AND provider sentinels like TryKitt's literal
+      // "no-results-found" / "not_found" written into the value column.
+      const stillEmpty1 = await listInvalidEmailRowIds(sheet.tableId, emailColId);
       log(`find_emails_waterfall: Ninjer on ${stillEmpty1.length} remaining`);
       if (stillEmpty1.length > 0) {
         try {
@@ -762,8 +805,8 @@ export async function executeStep(
         }
       }
 
-      // Pass 3: TryKitt for rows still empty
-      const stillEmpty2 = await listEmptyRowIds(sheet.tableId, emailColId);
+      // Pass 3: TryKitt for rows still without a valid email
+      const stillEmpty2 = await listInvalidEmailRowIds(sheet.tableId, emailColId);
       log(`find_emails_waterfall: TryKitt on ${stillEmpty2.length} remaining`);
       if (stillEmpty2.length > 0) {
         try {
@@ -776,13 +819,13 @@ export async function executeStep(
         }
       }
 
-      // Final cleanup
-      const finalEmpty = await listEmptyRowIds(sheet.tableId, emailColId);
+      // Final cleanup — drop rows whose Email cell isn't a real email.
+      const finalEmpty = await listInvalidEmailRowIds(sheet.tableId, emailColId);
       let dropped = 0;
       if (removeEmpty && finalEmpty.length > 0) {
         await deleteRowsByIds(finalEmpty);
         dropped = finalEmpty.length;
-        log(`find_emails_waterfall: dropped ${dropped} rows still without email`);
+        log(`find_emails_waterfall: dropped ${dropped} rows still without valid email`);
       }
 
       return {
@@ -822,8 +865,11 @@ export async function executeStep(
           `- Strip legal/corporate suffixes ("Inc.", "Incorporated", "LLC", "Ltd", "Pte Ltd", "GmbH", "Pty", "Pvt", "Group", "Holdings", "Corp", "Corporation", "Co.") UNLESS the suffix is part of the spoken name (e.g. "Berkshire Hathaway" stays "Berkshire Hathaway").\n` +
           `- For multi-word names with a clear dominant token, prefer the dominant token (e.g. "Wagner Group Incorporated" -> "Wagner").\n` +
           `- If the input is a domain (e.g. "stripe.com"), derive the brand name ("Stripe").\n` +
-          `- Never invent a name. If unsure, return the input cleaned of suffixes only.\n` +
-          `- Output: a single short string. No quotes, no explanation, no punctuation beyond what's normally part of the name.`,
+          `- Never invent a name. If unsure, return the input cleaned of suffixes only.\n\n` +
+          `OUTPUT FORMAT — STRICT:\n` +
+          `Return ONLY the final company name as plain text. Do NOT wrap it in JSON. Do NOT use field names like "name" or "answer". Do NOT use quotation marks. Do NOT include any reasoning, explanation, or commentary. Just the bare name and nothing else.\n` +
+          `Examples of CORRECT output: \`IBM\`  \`Stripe\`  \`Wagner\`\n` +
+          `Examples of WRONG output (do not produce): \`{"name": "IBM"}\`  \`"IBM"\`  \`Company name: IBM\``,
         inputColumns: [inputColId],
         temperature: 0.1,
       });
@@ -867,8 +913,11 @@ export async function executeStep(
           `- Strip leading/trailing punctuation that is not part of the name.\n` +
           `- If the input is just a title ("Mr.") or empty, return an empty string.\n` +
           `- Prefer the FIRST given name. "Robert James Smith" -> "Robert".\n` +
-          `- Allow common diminutives ONLY if the data shows one (e.g. "Bob Smith" -> "Bob"; do NOT convert "Robert Smith" -> "Bob").\n` +
-          `- Output: a single first-name string. No quotes, no explanation, no surname.`,
+          `- Allow common diminutives ONLY if the data shows one (e.g. "Bob Smith" -> "Bob"; do NOT convert "Robert Smith" -> "Bob").\n\n` +
+          `OUTPUT FORMAT — STRICT:\n` +
+          `Return ONLY the first name as plain text. Do NOT wrap it in JSON. Do NOT use field names like "firstName" or "answer". Do NOT use quotation marks. Do NOT include the surname. Do NOT include any reasoning, explanation, or commentary. Just the bare first name and nothing else.\n` +
+          `Examples of CORRECT output: \`Robert\`  \`Bob\`  \`Karthigeyen\`\n` +
+          `Examples of WRONG output (do not produce): \`{"firstName": "Robert"}\`  \`"Robert"\`  \`First name: Robert\``,
         inputColumns: [inputColId],
         temperature: 0.1,
       });
@@ -932,33 +981,64 @@ export async function executeStep(
 
       const sourceRows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, sourceSheet.tableId));
       let copiedCount = 0;
+      let droppedNoEmail = 0;
+      let recoveredFromDatapoints = 0;
       const BATCH = 500;
       for (let i = 0; i < sourceRows.length; i += BATCH) {
         const batch = sourceRows.slice(i, i + BATCH);
-        const toInsert = batch.map(srcRow => {
+        const toInsert: Array<{ id: string; tableId: string; data: Record<string, CellValue>; createdAt: Date }> = [];
+
+        for (const srcRow of batch) {
           const srcData = srcRow.data as Record<string, CellValue>;
+
+          // Build the dest cells using resolveEnrichedText so "N datapoints"
+          // placeholders fall back to the real text in enrichmentData.
+          // Validate Email separately — drop the row if it isn't a real
+          // email, so sentinel strings ("no-results-found", "not_found")
+          // never make it to the Send-Ready sheet.
+          const emailSrcCell = srcData[sourceSheet.columnIds[columnMap.Email]];
+          const emailVal = emailSrcCell?.value;
+          if (!isValidEmailValue(emailVal)) {
+            droppedNoEmail++;
+            continue;
+          }
+
           const data: Record<string, CellValue> = {};
           for (const [destCol, srcCol] of Object.entries(columnMap)) {
             const destColId = targetColumnIds[destCol];
             const srcColId = sourceSheet.columnIds[srcCol];
-            const value = srcData[srcColId]?.value;
-            if (value !== undefined && value !== null && String(value).trim() !== '') {
-              data[destColId] = { value, status: 'complete' };
+            const cell = srcData[srcColId];
+            const resolved = resolveEnrichedText(cell);
+            if (resolved) {
+              if (cell && /^\d+\s+datapoints?$/i.test(String(cell.value ?? ''))) {
+                recoveredFromDatapoints++;
+              }
+              data[destColId] = { value: resolved, status: 'complete' };
             }
           }
+          toInsert.push({ id: generateId(), tableId: targetTableId, data, createdAt: now });
           copiedCount++;
-          return { id: generateId(), tableId: targetTableId, data, createdAt: now };
-        });
+        }
+
         if (toInsert.length > 0) await db.insert(schema.rows).values(toInsert);
       }
 
-      log(`materialize_send_ready: created sheet "${targetSheetName}" (${targetTableId}) with ${copiedCount} rows`);
+      log(
+        `materialize_send_ready: created sheet "${targetSheetName}" (${targetTableId}) with ${copiedCount} rows ` +
+        `(dropped ${droppedNoEmail} without valid email, recovered ${recoveredFromDatapoints} cells from "N datapoints" placeholders)`
+      );
       const updatedSheets = {
         ...context.sheets,
         [targetSheetName]: { tableId: targetTableId, columnIds: targetColumnIds },
       };
       return {
-        result: { tableId: targetTableId, rowCount: copiedCount, sheetName: targetSheetName },
+        result: {
+          tableId: targetTableId,
+          rowCount: copiedCount,
+          sheetName: targetSheetName,
+          droppedNoEmail,
+          recoveredFromDatapoints,
+        },
         contextUpdate: { sheets: updatedSheets },
       };
     }

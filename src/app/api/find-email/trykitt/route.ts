@@ -55,17 +55,19 @@ async function callTryKittAPI(
 
     const data = await response.json();
 
-    // Parse TryKitt response format
+    // Parse TryKitt response format. TryKitt returns the literal string
+    // "no-results-found" (and similar sentinels) in the email field when
+    // they can't find one — don't pass that through as if it were an
+    // address. Anything that isn't shaped like a real email is treated
+    // as "not found".
     const result = data.result || data;
-    const email = result.email || null;
+    const rawEmail = result.email;
+    const looksLikeEmail =
+      typeof rawEmail === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail.trim());
+    const email = looksLikeEmail ? rawEmail.trim() : null;
     const confidence = result.confidence || null;
 
-    let status = 'not_found';
-    if (email) {
-      status = 'found';
-    } else if (data.status === 'completed' && !email) {
-      status = 'not_found';
-    }
+    const status = email ? 'found' : 'not_found';
 
     return { status, email, confidence };
   } catch (err) {
