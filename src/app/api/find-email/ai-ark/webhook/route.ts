@@ -8,8 +8,8 @@ export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
 // AI Ark calls this URL after processing /people/email-finder. The URL itself
-// carries the cell coordinates ({tableId, rowId, emailColId, statusColId})
-// signed with an HMAC token, so we don't need a server-side job table.
+// carries the cell coordinates ({tableId, rowId, resultColId}) signed with an
+// HMAC token, so we don't need a server-side job table.
 
 function verifyToken(parts: string[], token: string): boolean {
   const secret = process.env.CRON_SECRET || '';
@@ -72,14 +72,21 @@ async function handleCallback(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const tableId = params.get('tableId') || '';
   const rowId = params.get('rowId') || '';
-  const emailColId = params.get('emailColId') || '';
-  const statusColId = params.get('statusColId') || '';
+  // Accept both the new resultColId and (briefly) the legacy emailColId for any
+  // in-flight submissions made before deploy.
+  const resultColId = params.get('resultColId') || params.get('emailColId') || '';
+  const legacyStatusColId = params.get('statusColId') || '';
   const token = params.get('token') || '';
 
-  if (!tableId || !rowId || !emailColId || !statusColId || !token) {
+  if (!tableId || !rowId || !resultColId || !token) {
     return NextResponse.json({ error: 'missing query params' }, { status: 400 });
   }
-  if (!verifyToken([tableId, rowId, emailColId, statusColId], token)) {
+  // New URL format: [tableId, rowId, resultColId].
+  // Legacy URL format: [tableId, rowId, emailColId, statusColId].
+  const ok =
+    verifyToken([tableId, rowId, resultColId], token) ||
+    (legacyStatusColId && verifyToken([tableId, rowId, resultColId, legacyStatusColId], token));
+  if (!ok) {
     return NextResponse.json({ error: 'bad token' }, { status: 401 });
   }
 
@@ -102,10 +109,23 @@ async function handleCallback(request: NextRequest) {
   }
 
   const data = (row.data as Record<string, CellValue>) || {};
+  // Preserve any prior enrichmentData (track_id, person_id) and merge.
+  const prevCell = (data[resultColId] as CellValue | undefined) ?? { value: null };
+  const prevEnrichment = (prevCell.enrichmentData as Record<string, string | number | null> | undefined) ?? {};
+
   const updated = {
     ...data,
-    [emailColId]: { value: email, status: 'complete' as const },
-    [statusColId]: { value: status || (email ? 'found' : 'not_found'), status: 'complete' as const },
+    [resultColId]: {
+      ...prevCell,
+      value: email || null,
+      status: 'complete' as const,
+      enrichmentData: {
+        ...prevEnrichment,
+        email: email || null,
+        status: status || (email ? 'found' : 'not_found'),
+        provider: 'ai_ark',
+      },
+    },
   };
 
   try {

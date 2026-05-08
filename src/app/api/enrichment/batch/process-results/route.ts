@@ -102,22 +102,10 @@ export async function POST(request: NextRequest) {
       .from(schema.columns)
       .where(eq(schema.columns.tableId, job.tableId));
 
-    // Build output column ID map
-    const outputColumnIds: Record<string, string> = {};
-    const definedOutputColumns = config.outputColumns as string[] | null;
-
-    if (definedOutputColumns && definedOutputColumns.length > 0) {
-      for (const outputColName of definedOutputColumns) {
-        const existingCol = columns.find(
-          c => c.name.toLowerCase() === outputColName.toLowerCase()
-        );
-        if (existingCol) {
-          outputColumnIds[outputColName.toLowerCase()] = existingCol.id;
-        }
-      }
-    }
-
-    const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
+    // Data Guide entries (config.outputColumns) are no longer fanned out into
+    // separate text columns — the parsed structured data lives on the result
+    // cell's enrichmentData and users extract on demand from the cell viewer.
+    void columns;
 
     // Download results
     console.log(`Downloading batch results for job ${jobId}`);
@@ -173,14 +161,6 @@ export async function POST(request: NextRequest) {
           status: 'error' as const,
           error: result.error.message || result.error.code,
         };
-
-        for (const colId of Object.values(outputColumnIds)) {
-          updatedData[colId] = {
-            value: null,
-            status: 'error' as const,
-            error: result.error.message || result.error.code,
-          };
-        }
       } else if (result.response) {
         // Handle success result
         successCount++;
@@ -205,27 +185,6 @@ export async function POST(request: NextRequest) {
           },
         };
 
-        // Populate output columns
-        if (hasOutputColumns && parsed.structuredData) {
-          for (const [outputName, columnId] of Object.entries(outputColumnIds)) {
-            const matchingKey = Object.keys(parsed.structuredData).find(
-              key => key.toLowerCase() === outputName
-            );
-
-            if (matchingKey) {
-              const value = parsed.structuredData[matchingKey];
-              updatedData[columnId] = {
-                value: value !== null && value !== undefined ? String(value) : null,
-                status: 'complete' as const,
-              };
-            } else {
-              updatedData[columnId] = {
-                value: null,
-                status: 'complete' as const,
-              };
-            }
-          }
-        }
       }
 
       // Collect update for batching
@@ -266,15 +225,6 @@ export async function POST(request: NextRequest) {
               error: 'Row not processed by Azure. Please resubmit.',
             },
           };
-
-          // Also mark output columns as error
-          for (const colId of Object.values(outputColumnIds)) {
-            updatedData[colId] = {
-              value: null,
-              status: 'error' as const,
-              error: 'Row not processed by Azure. Please resubmit.',
-            };
-          }
 
           return { id: row.id, data: updatedData };
         });

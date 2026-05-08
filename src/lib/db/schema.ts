@@ -46,6 +46,10 @@ export const columns = sqliteTable('columns', {
   order: integer('order').notNull(),
   enrichmentConfigId: text('enrichment_config_id'),
   formulaConfigId: text('formula_config_id'),
+  // Result-column discriminators for non-AI actions (find_email_*, lookup, ...).
+  // AI enrichment columns leave these null and use enrichmentConfigId instead.
+  actionKind: text('action_kind'),
+  actionConfig: text('action_config', { mode: 'json' }).$type<Record<string, unknown>>(),
 });
 
 export const columnsRelations = relations(columns, ({ one }) => ({

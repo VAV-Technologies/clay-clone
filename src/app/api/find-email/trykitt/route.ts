@@ -80,13 +80,6 @@ async function callTryKittAPI(
   }
 }
 
-function formatStatus(status: string, confidence: number | null): string {
-  if (confidence !== null && confidence > 0) {
-    return `${status} (${Math.round(confidence * 100)}%)`;
-  }
-  return status;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const {
@@ -97,11 +90,10 @@ export async function POST(request: NextRequest) {
       firstNameColumnId,
       lastNameColumnId,
       domainColumnId,
-      emailColumnId,
-      emailStatusColumnId,
+      resultColumnId,
     } = await request.json();
 
-    if (!tableId || !rowIds?.length || !domainColumnId || !emailColumnId || !emailStatusColumnId) {
+    if (!tableId || !rowIds?.length || !domainColumnId || !resultColumnId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -115,7 +107,15 @@ export async function POST(request: NextRequest) {
       .from(schema.rows)
       .where(inArray(schema.rows.id, rowIds));
 
-    const results: Array<{ rowId: string; success: boolean; email: string | null; status: string }> = [];
+    const results: Array<{
+      rowId: string;
+      success: boolean;
+      email: string | null;
+      status: string;
+      enrichmentData?: Record<string, string | number | null>;
+      metadata?: { timeTakenMs: number };
+      error?: string;
+    }> = [];
     let foundCount = 0;
     let errorCount = 0;
 
@@ -136,8 +136,16 @@ export async function POST(request: NextRequest) {
       if (!fullName || !domain) {
         const updatedData = {
           ...data,
-          [emailColumnId]: { value: '', status: 'complete' as const },
-          [emailStatusColumnId]: { value: 'skipped', status: 'complete' as const },
+          [resultColumnId]: {
+            value: null,
+            status: 'complete' as const,
+            enrichmentData: {
+              email: null,
+              status: 'skipped',
+              reason: 'missing name or domain',
+              provider: 'trykitt',
+            },
+          },
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
         return { rowId: row.id, success: true, email: null as string | null, status: 'skipped' };
@@ -147,31 +155,57 @@ export async function POST(request: NextRequest) {
 
       try {
         console.log(`[trykitt] Processing row ${index + 1}/${rows.length}: ${fullName} @ ${domain}`);
+        const startMs = Date.now();
         const apiResult = await callTryKittAPI(fullName, domain, apiKey);
+        const timeTakenMs = Date.now() - startMs;
         console.log(`[trykitt] Result: ${apiResult.status} ${apiResult.email || 'none'}`);
 
-        const emailValue = apiResult.email || '';
-        const statusValue = formatStatus(apiResult.status, apiResult.confidence);
+        const enrichmentData: Record<string, string | number | null> = {
+          email: apiResult.email,
+          status: apiResult.status,
+          confidence: apiResult.confidence,
+          provider: 'trykitt',
+        };
 
         const updatedData = {
           ...data,
-          [emailColumnId]: { value: emailValue, status: 'complete' as const },
-          [emailStatusColumnId]: { value: statusValue, status: 'complete' as const },
+          [resultColumnId]: {
+            value: apiResult.email || null,
+            status: 'complete' as const,
+            enrichmentData,
+            metadata: { timeTakenMs, totalCost: 0, inputTokens: 0, outputTokens: 0 },
+          },
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
 
-        return { rowId: row.id, success: true, email: apiResult.email, status: apiResult.status };
+        return {
+          rowId: row.id,
+          success: true,
+          email: apiResult.email,
+          status: apiResult.status,
+          enrichmentData,
+          metadata: { timeTakenMs },
+        };
       } catch (err) {
         console.error(`[trykitt] Error for row ${row.id}:`, err);
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
         const updatedData = {
           ...data,
-          [emailColumnId]: { value: '', status: 'error' as const, error: errorMsg },
-          [emailStatusColumnId]: { value: 'error', status: 'error' as const, error: errorMsg },
+          [resultColumnId]: {
+            value: null,
+            status: 'error' as const,
+            error: errorMsg,
+            enrichmentData: {
+              email: null,
+              status: 'error',
+              error: errorMsg,
+              provider: 'trykitt',
+            },
+          },
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
 
-        return { rowId: row.id, success: false, email: null as string | null, status: 'error' };
+        return { rowId: row.id, success: false, email: null as string | null, status: 'error', error: errorMsg };
       }
     };
 

@@ -41,12 +41,24 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
   const enrichmentData = cellData?.enrichmentData;
   const metadata = cellData?.metadata;
 
-  // Check if this is an enrichment column with a config
-  const isEnrichmentColumn = column.type === 'enrichment' && column.enrichmentConfigId;
+  // Any 'enrichment'-typed column is a result column (AI enrichment, find-email,
+  // lookup, ...). The discriminator for retry is enrichmentConfigId vs actionKind.
+  const isResultColumn = column.type === 'enrichment';
 
   const handleRetryCell = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!isEnrichmentColumn || isRetrying) return;
+    if (!isResultColumn || isRetrying) return;
+
+    // Pick the right retry endpoint by column source.
+    let endpoint: string | null = null;
+    if (column.enrichmentConfigId) {
+      endpoint = '/api/enrichment/retry-cell';
+    } else if (column.actionKind?.startsWith('find_email_')) {
+      endpoint = '/api/find-email/retry-cell';
+    } else if (column.actionKind === 'lookup') {
+      endpoint = '/api/lookup/retry-cell';
+    }
+    if (!endpoint) return;
 
     setIsRetrying(true);
 
@@ -54,7 +66,7 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
       // Mark as processing locally
       updateCell(row.id, column.id, { value: null, status: 'processing' });
 
-      const response = await fetch('/api/enrichment/retry-cell', {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -86,8 +98,8 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
   const handleCellClick = (e: React.MouseEvent) => {
     e.stopPropagation();
 
-    // If it's a completed enrichment column, show the data viewer
-    if (isEnrichmentColumn && status === 'complete') {
+    // If it's a completed result column, show the data viewer
+    if (isResultColumn && status === 'complete') {
       // Use enrichmentData if available, otherwise create a simple object with the display value
       const dataToShow = enrichmentData && Object.keys(enrichmentData).length > 0
         ? enrichmentData
@@ -98,8 +110,8 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
       return;
     }
 
-    // Otherwise, enter edit mode for non-enrichment columns
-    if (!isEditing && !isEnrichmentColumn) {
+    // Otherwise, enter edit mode for non-result columns
+    if (!isEditing && !isResultColumn) {
       setEditingCell({ rowId: row.id, columnId: column.id });
     }
   };
@@ -254,8 +266,8 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
   };
 
   const renderContent = () => {
-    // For enrichment columns, show status badges
-    if (isEnrichmentColumn) {
+    // For result columns, show status badges
+    if (isResultColumn) {
       return renderEnrichmentContent();
     }
 
@@ -312,20 +324,27 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
     }
   };
 
+  // Whether this cell can be retried — only AI enrichment + recognized actionKinds.
+  const canRetry =
+    isResultColumn &&
+    (column.enrichmentConfigId ||
+      column.actionKind?.startsWith('find_email_') ||
+      column.actionKind === 'lookup');
+
   return (
     <div
       className={cn(
-        'relative flex items-center px-3 border-r border-b border-white/[0.05]',
+        'relative flex items-center gap-2 px-3 border-r border-b border-white/[0.05]',
         'transition-colors duration-100 group flex-shrink-0',
         isEditing && 'bg-lavender/10 ring-1 ring-lavender/50',
-        isEnrichmentColumn && status === 'complete' && 'cursor-pointer hover:bg-white/[0.03]',
-        isEnrichmentColumn && status === 'error' && 'bg-red-500/5 border-red-500/20'
+        isResultColumn && status === 'complete' && 'cursor-pointer hover:bg-white/[0.03]',
+        isResultColumn && status === 'error' && 'bg-red-500/5 border-red-500/20'
       )}
       style={{ width: column.width || 150, minWidth: column.width || 150 }}
       onClick={handleCellClick}
       onDoubleClick={(e) => {
         e.stopPropagation();
-        if (!isEnrichmentColumn) {
+        if (!isResultColumn) {
           setEditingCell({ rowId: row.id, columnId: column.id });
         }
       }}
@@ -342,26 +361,22 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
         />
       ) : (
         <>
-          <div className={cn(
-            "flex-1 text-sm text-white/80 truncate",
-            isEnrichmentColumn && "pr-6"
-          )}>
+          <div className="flex-1 min-w-0 text-sm text-white/80 truncate">
             {renderContent()}
           </div>
-          {/* Retry button for enrichment columns */}
-          {isEnrichmentColumn && status !== 'processing' && status !== 'batch_submitted' && status !== 'batch_processing' && !isRetrying && (
+          {/* Retry button — flex sibling so it sits beside the status badge with a gap, never overlaps. */}
+          {canRetry && status !== 'processing' && status !== 'batch_submitted' && status !== 'batch_processing' && !isRetrying && (
             <button
               onClick={handleRetryCell}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 bg-white/10 hover:bg-lavender/20
-                         opacity-0 group-hover:opacity-100 transition-opacity z-10"
-              title="Retry enrichment"
+              className="flex-shrink-0 p-1 bg-white/10 hover:bg-lavender/20
+                         opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Retry"
             >
               <RotateCcw className="w-3 h-3 text-white/60 hover:text-lavender" />
             </button>
           )}
-          {/* Show spinning icon while retrying */}
           {isRetrying && (
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 p-1">
+            <div className="flex-shrink-0 p-1">
               <Loader2 className="w-3 h-3 text-lavender animate-spin" />
             </div>
           )}
@@ -377,6 +392,7 @@ export const Cell = memo(function Cell({ row, column, isEditing, tableId, onShow
     prev.column.width === next.column.width &&
     prev.column.type === next.column.type &&
     prev.column.enrichmentConfigId === next.column.enrichmentConfigId &&
+    prev.column.actionKind === next.column.actionKind &&
     prev.row.id === next.row.id
   );
 });

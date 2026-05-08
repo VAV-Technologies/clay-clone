@@ -9,9 +9,9 @@ export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 // AI Ark email-finder is async: it accepts a job submission and POSTs results
-// back to a webhook URL minutes later. We encode {tableId, rowId, emailColId,
-// statusColId} into the webhook URL itself plus an HMAC token, so the webhook
-// handler can write to the right cell without a job table.
+// back to a webhook URL minutes later. We encode {tableId, rowId, resultColId}
+// into the webhook URL itself plus an HMAC token, so the webhook handler can
+// write to the right cell without a job table.
 
 function signWebhookPayload(parts: string[]): string {
   const secret = process.env.CRON_SECRET || '';
@@ -22,15 +22,13 @@ function buildWebhookUrl(
   origin: string,
   tableId: string,
   rowId: string,
-  emailColId: string,
-  statusColId: string
+  resultColId: string
 ): string {
-  const token = signWebhookPayload([tableId, rowId, emailColId, statusColId]);
+  const token = signWebhookPayload([tableId, rowId, resultColId]);
   const params = new URLSearchParams({
     tableId,
     rowId,
-    emailColId,
-    statusColId,
+    resultColId,
     token,
   });
   return `${origin}/api/find-email/ai-ark/webhook?${params.toString()}`;
@@ -50,11 +48,10 @@ export async function POST(request: NextRequest) {
       firstNameColumnId,
       lastNameColumnId,
       domainColumnId,
-      emailColumnId,
-      emailStatusColumnId,
+      resultColumnId,
     } = await request.json();
 
-    if (!tableId || !rowIds?.length || !domainColumnId || !emailColumnId || !emailStatusColumnId) {
+    if (!tableId || !rowIds?.length || !domainColumnId || !resultColumnId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -80,7 +77,14 @@ export async function POST(request: NextRequest) {
       .from(schema.rows)
       .where(inArray(schema.rows.id, rowIds));
 
-    const results: Array<{ rowId: string; success: boolean; email: string | null; status: string }> = [];
+    const results: Array<{
+      rowId: string;
+      success: boolean;
+      email: string | null;
+      status: string;
+      enrichmentData?: Record<string, string | number | null>;
+      error?: string;
+    }> = [];
 
     // Process rows sequentially. The AI Ark helpers in src/lib/aiarc-api.ts
     // already enforce per-request and per-minute rate limits, so we don't add
@@ -103,8 +107,16 @@ export async function POST(request: NextRequest) {
       if (!fullName || !domain) {
         const updatedData = {
           ...data,
-          [emailColumnId]: { value: '', status: 'complete' as const },
-          [emailStatusColumnId]: { value: 'skipped', status: 'complete' as const },
+          [resultColumnId]: {
+            value: null,
+            status: 'complete' as const,
+            enrichmentData: {
+              email: null,
+              status: 'skipped',
+              reason: 'missing name or domain',
+              provider: 'ai_ark',
+            },
+          },
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
         results.push({ rowId: row.id, success: true, email: null, status: 'skipped' });
@@ -120,22 +132,38 @@ export async function POST(request: NextRequest) {
         if (!match) {
           const updatedData = {
             ...data,
-            [emailColumnId]: { value: '', status: 'complete' as const },
-            [emailStatusColumnId]: { value: 'not_found', status: 'complete' as const },
+            [resultColumnId]: {
+              value: null,
+              status: 'complete' as const,
+              enrichmentData: {
+                email: null,
+                status: 'not_found',
+                provider: 'ai_ark',
+              },
+            },
           };
           await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
           results.push({ rowId: row.id, success: true, email: null, status: 'not_found' });
           continue;
         }
 
-        const webhook = buildWebhookUrl(origin, tableId, row.id, emailColumnId, emailStatusColumnId);
+        const webhook = buildWebhookUrl(origin, tableId, row.id, resultColumnId);
         console.log(`[ai-ark] row ${row.id} webhook: ${webhook}`);
         await submitEmailFinder(webhook, match.trackId, [match.personId]);
 
         const updatedData = {
           ...data,
-          [emailColumnId]: { value: '', status: 'processing' as const },
-          [emailStatusColumnId]: { value: 'submitted', status: 'processing' as const },
+          [resultColumnId]: {
+            value: null,
+            status: 'processing' as const,
+            enrichmentData: {
+              email: null,
+              status: 'submitted',
+              track_id: match.trackId,
+              person_id: match.personId,
+              provider: 'ai_ark',
+            },
+          },
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
 
@@ -145,11 +173,20 @@ export async function POST(request: NextRequest) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
         const updatedData = {
           ...data,
-          [emailColumnId]: { value: '', status: 'error' as const, error: errorMsg },
-          [emailStatusColumnId]: { value: 'error', status: 'error' as const, error: errorMsg },
+          [resultColumnId]: {
+            value: null,
+            status: 'error' as const,
+            error: errorMsg,
+            enrichmentData: {
+              email: null,
+              status: 'error',
+              error: errorMsg,
+              provider: 'ai_ark',
+            },
+          },
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
-        results.push({ rowId: row.id, success: false, email: null, status: 'error' });
+        results.push({ rowId: row.id, success: false, email: null, status: 'error', error: errorMsg });
       }
     }
 

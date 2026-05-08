@@ -51,13 +51,6 @@ async function callNinjerAPI(
   }
 }
 
-function formatStatus(status: string, confidence: string | null): string {
-  if (confidence) {
-    return `${status} (${confidence})`;
-  }
-  return status;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const {
@@ -68,11 +61,10 @@ export async function POST(request: NextRequest) {
       firstNameColumnId,
       lastNameColumnId,
       domainColumnId,
-      emailColumnId,
-      emailStatusColumnId,
+      resultColumnId,
     } = await request.json();
 
-    if (!tableId || !rowIds?.length || !domainColumnId || !emailColumnId || !emailStatusColumnId) {
+    if (!tableId || !rowIds?.length || !domainColumnId || !resultColumnId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -87,7 +79,15 @@ export async function POST(request: NextRequest) {
       .from(schema.rows)
       .where(inArray(schema.rows.id, rowIds));
 
-    const results: Array<{ rowId: string; success: boolean; email: string | null; status: string }> = [];
+    const results: Array<{
+      rowId: string;
+      success: boolean;
+      email: string | null;
+      status: string;
+      enrichmentData?: Record<string, string | number | null>;
+      metadata?: { timeTakenMs: number };
+      error?: string;
+    }> = [];
     let foundCount = 0;
     let errorCount = 0;
 
@@ -111,8 +111,15 @@ export async function POST(request: NextRequest) {
       if (!hasName || !domain) {
         const updatedData = {
           ...data,
-          [emailColumnId]: { value: '', status: 'complete' as const },
-          [emailStatusColumnId]: { value: 'skipped', status: 'complete' as const },
+          [resultColumnId]: {
+            value: null,
+            status: 'complete' as const,
+            enrichmentData: {
+              email: null,
+              status: 'skipped',
+              reason: 'missing name or domain',
+            },
+          },
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
         return { rowId: row.id, success: true, email: null as string | null, status: 'skipped' };
@@ -133,28 +140,50 @@ export async function POST(request: NextRequest) {
         const apiResult = await callNinjerAPI(body, apiKey);
         console.log(`[find-email] Result: ${apiResult.status} ${apiResult.email || 'none'} (${apiResult.time_ms}ms)`);
 
-        const emailValue = apiResult.email || '';
-        const statusValue = formatStatus(apiResult.status, apiResult.confidence);
+        const enrichmentData: Record<string, string | number | null> = {
+          email: apiResult.email,
+          status: apiResult.status,
+          confidence: apiResult.confidence,
+          message: apiResult.message,
+          variations_tested: apiResult.variations_tested,
+          total_variations: apiResult.total_variations,
+          provider: 'ninjer',
+        };
 
         const updatedData = {
           ...data,
-          [emailColumnId]: { value: emailValue, status: 'complete' as const },
-          [emailStatusColumnId]: { value: statusValue, status: 'complete' as const },
+          [resultColumnId]: {
+            value: apiResult.email || null,
+            status: 'complete' as const,
+            enrichmentData,
+            metadata: { timeTakenMs: apiResult.time_ms, totalCost: 0, inputTokens: 0, outputTokens: 0 },
+          },
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
 
-        return { rowId: row.id, success: true, email: apiResult.email, status: apiResult.status };
+        return {
+          rowId: row.id,
+          success: true,
+          email: apiResult.email,
+          status: apiResult.status,
+          enrichmentData,
+          metadata: { timeTakenMs: apiResult.time_ms },
+        };
       } catch (err) {
         console.error(`[find-email] Error for row ${row.id}:`, err);
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
         const updatedData = {
           ...data,
-          [emailColumnId]: { value: '', status: 'error' as const, error: errorMsg },
-          [emailStatusColumnId]: { value: 'error', status: 'error' as const, error: errorMsg },
+          [resultColumnId]: {
+            value: null,
+            status: 'error' as const,
+            error: errorMsg,
+            enrichmentData: { email: null, status: 'error', error: errorMsg, provider: 'ninjer' },
+          },
         };
         await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
 
-        return { rowId: row.id, success: false, email: null as string | null, status: 'error' };
+        return { rowId: row.id, success: false, email: null as string | null, status: 'error', error: errorMsg };
       }
     };
 

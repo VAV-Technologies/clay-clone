@@ -8,7 +8,6 @@
 
 import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
 import type { CellValue, EnrichmentConfig } from '@/lib/db/schema';
 import { callAI as callUnifiedAI, getModelPricing, getProviderRateLimits } from '@/lib/ai-provider';
 import { WEB_SEARCH_TOOLS, dispatchToolCall, WEB_SEARCH_SYSTEM_HINT } from '@/lib/enrichment-tools';
@@ -21,10 +20,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string): Prom
     promise,
     new Promise<T>((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms)),
   ]);
-}
-
-function generateId() {
-  return nanoid(12);
 }
 
 export interface RowResult {
@@ -62,46 +57,16 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
   const { config, tableId, targetColumnId, rowIds, onlyEmpty, includeErrors, forceRerun } = input;
 
   // Get columns for variable substitution
-  let columns = await db
+  const columns = await db
     .select()
     .from(schema.columns)
     .where(eq(schema.columns.tableId, tableId));
 
-  // Create output columns if they don't exist (from Data Guide)
-  const outputColumnIds: Record<string, string> = {};
+  // Data Guide entries (config.outputColumns) feed the prompt for structured
+  // output but no longer auto-create text columns — users extract on demand
+  // from the cell viewer via /api/enrichment/extract-datapoint.
   const definedOutputColumns = (config.outputColumns as string[] | null) ?? [];
   const newColumnsCreated: typeof columns = [];
-
-  if (definedOutputColumns.length > 0) {
-    const maxOrder = columns.reduce((max, col) => Math.max(max, col.order), 0);
-    let currentOrder = maxOrder + 1;
-
-    for (const outputColName of definedOutputColumns) {
-      const existingCol = columns.find(
-        (c) => c.name.toLowerCase() === outputColName.toLowerCase()
-      );
-
-      if (existingCol) {
-        outputColumnIds[outputColName.toLowerCase()] = existingCol.id;
-      } else {
-        const newColId = generateId();
-        const newColumn = {
-          id: newColId,
-          tableId,
-          name: outputColName,
-          type: 'text' as const,
-          width: 150,
-          order: currentOrder++,
-          enrichmentConfigId: null,
-          formulaConfigId: null,
-        };
-        await db.insert(schema.columns).values(newColumn);
-        outputColumnIds[outputColName.toLowerCase()] = newColId;
-        columns.push({ ...newColumn });
-        newColumnsCreated.push({ ...newColumn });
-      }
-    }
-  }
 
   const columnMap = new Map(columns.map((col) => [col.id, col]));
 
@@ -142,7 +107,6 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
     };
   }
 
-  const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
   const modelId = config.model || 'gpt-5-mini';
   const pricing = getModelPricing(modelId);
   const rateLimits = getProviderRateLimits(modelId);
@@ -193,27 +157,6 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
         },
       };
 
-      if (hasOutputColumns && parsedResult.structuredData) {
-        for (const [outputName, columnId] of Object.entries(outputColumnIds)) {
-          const matchingKey = Object.keys(parsedResult.structuredData).find(
-            (key) => key.toLowerCase() === outputName
-          );
-
-          if (matchingKey) {
-            const value = parsedResult.structuredData[matchingKey];
-            updatedData[columnId] = {
-              value: value !== null && value !== undefined ? String(value) : null,
-              status: 'complete' as const,
-            };
-          } else {
-            updatedData[columnId] = {
-              value: null,
-              status: 'complete' as const,
-            };
-          }
-        }
-      }
-
       await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
 
       return {
@@ -233,16 +176,6 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
           error: (error as Error).message,
         },
       };
-
-      if (hasOutputColumns) {
-        for (const columnId of Object.values(outputColumnIds)) {
-          updatedData[columnId] = {
-            value: null,
-            status: 'error' as const,
-            error: (error as Error).message,
-          };
-        }
-      }
 
       await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
 

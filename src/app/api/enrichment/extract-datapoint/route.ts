@@ -31,9 +31,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Source column not found' }, { status: 404 });
     }
 
+    // Accept any result column — AI enrichment, find-email, lookup. Cells from
+    // these all live under enrichmentData, which is what we read below.
     if (sourceColumn.type !== 'enrichment') {
       return NextResponse.json(
-        { error: 'Source column is not an enrichment column' },
+        { error: 'Source column is not a result column' },
         { status: 400 }
       );
     }

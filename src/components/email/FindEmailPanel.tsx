@@ -96,37 +96,38 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     return !!(firstNameColumnId && lastNameColumnId);
   })();
 
-  const getOrCreateOutputColumns = async (): Promise<{ emailColId: string; statusColId: string }> => {
-    // Check if "Email" and "Email Status" columns already exist
-    const existingEmailCol = columns.find(c => c.name === 'Email' && c.type === 'text');
-    const existingStatusCol = columns.find(c => c.name === 'Email Status' && c.type === 'text');
+  const getOrCreateResultColumn = async (): Promise<string> => {
+    // Result column is named per-provider so users can run multiple providers
+    // side-by-side without clobbering each other.
+    const providerLabel =
+      provider === 'trykitt' ? 'Email (TryKitt)'
+        : provider === 'ai_ark' ? 'Email (AI Ark)'
+        : 'Email';
+    const actionKind = `find_email_${provider === 'ai_ark' ? 'aiark' : provider}`;
 
-    let emailColId = existingEmailCol?.id || '';
-    let statusColId = existingStatusCol?.id || '';
+    const existing = columns.find(c => c.name === providerLabel && c.actionKind === actionKind);
+    if (existing) return existing.id;
 
-    if (!emailColId) {
-      const res = await fetch('/api/columns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tableId, name: 'Email', type: 'text' }),
-      });
-      const col = await res.json();
-      addColumn(col);
-      emailColId = col.id;
-    }
-
-    if (!statusColId) {
-      const res = await fetch('/api/columns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tableId, name: 'Email Status', type: 'text' }),
-      });
-      const col = await res.json();
-      addColumn(col);
-      statusColId = col.id;
-    }
-
-    return { emailColId, statusColId };
+    const res = await fetch('/api/columns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tableId,
+        name: providerLabel,
+        type: 'enrichment',
+        actionKind,
+        actionConfig: {
+          inputMode,
+          fullNameColumnId: inputMode === 'full_name' ? fullNameColumnId : undefined,
+          firstNameColumnId: inputMode === 'first_last' ? firstNameColumnId : undefined,
+          lastNameColumnId: inputMode === 'first_last' ? lastNameColumnId : undefined,
+          domainColumnId,
+        },
+      }),
+    });
+    const col = await res.json();
+    addColumn(col);
+    return col.id;
   };
 
   const processRows = async (rowIds: string[]) => {
@@ -135,12 +136,11 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     setError(null);
     setResultSummary(null);
 
-    const { emailColId, statusColId } = await getOrCreateOutputColumns();
+    const resultColumnId = await getOrCreateResultColumn();
 
     // Mark cells as processing
     for (const rowId of rowIds) {
-      updateCell(rowId, emailColId, { value: null, status: 'processing' });
-      updateCell(rowId, statusColId, { value: null, status: 'processing' });
+      updateCell(rowId, resultColumnId, { value: null, status: 'processing' });
     }
 
     setProgress({ completed: 0, total: rowIds.length });
@@ -168,8 +168,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
           firstNameColumnId: inputMode === 'first_last' ? firstNameColumnId : undefined,
           lastNameColumnId: inputMode === 'first_last' ? lastNameColumnId : undefined,
           domainColumnId,
-          emailColumnId: emailColId,
-          emailStatusColumnId: statusColId,
+          resultColumnId,
         }),
       });
 
@@ -190,13 +189,12 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
             : result.success
               ? 'complete'
               : 'error';
-        updateCell(result.rowId, emailColId, {
-          value: result.email || '',
+        updateCell(result.rowId, resultColumnId, {
+          value: result.email || null,
           status: cellStatus,
-        });
-        updateCell(result.rowId, statusColId, {
-          value: result.status,
-          status: cellStatus,
+          enrichmentData: result.enrichmentData,
+          metadata: result.metadata,
+          error: result.error,
         });
 
         // Track summary
@@ -405,7 +403,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
         <div className="text-xs text-white/40">
           Will process {rowCount} {rowCount === 1 ? 'row' : 'rows'}
           {selectedRows.size > 0 ? ' (selected)' : ''}.
-          Creates "Email" and "Email Status" columns.
+          Creates one result column — click any cell to view all returned datapoints (status, confidence, source) and extract any of them as a new column.
         </div>
 
         {/* Error */}

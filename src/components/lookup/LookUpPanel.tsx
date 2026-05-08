@@ -23,13 +23,11 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
   const [sourceColumns, setSourceColumns] = useState<Column[]>([]);
   const [loadingSourceCols, setLoadingSourceCols] = useState(false);
 
-  // Column mapping
+  // Column mapping (Pull Column is gone — the result column carries the entire
+  // source row in enrichmentData, and users extract individual fields on demand
+  // by clicking a cell.)
   const [inputColumnId, setInputColumnId] = useState('');   // Column in current sheet
   const [matchColumnId, setMatchColumnId] = useState('');    // Column in source sheet to match
-  const [returnColumnId, setReturnColumnId] = useState('');  // Column in source sheet to pull
-
-  // Output
-  const [newColumnName, setNewColumnName] = useState('');
 
   // Run condition
   const [condColumnId, setCondColumnId] = useState('');
@@ -49,7 +47,6 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
     if (!sourceSheetId) {
       setSourceColumns([]);
       setMatchColumnId('');
-      setReturnColumnId('');
       return;
     }
 
@@ -59,21 +56,10 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
       .then(cols => {
         setSourceColumns(cols);
         setMatchColumnId('');
-        setReturnColumnId('');
       })
       .catch(() => setSourceColumns([]))
       .finally(() => setLoadingSourceCols(false));
   }, [sourceSheetId]);
-
-  // Auto-fill column name when return column changes
-  useEffect(() => {
-    if (!returnColumnId || sourceColumns.length === 0) return;
-    const returnCol = sourceColumns.find(c => c.id === returnColumnId);
-    const sourceSheet = sheets.find(s => s.id === sourceSheetId);
-    if (returnCol && sourceSheet) {
-      setNewColumnName(`${returnCol.name} (from ${sourceSheet.name})`);
-    }
-  }, [returnColumnId, sourceColumns, sourceSheetId, sheets]);
 
   // Reset on close
   useEffect(() => {
@@ -82,14 +68,12 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
       setSourceColumns([]);
       setInputColumnId('');
       setMatchColumnId('');
-      setReturnColumnId('');
-      setNewColumnName('');
       setError(null);
       setResult(null);
     }
   }, [isOpen]);
 
-  const canRun = sourceSheetId && inputColumnId && matchColumnId && returnColumnId && newColumnName.trim();
+  const canRun = sourceSheetId && inputColumnId && matchColumnId;
 
   const handleRun = async () => {
     if (!canRun) return;
@@ -98,11 +82,21 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
     setResult(null);
 
     try {
-      // 1. Create the new column in current table
+      const sourceSheetName = sheets.find(s => s.id === sourceSheetId)?.name || 'Source';
+      const resultColumnName = `Lookup: ${sourceSheetName}`;
+
+      // 1. Create the result column (type: 'enrichment' so it gets status badges
+      // + cell viewer; actionKind tags it for retry).
       const colRes = await fetch('/api/columns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tableId, name: newColumnName.trim(), type: 'text' }),
+        body: JSON.stringify({
+          tableId,
+          name: resultColumnName,
+          type: 'enrichment',
+          actionKind: 'lookup',
+          actionConfig: { sourceTableId: sourceSheetId, inputColumnId, matchColumnId },
+        }),
       });
       if (!colRes.ok) throw new Error('Failed to create column');
       const newCol = await colRes.json();
@@ -113,7 +107,6 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
         sourceTableId: sourceSheetId,
         inputColumnId,
         matchColumnId,
-        returnColumnId,
         targetColumnId: newCol.id,
       };
       if (condColumnId) {
@@ -212,30 +205,11 @@ export function LookUpPanel({ isOpen, onClose, tableId }: LookUpPanelProps) {
           </div>
         )}
 
-        {/* Pull Column */}
+        {/* Help text — replaces the old Pull Column / Column Name inputs. */}
         {sourceSheetId && matchColumnId && (
-          <div>
-            <label className="text-sm font-medium text-white/70 mb-2 block">Pull Column</label>
-            <p className="text-xs text-white/40 mb-2">Which data to bring into this sheet</p>
-            <select value={returnColumnId} onChange={e => setReturnColumnId(e.target.value)} className={selectClasses}>
-              <option value="">Select column to pull...</option>
-              {sourceColumns.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Column Name */}
-        {returnColumnId && (
-          <div>
-            <label className="text-sm font-medium text-white/70 mb-2 block">New Column Name</label>
-            <input
-              type="text"
-              value={newColumnName}
-              onChange={e => setNewColumnName(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-lavender"
-            />
+          <div className="text-xs text-white/40 leading-relaxed">
+            One result column will be created with the entire matched source row attached.
+            Click any cell to view all the source-sheet fields and pick the ones you want as new columns.
           </div>
         )}
 
