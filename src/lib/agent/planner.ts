@@ -60,7 +60,11 @@ const REVENUE_TABLE_SUMMARY = (() => {
   return `${lines}\n  - (other countries): ~$${def.toLocaleString()} default`;
 })();
 
-const PLANNER_SYSTEM_PROMPT = `You are DataFlow's GTM Campaign Builder. You convert a user's natural-language
+export const PLANNER_MODEL = 'gpt-5-mini';
+export const PLANNER_TEMPERATURE = 0.2;
+export const PLANNER_MAX_OUTPUT_TOKENS = 8000;
+
+export const PLANNER_SYSTEM_PROMPT = `You are DataFlow's GTM Campaign Builder. You convert a user's natural-language
 request into a step-by-step plan that the DataFlow campaign engine executes.
 
 You ALWAYS produce a single JSON object — never plain text, never markdown
@@ -289,10 +293,10 @@ export async function runPlannerTurn(args: RunPlannerArgs): Promise<PlannerOutpu
     ? `${conversation}\n\n[SYSTEM CONTEXT FOR THIS TURN]\n${args.injectedContext}\n\nProduce your next response now as a single JSON object.`
     : `${conversation}\n\nProduce your next response now as a single JSON object.`;
 
-  const result = await callAI(userPart, 'gpt-5-mini', {
-    temperature: 0.2,
+  const result = await callAI(userPart, PLANNER_MODEL, {
+    temperature: PLANNER_TEMPERATURE,
     systemHint: PLANNER_SYSTEM_PROMPT,
-    maxOutputTokens: 8000,
+    maxOutputTokens: PLANNER_MAX_OUTPUT_TOKENS,
   });
 
   const parsed = parseModelJson(result.text);

@@ -15,6 +15,7 @@ import {
   Circle,
   Loader2,
   AlertCircle,
+  BookOpen,
   ChevronDown,
   ChevronRight,
   ExternalLink,
@@ -410,6 +411,16 @@ function AgentChatPage() {
                 {campaign.progress.completedSteps}/{campaign.progress.totalSteps} steps
               </span>
             )}
+            <a
+              href="/agent-docs"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 px-3 py-1 text-xs border border-white/10 hover:border-white/30 transition text-white/70"
+              title="See the system prompt and configuration the planner uses"
+            >
+              <BookOpen className="w-3 h-3" />
+              Agent config
+            </a>
             {campaign?.workbookId && (
               <a
                 href={`/workbook/${campaign.workbookId}`}
