@@ -70,14 +70,24 @@ export async function POST(request: NextRequest) {
       .where(eq(schema.rows.id, rowId));
 
     // Forward to the existing provider route. Use absolute URL so this works
-    // server-side (Vercel + ACA both expose PUBLIC_BASE_URL).
+    // server-side (Vercel + ACA both expose PUBLIC_BASE_URL). Forward the
+    // incoming Authorization header — middleware will reject the loopback
+    // call otherwise.
     const origin =
       process.env.PUBLIC_BASE_URL?.replace(/\/$/, '') ||
       request.nextUrl.origin;
 
+    // Forward both header-based (API key) and cookie-based (browser) auth so
+    // the loopback hits middleware with the same identity that called us.
+    const auth = request.headers.get('authorization');
+    const cookie = request.headers.get('cookie');
+    const fwdHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (auth) fwdHeaders.Authorization = auth;
+    if (cookie) fwdHeaders.Cookie = cookie;
+
     const upstream = await fetch(`${origin}${endpointFor(provider)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: fwdHeaders,
       body: JSON.stringify({
         tableId,
         rowIds: [rowId],
