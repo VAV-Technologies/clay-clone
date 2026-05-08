@@ -1073,15 +1073,15 @@ function humanizeStep(type: string): string {
     create_sheet: 'Create sheet',
     import_rows: 'Import rows',
     filter_rows: 'Filter rows',
-    find_domains: 'Find missing domains (web search)',
+    find_domains: 'Find missing domains → "Domain Finder (AI)" result column + Domain backfilled',
     qualify_titles: 'Qualify job titles',
-    find_emails: 'Find emails',
-    find_emails_waterfall: 'Find emails (AI Ark → Ninjer → TryKitt)',
-    clean_company_name: 'Clean company names',
-    clean_person_name: 'Clean person names',
+    find_emails: 'Find emails → "Email (AI)" result column + clean Email column',
+    find_emails_waterfall: 'Find emails (AI Ark → Ninjer → TryKitt) → "Email (AI)" result column + clean Email column',
+    clean_company_name: 'Clean company names → "Sending Company Name (AI)" + clean Sending Company Name',
+    clean_person_name: 'Clean person names → "Sending Name (AI)" + clean Sending Name',
     materialize_send_ready: 'Build Send-Ready sheet',
-    lookup: 'Lookup',
-    enrich: 'AI enrich',
+    lookup: 'Lookup → "Lookup: <Source>" result column + extracted text column',
+    enrich: 'AI enrich → result column (click any cell to see what the model returned)',
     cleanup: 'Cleanup empty rows',
   };
   return map[type] || type;
@@ -1103,14 +1103,20 @@ function summarizeResult(type: string, result: Record<string, unknown>): string 
   if (type === 'qualify_titles') {
     return result.removed ? `${result.removed} removed (${((result.unqualifiedRate as number) * 100).toFixed(0)}% bad)` : 'no-op';
   }
-  if (type === 'find_emails_waterfall') {
-    return result.finalCount ? `${result.finalCount} with email` : '';
+  if (type === 'find_emails' || type === 'find_emails_waterfall') {
+    return result.finalCount ? `${result.finalCount} with email` : (result.copiedEmails ? `${result.copiedEmails} emails` : '');
   }
   if (type === 'clean_company_name' || type === 'clean_person_name') {
     return result.processed ? `${result.processed} cleaned` : '';
   }
   if (type === 'materialize_send_ready') {
     return result.rowCount ? `${result.rowCount} rows ready` : '';
+  }
+  if (type === 'lookup') {
+    return result.matchedCount ? `${result.matchedCount} matched → ${result.extractedColumn}` : '';
+  }
+  if (type === 'enrich') {
+    return result.processedCount ? `${result.processedCount} enriched (${result.resultColumnName ?? 'AI Output'})` : '';
   }
   return '';
 }

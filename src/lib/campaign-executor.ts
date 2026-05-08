@@ -219,6 +219,127 @@ async function deleteRowsByIds(rowIds: string[]): Promise<void> {
   }
 }
 
+// Copy each row's value out of an enrichment-typed result column and into a
+// sibling text column. Mirrors what /api/enrichment/extract-datapoint does on
+// the manual path, but keyed on `cell.value` (or a specific enrichmentData
+// field) and writing into a column the campaign engine prepared up-front.
+async function copyResultColumnValuesToText(
+  tableId: string,
+  resultColumnId: string,
+  targetColumnId: string,
+  pickFromEnrichmentData?: string,
+  options: { onlyEmpty?: boolean } = {},
+): Promise<{ updated: number; skipped: number }> {
+  const rows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, tableId));
+  let updated = 0;
+  let skipped = 0;
+  for (const row of rows) {
+    const data = (row.data as Record<string, CellValue>) || {};
+    const resultCell = data[resultColumnId] as CellValue | undefined;
+    if (!resultCell) {
+      skipped++;
+      continue;
+    }
+
+    let pickedValue: string | number | null = null;
+    if (pickFromEnrichmentData && resultCell.enrichmentData && typeof resultCell.enrichmentData === 'object') {
+      const v = (resultCell.enrichmentData as Record<string, unknown>)[pickFromEnrichmentData];
+      pickedValue = v === undefined || v === null ? null : (v as string | number | null);
+    } else {
+      const v = resultCell.value;
+      pickedValue = v === undefined ? null : (v as string | number | null);
+    }
+
+    if (options.onlyEmpty) {
+      const existing = data[targetColumnId]?.value;
+      const hasExisting = existing !== undefined && existing !== null && String(existing).trim() !== '';
+      if (hasExisting) {
+        skipped++;
+        continue;
+      }
+    }
+
+    if (pickedValue === null) {
+      skipped++;
+      continue;
+    }
+
+    const updatedData = {
+      ...data,
+      [targetColumnId]: { value: pickedValue, status: 'complete' as const },
+    };
+    await db.update(schema.rows).set({ data: updatedData }).where(eq(schema.rows.id, row.id));
+    updated++;
+  }
+  return { updated, skipped };
+}
+
+// Create an "enrichment"-typed result column (status badges + cell viewer).
+// Returns the new column id; updates sheet.columnIds in place. The agent
+// uses this for find_emails / lookup / waterfall, which don't go through
+// /api/enrichment/setup-and-run.
+async function ensureResultColumn(
+  sheet: { tableId: string; columnIds: Record<string, string> },
+  name: string,
+  actionKind: string,
+  actionConfig: Record<string, unknown>,
+): Promise<string> {
+  if (sheet.columnIds[name]) return sheet.columnIds[name];
+  const created = await internalFetch<{ id: string }>('/api/columns', {
+    method: 'POST',
+    body: JSON.stringify({
+      tableId: sheet.tableId,
+      name,
+      type: 'enrichment',
+      actionKind,
+      actionConfig,
+    }),
+  });
+  sheet.columnIds[name] = created.id;
+  return created.id;
+}
+
+// Same as ensureResultColumn but for AI-enrichment columns (created via
+// /api/enrichment/setup-and-run, which inserts the config + the column +
+// runs the enrichment in one call). Returns { resultColumnId, runResult }.
+async function setupAndRunEnrichment(
+  sheet: { tableId: string; columnIds: Record<string, string> },
+  opts: {
+    columnName: string;
+    prompt: string;
+    inputColumns: string[];
+    rowIds?: string[];
+    temperature?: number;
+    webSearchEnabled?: boolean;
+    onlyEmpty?: boolean;
+    model?: string;
+  },
+): Promise<{ resultColumnId: string; result: Record<string, unknown> }> {
+  const result = await internalFetch<{ targetColumnId: string; targetColumn?: { id: string } } & Record<string, unknown>>(
+    '/api/enrichment/setup-and-run',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        tableId: sheet.tableId,
+        columnName: opts.columnName,
+        prompt: opts.prompt,
+        inputColumns: opts.inputColumns,
+        model: opts.model || 'gpt-5-mini',
+        temperature: opts.temperature ?? 0.3,
+        webSearchEnabled: !!opts.webSearchEnabled,
+        rowIds: opts.rowIds,
+        onlyEmpty: !!opts.onlyEmpty,
+      }),
+    },
+  );
+  const resultColumnId = result.targetColumnId || result.targetColumn?.id;
+  if (!resultColumnId) {
+    throw new Error('setup-and-run did not return a targetColumnId');
+  }
+  sheet.columnIds[opts.columnName] = resultColumnId;
+  return { resultColumnId, result };
+}
+
 export async function executeStep(
   step: CampaignStep,
   context: CampaignContext,
@@ -464,52 +585,39 @@ export async function executeStep(
 
       const nameCol = (step.params.nameColumn as string) || 'Full Name';
       const domainCol = (step.params.domainColumn as string) || 'Company Domain';
+      const nameColId = sheet.columnIds[nameCol];
+      const domainColId = sheet.columnIds[domainCol];
+      if (!nameColId) throw new Error(`Name column "${nameCol}" not found`);
+      if (!domainColId) throw new Error(`Domain column "${domainCol}" not found`);
 
-      // Create Email + Email Status columns if not exist
-      if (!sheet.columnIds['Email']) {
-        const emailColId = generateId();
-        const maxOrder = Object.keys(sheet.columnIds).length;
-        await db.insert(schema.columns).values({ id: emailColId, tableId: sheet.tableId, name: 'Email', type: 'email', order: maxOrder, width: 200 });
-        sheet.columnIds['Email'] = emailColId;
-      }
-      if (!sheet.columnIds['Email Status']) {
-        const statusColId = generateId();
-        const maxOrder = Object.keys(sheet.columnIds).length;
-        await db.insert(schema.columns).values({ id: statusColId, tableId: sheet.tableId, name: 'Email Status', type: 'text', order: maxOrder, width: 120 });
-        sheet.columnIds['Email Status'] = statusColId;
-      }
+      // ONE result column matching the manual Find Email panel: enrichment-
+      // typed, click-to-inspect, every provider field stashed in enrichmentData.
+      const resultColumnId = await ensureResultColumn(sheet, 'Email (AI)', 'find_email_ninjer', {
+        inputMode: 'full_name',
+        fullNameColumnId: nameColId,
+        domainColumnId: domainColId,
+      });
+      // Clean text column for downstream steps + materialize_send_ready.
+      const emailColId = await ensureSheetColumn(sheet, 'Email', 'email', 200);
 
-      // Get all row IDs for this sheet
-      const rows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, sheet.tableId));
-      const rowIds = rows.map(r => r.id);
-
-      // Call the find-email endpoint internally via fetch
-      const baseUrl = process.env.APP_URL || 'http://localhost:3000';
-      const apiKey = process.env.DATAFLOW_API_KEY;
-
-      const response = await fetch(`${baseUrl}/api/find-email/run`, {
+      const rowIds = await listAllRowIds(sheet.tableId);
+      const result = await internalFetch<Record<string, unknown>>('/api/find-email/run', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
         body: JSON.stringify({
           tableId: sheet.tableId,
           rowIds,
           inputMode: 'full_name',
-          fullNameColumnId: sheet.columnIds[nameCol],
-          domainColumnId: sheet.columnIds[domainCol],
-          emailColumnId: sheet.columnIds['Email'],
-          emailStatusColumnId: sheet.columnIds['Email Status'],
+          fullNameColumnId: nameColId,
+          domainColumnId: domainColId,
+          resultColumnId,
         }),
       });
 
-      const result = await response.json();
-      log(`Find email result: ${JSON.stringify(result)}`);
+      const copy = await copyResultColumnValuesToText(sheet.tableId, resultColumnId, emailColId);
+      log(`find_emails: ran on ${rowIds.length} rows, copied ${copy.updated} emails to "Email" column`);
 
-      // Update context with new column IDs
       const sheets = { ...context.sheets, [sheetName]: sheet };
-      return { result, contextUpdate: { sheets } };
+      return { result: { ...result, copiedEmails: copy.updated }, contextUpdate: { sheets } };
     }
 
     case 'lookup': {
@@ -523,26 +631,43 @@ export async function executeStep(
       const target = context.sheets?.[targetSheet];
       const source = context.sheets?.[sourceSheet];
       if (!target || !source) throw new Error(`Sheets not found: target=${targetSheet}, source=${sourceSheet}`);
+      const inputColId = target.columnIds[inputColumn];
+      const matchColId = source.columnIds[matchColumn];
+      if (!inputColId) throw new Error(`Input column "${inputColumn}" not found in ${targetSheet}`);
+      if (!matchColId) throw new Error(`Match column "${matchColumn}" not found in ${sourceSheet}`);
 
-      const baseUrl = process.env.APP_URL || 'http://localhost:3000';
-      const apiKey = process.env.DATAFLOW_API_KEY;
+      // Result column: matches the manual Lookup panel — every source-row field
+      // lands in enrichmentData so the user can extract any of them later.
+      const resultColumnId = await ensureResultColumn(target, `Lookup: ${sourceSheet}`, 'lookup', {
+        sourceTableId: source.tableId,
+        inputColumnId: inputColId,
+        matchColumnId: matchColId,
+      });
 
-      const response = await fetch(`${baseUrl}/api/lookup/run`, {
+      const result = await internalFetch<Record<string, unknown>>('/api/lookup/run', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body: JSON.stringify({
           tableId: target.tableId,
           sourceTableId: source.tableId,
-          inputColumnId: target.columnIds[inputColumn],
-          matchColumnId: source.columnIds[matchColumn],
-          returnColumnId: source.columnIds[returnColumn],
-          newColumnName,
+          inputColumnId: inputColId,
+          matchColumnId: matchColId,
+          targetColumnId: resultColumnId,
         }),
       });
 
-      const result = await response.json();
-      log(`Lookup result: ${JSON.stringify(result)}`);
-      return { result, contextUpdate: {} };
+      // Then materialize the requested return column as a clean text column —
+      // same end-state as a manual extract-datapoint click.
+      const newColId = await ensureSheetColumn(target, newColumnName, 'text', 150);
+      const copy = await copyResultColumnValuesToText(target.tableId, resultColumnId, newColId, returnColumn);
+      log(
+        `lookup: ${JSON.stringify(result)}; copied ${copy.updated} "${returnColumn}" values to "${newColumnName}"`,
+      );
+
+      const sheets = { ...context.sheets, [targetSheet]: target };
+      return {
+        result: { ...result, extractedColumn: newColumnName, copiedRows: copy.updated },
+        contextUpdate: { sheets },
+      };
     }
 
     case 'enrich': {
@@ -550,36 +675,41 @@ export async function executeStep(
       const sheet = context.sheets?.[sheetName];
       if (!sheet) throw new Error(`Sheet "${sheetName}" not found`);
 
-      const baseUrl = process.env.APP_URL || 'http://localhost:3000';
-      const apiKey = process.env.DATAFLOW_API_KEY;
+      // Single setup-and-run call — same path the manual EnrichmentPanel takes.
+      // Creates the enrichment config + the type='enrichment' column linked
+      // via enrichmentConfigId + runs over all rows. Result lives in
+      // enrichmentData; user clicks any cell to inspect.
+      const cfg = step.params.config as Record<string, unknown> | undefined;
+      const targetColumnName =
+        (step.params.targetColumn as string) ||
+        (cfg?.name as string) ||
+        'AI Output';
 
-      // Create enrichment config
-      const configResponse = await fetch(`${baseUrl}/api/enrichment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify(step.params.config),
+      // step.params.config from the planner:
+      //   { name, model?, prompt, inputColumns: string[], temperature? }
+      // — inputColumns may be column NAMES (planner-side) or IDs (rare).
+      // Resolve names to IDs first.
+      const inputCols = ((cfg?.inputColumns as unknown[]) || []).map((entry) => {
+        if (typeof entry !== 'string') return null;
+        return sheet.columnIds[entry] || entry; // already-an-id passes through
+      }).filter((v): v is string => !!v);
+
+      if (inputCols.length === 0) {
+        throw new Error('enrich: config.inputColumns is empty (or none resolved to a column id)');
+      }
+
+      const { resultColumnId, result } = await setupAndRunEnrichment(sheet, {
+        columnName: targetColumnName,
+        prompt: (cfg?.prompt as string) || '',
+        inputColumns: inputCols,
+        model: (cfg?.model as string) || 'gpt-5-mini',
+        temperature: (cfg?.temperature as number) ?? 0.3,
+        webSearchEnabled: !!(cfg?.webSearchEnabled),
       });
-      const config = await configResponse.json();
+      log(`enrich: ran "${targetColumnName}" via setup-and-run (col ${resultColumnId})`);
 
-      // Get row IDs
-      const rows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, sheet.tableId));
-      const rowIds = rows.map(r => r.id);
-
-      // Run enrichment
-      const runResponse = await fetch(`${baseUrl}/api/enrichment/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          configId: config.id,
-          tableId: sheet.tableId,
-          targetColumnId: sheet.columnIds[step.params.targetColumn as string] || generateId(),
-          rowIds,
-        }),
-      });
-
-      const result = await runResponse.json();
-      log(`Enrichment result: ${JSON.stringify(result)}`);
-      return { result, contextUpdate: {} };
+      const sheets = { ...context.sheets, [sheetName]: sheet };
+      return { result: { ...result, resultColumnName: targetColumnName }, contextUpdate: { sheets } };
     }
 
     case 'cleanup': {
@@ -633,9 +763,13 @@ export async function executeStep(
       }
       log(`find_domains: ${emptyRowIds.length} rows missing/junk domain — backfilling via web search`);
 
-      const config = await createEnrichmentConfig({
-        name: `Domain Finder (${sheetName})`,
-        model: 'gpt-5-mini',
+      // Create a "Domain Finder (AI)" enrichment column the user can click to
+      // see exactly what the model returned + cost/time. Run setup-and-run
+      // scoped to just the empty rows. After it completes we copy the
+      // resolved domain into the existing Domain text column for downstream
+      // steps (filter_rows, find_emails_waterfall, etc.).
+      const { resultColumnId } = await setupAndRunEnrichment(sheet, {
+        columnName: 'Domain Finder (AI)',
         prompt:
           `Find the official primary website domain for the company "{{${nameColName}}}". ` +
           `Return ONLY the bare domain (e.g. "stripe.com"), no protocol, no www, no path. ` +
@@ -644,10 +778,15 @@ export async function executeStep(
           `only the company's direct, owned website. ` +
           `If you cannot find a confident answer, return an empty string.`,
         inputColumns: [nameColId],
+        rowIds: emptyRowIds,
         temperature: 0.1,
         webSearchEnabled: true,
       });
-      await runRealtimeEnrichment(config.id, sheet.tableId, domainColId, emptyRowIds);
+
+      // Backfill the existing Domain text column from the result column,
+      // but only for rows that are still empty/junk so we don't overwrite
+      // pre-existing good values.
+      await copyResultColumnValuesToText(sheet.tableId, resultColumnId, domainColId, undefined, { onlyEmpty: true });
 
       const stillEmpty = await listMissingOrJunkDomainRowIds(sheet.tableId, domainColId);
       const backfilled = emptyRowIds.length - stillEmpty.length;
@@ -657,8 +796,8 @@ export async function executeStep(
         throw new Error(`Domain backfill incomplete: ${stillEmpty.length} rows still missing a usable domain`);
       }
       return {
-        result: { attempted: emptyRowIds.length, backfilled, stillEmpty: stillEmpty.length },
-        contextUpdate: {},
+        result: { attempted: emptyRowIds.length, backfilled, stillEmpty: stillEmpty.length, resultColumn: 'Domain Finder (AI)' },
+        contextUpdate: { sheets: { ...context.sheets, [sheetName]: sheet } },
       };
     }
 
@@ -743,12 +882,21 @@ export async function executeStep(
       const domainCol = (step.params.domainColumn as string) || 'Company Domain';
       const removeEmpty = step.params.removeEmpty !== false;
 
-      const emailColId = await ensureSheetColumn(sheet, 'Email', 'email', 200);
-      const statusColId = await ensureSheetColumn(sheet, 'Email Status', 'text', 120);
       const nameColId = sheet.columnIds[nameCol];
       const domainColId = sheet.columnIds[domainCol];
       if (!nameColId) throw new Error(`Name column "${nameCol}" not found`);
       if (!domainColId) throw new Error(`Domain column "${domainCol}" not found`);
+
+      // ONE result column shared across all 3 providers. Each provider writes
+      // to enrichmentData with its own `provider` tag, so the user can see
+      // which one succeeded for each row.
+      const resultColumnId = await ensureResultColumn(sheet, 'Email (AI)', 'find_email_waterfall', {
+        inputMode: 'full_name',
+        fullNameColumnId: nameColId,
+        domainColumnId: domainColId,
+      });
+      // Clean text column for downstream steps + Send-Ready.
+      const emailColId = await ensureSheetColumn(sheet, 'Email', 'email', 200);
 
       const allRowIds = await listAllRowIds(sheet.tableId);
       if (allRowIds.length === 0) return { result: { skipped: 'no rows' }, contextUpdate: {} };
@@ -758,8 +906,7 @@ export async function executeStep(
         inputMode: 'full_name',
         fullNameColumnId: nameColId,
         domainColumnId: domainColId,
-        emailColumnId: emailColId,
-        emailStatusColumnId: statusColId,
+        resultColumnId,
       };
 
       // Pass 1: AI Ark (async submit; fills cells via webhook over ~60-90s)
@@ -782,16 +929,18 @@ export async function executeStep(
         await new Promise(resolve => setTimeout(resolve, pollMs));
         const rowsChunk = await db.select().from(schema.rows).where(inArray(schema.rows.id, allRowIds));
         const stillProcessing = rowsChunk.filter(r => {
-          const cell = (r.data as Record<string, CellValue>)[emailColId];
+          const cell = (r.data as Record<string, CellValue>)[resultColumnId];
           return cell?.status === 'processing';
         }).length;
         log(`find_emails_waterfall: AI Ark poll — ${stillProcessing} cells still processing`);
         if (stillProcessing === 0) break;
       }
 
-      // Pass 2: Ninjer for rows still without a *valid* email. listInvalid
-      // catches both empties AND provider sentinels like TryKitt's literal
-      // "no-results-found" / "not_found" written into the value column.
+      // After AI Ark, copy resolved emails into the clean Email column so
+      // listInvalidEmailRowIds (which inspects the Email column) sees them.
+      await copyResultColumnValuesToText(sheet.tableId, resultColumnId, emailColId);
+
+      // Pass 2: Ninjer for rows still without a *valid* email.
       const stillEmpty1 = await listInvalidEmailRowIds(sheet.tableId, emailColId);
       log(`find_emails_waterfall: Ninjer on ${stillEmpty1.length} remaining`);
       if (stillEmpty1.length > 0) {
@@ -800,6 +949,7 @@ export async function executeStep(
             method: 'POST',
             body: JSON.stringify({ ...baseBody, rowIds: stillEmpty1 }),
           });
+          await copyResultColumnValuesToText(sheet.tableId, resultColumnId, emailColId);
         } catch (err) {
           log(`Ninjer warning (continuing): ${(err as Error).message}`);
         }
@@ -814,6 +964,7 @@ export async function executeStep(
             method: 'POST',
             body: JSON.stringify({ ...baseBody, rowIds: stillEmpty2 }),
           });
+          await copyResultColumnValuesToText(sheet.tableId, resultColumnId, emailColId);
         } catch (err) {
           log(`TryKitt warning (continuing): ${(err as Error).message}`);
         }
@@ -836,6 +987,7 @@ export async function executeStep(
           trykittPass: stillEmpty2.length - finalEmpty.length,
           droppedEmpty: dropped,
           finalCount: allRowIds.length - dropped,
+          resultColumn: 'Email (AI)',
         },
         contextUpdate: { sheets: { ...context.sheets, [sheetName]: sheet } },
       };
@@ -850,13 +1002,13 @@ export async function executeStep(
       const inputColId = sheet.columnIds[inputColName];
       if (!inputColId) throw new Error(`Input column "${inputColName}" not found`);
 
-      const outColId = await ensureSheetColumn(sheet, outputColName, 'text', 180);
       const allRowIds = await listAllRowIds(sheet.tableId);
       if (allRowIds.length === 0) return { result: { skipped: 'no rows' }, contextUpdate: {} };
 
-      const config = await createEnrichmentConfig({
-        name: `Sending Company Name (${sheetName})`,
-        model: 'gpt-5-mini',
+      // Result column (status badges + cell viewer) named e.g. "Sending Company Name (AI)"
+      const resultColumnName = `${outputColName} (AI)`;
+      const { resultColumnId } = await setupAndRunEnrichment(sheet, {
+        columnName: resultColumnName,
         prompt:
           `You are cleaning a company name for use in a cold email greeting. ` +
           `Given the company's domain or full name "{{${inputColName}}}", output a short send-friendly version that real humans use in conversation.\n\n` +
@@ -871,12 +1023,16 @@ export async function executeStep(
           `Examples of CORRECT output: \`IBM\`  \`Stripe\`  \`Wagner\`\n` +
           `Examples of WRONG output (do not produce): \`{"name": "IBM"}\`  \`"IBM"\`  \`Company name: IBM\``,
         inputColumns: [inputColId],
+        rowIds: allRowIds,
         temperature: 0.1,
       });
-      await runRealtimeEnrichment(config.id, sheet.tableId, outColId, allRowIds);
-      log(`clean_company_name: cleaned ${allRowIds.length} -> "${outputColName}"`);
+
+      // Clean text column the campaign engine + materialize_send_ready read.
+      const outColId = await ensureSheetColumn(sheet, outputColName, 'text', 180);
+      const copy = await copyResultColumnValuesToText(sheet.tableId, resultColumnId, outColId);
+      log(`clean_company_name: cleaned ${allRowIds.length} -> "${resultColumnName}" + "${outputColName}" (${copy.updated} copied)`);
       return {
-        result: { processed: allRowIds.length, outputColumn: outputColName },
+        result: { processed: allRowIds.length, outputColumn: outputColName, resultColumn: resultColumnName },
         contextUpdate: { sheets: { ...context.sheets, [sheetName]: sheet } },
       };
     }
@@ -897,13 +1053,12 @@ export async function executeStep(
         throw new Error(`No name column found ("${fullNameColName}" or "${firstNameColName}")`);
       }
 
-      const outColId = await ensureSheetColumn(sheet, outputColName, 'text', 150);
       const allRowIds = await listAllRowIds(sheet.tableId);
       if (allRowIds.length === 0) return { result: { skipped: 'no rows' }, contextUpdate: {} };
 
-      const config = await createEnrichmentConfig({
-        name: `Sending Name (${sheetName})`,
-        model: 'gpt-5-mini',
+      const resultColumnName = `${outputColName} (AI)`;
+      const { resultColumnId } = await setupAndRunEnrichment(sheet, {
+        columnName: resultColumnName,
         prompt:
           `You are cleaning a person's name for use in an email greeting line. ` +
           `Given this name as it appears in our data: "{{${inputColName}}}", output their first name (or preferred short form) suitable for "Hi {name},".\n\n` +
@@ -919,12 +1074,15 @@ export async function executeStep(
           `Examples of CORRECT output: \`Robert\`  \`Bob\`  \`Karthigeyen\`\n` +
           `Examples of WRONG output (do not produce): \`{"firstName": "Robert"}\`  \`"Robert"\`  \`First name: Robert\``,
         inputColumns: [inputColId],
+        rowIds: allRowIds,
         temperature: 0.1,
       });
-      await runRealtimeEnrichment(config.id, sheet.tableId, outColId, allRowIds);
-      log(`clean_person_name: cleaned ${allRowIds.length} -> "${outputColName}"`);
+
+      const outColId = await ensureSheetColumn(sheet, outputColName, 'text', 150);
+      const copy = await copyResultColumnValuesToText(sheet.tableId, resultColumnId, outColId);
+      log(`clean_person_name: cleaned ${allRowIds.length} -> "${resultColumnName}" + "${outputColName}" (${copy.updated} copied)`);
       return {
-        result: { processed: allRowIds.length, outputColumn: outputColName },
+        result: { processed: allRowIds.length, outputColumn: outputColName, resultColumn: resultColumnName },
         contextUpdate: { sheets: { ...context.sheets, [sheetName]: sheet } },
       };
     }

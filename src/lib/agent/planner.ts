@@ -82,6 +82,18 @@ outside the JSON. Your JSON has these top-level fields:
 You can emit any of these step types. The engine runs them in order with a
 shared context (workbookId + sheets + searchResults).
 
+> **How action steps materialize columns** — Every step that calls an action
+> (find emails, lookup, AI enrich, clean names, find domains) creates a
+> **result column** in the target sheet: a column the user clicks on to see
+> exactly what the model/provider returned, with status badges per row and a
+> full datapoint inspector. For steps whose output is consumed by *other*
+> steps (Email, Sending Name, Sending Company Name, Domain), the engine ALSO
+> maintains a clean text column with just the value — that's what
+> \`materialize_send_ready\` reads. So the workbook ends with both: a
+> "(AI)" result column for forensic detail, and a clean column for the
+> output surface. When you describe a stage to the user, mention they can
+> click any \`(AI)\` cell to see what the model/provider returned.
+
 | step.type                | What it does                                                                |
 |--------------------------|-----------------------------------------------------------------------------|
 | create_workbook          | Creates the top-level workbook for the campaign. Auto-prepended.            |
@@ -90,16 +102,24 @@ shared context (workbookId + sheets + searchResults).
 | create_sheet             | Creates a sheet with named columns. Save column IDs in context.             |
 | import_rows              | Imports the last search result into a sheet (source: "companies"/"people"). |
 | filter_rows              | Removes rows matching a filter. Operators: is_empty, is_not_empty.          |
-| find_domains             | Backfills missing Domain via web-search-enabled enrichment.                 |
+| find_domains             | Creates a "Domain Finder (AI)" result column (web-search enabled) and       |
+|                          | backfills the existing "Domain" text column for empty/junk rows.            |
 | qualify_titles           | Samples ~8% of people, AI-classifies; if unqualified rate >= 0.3 (default), |
 |                          | scores all rows and removes those classified "no".                          |
-| find_emails_waterfall    | AI Ark -> Ninjer -> TryKitt. Drops rows still without email by default.     |
-| clean_company_name       | Real-time enrichment writing a "Sending Company Name" column.               |
-| clean_person_name        | Real-time enrichment writing a "Sending Name" column.                       |
+| find_emails              | Single-provider Ninjer lookup. Creates one "Email (AI)" result column +    |
+|                          | a clean "Email" text column. Prefer find_emails_waterfall.                  |
+| find_emails_waterfall    | AI Ark -> Ninjer -> TryKitt. Creates ONE "Email (AI)" result column shared  |
+|                          | across all 3 providers (cell viewer shows which provider succeeded) plus    |
+|                          | a clean "Email" text column. Drops rows still without an email.             |
+| clean_company_name       | Creates "Sending Company Name (AI)" result column + clean "Sending Company  |
+|                          | Name" text column.                                                          |
+| clean_person_name        | Creates "Sending Name (AI)" result column + clean "Sending Name" text col.  |
 | materialize_send_ready   | Builds a third sheet with only [Sending Name, Sending Company Name, Domain, |
-|                          | Email]. The user's export surface.                                          |
-| lookup                   | Cross-sheet VLOOKUP by shared key.                                          |
-| enrich                   | Generic real-time AI enrichment (other use cases).                          |
+|                          | Email]. Reads the clean text columns. The user's export surface.            |
+| lookup                   | Creates a "Lookup: <SourceSheet>" result column carrying every source-row   |
+|                          | field, plus a clean text column for the requested returnColumn.             |
+| enrich                   | Generic AI enrichment via setup-and-run. Creates one enrichment column     |
+|                          | the user can click to inspect (datapoints + cost/time).                     |
 | cleanup                  | Removes rows with empty Email (legacy; prefer find_emails_waterfall).       |
 
 # Hard rules — apply these in EVERY plan
