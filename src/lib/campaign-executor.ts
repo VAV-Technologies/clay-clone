@@ -49,6 +49,61 @@ async function listEmptyRowIds(tableId: string, columnId: string): Promise<strin
     .map(r => r.id);
 }
 
+// A cell is "missing a usable domain" if it's empty OR the value doesn't look
+// like a real company website (e.g. WhatsApp message URLs, social links,
+// directory pages). Used by find_domains and the company-domain filter step
+// to catch garbage data from upstream search providers.
+function isUsableCompanyDomain(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  const raw = String(value).trim();
+  if (!raw) return false;
+  // Strip protocol, www, and any path so we're working with just the host.
+  const host = raw
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .split(/[\/?#]/)[0]
+    .toLowerCase();
+  if (!host) return false;
+  if (!host.includes('.')) return false;
+  if (/\s/.test(host)) return false;
+  if (host.length > 253) return false;
+  // Reject hosts that are messaging/social/directory shorteners — these
+  // appear as "domains" in some Clay/AI Ark records but aren't real company
+  // websites and never resolve to a real account in either provider.
+  const NON_COMPANY_HOSTS = new Set([
+    'wa.me', 't.me', 'fb.me', 'lnkd.in', 'bit.ly', 'tinyurl.com',
+    'facebook.com', 'm.facebook.com', 'instagram.com', 'twitter.com', 'x.com',
+    'linkedin.com', 'tiktok.com', 'youtube.com', 'youtu.be',
+    'pinterest.com', 'snapchat.com',
+    'medium.com', 'substack.com', 'wordpress.com', 'blogspot.com',
+    'crunchbase.com', 'glassdoor.com', 'zoominfo.com', 'apollo.io',
+    'wikipedia.org', 'github.com', 'play.google.com', 'apps.apple.com',
+  ]);
+  if (NON_COMPANY_HOSTS.has(host)) return false;
+  return true;
+}
+
+// Normalize a usable domain to its bare host form ("stripe.com"), suitable
+// for AI Ark / Clay companyDomain filters and find-email lookups.
+function normalizeDomainHost(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .split(/[\/?#]/)[0]
+    .toLowerCase();
+}
+
+async function listMissingOrJunkDomainRowIds(tableId: string, columnId: string): Promise<string[]> {
+  const all = await db.select().from(schema.rows).where(eq(schema.rows.tableId, tableId));
+  return all
+    .filter(r => {
+      const v = (r.data as Record<string, CellValue>)[columnId]?.value;
+      return !isUsableCompanyDomain(v);
+    })
+    .map(r => r.id);
+}
+
 async function listAllRowIds(tableId: string): Promise<string[]> {
   const all = await db.select().from(schema.rows).where(eq(schema.rows.tableId, tableId));
   return all.map(r => r.id);
@@ -182,10 +237,33 @@ export async function executeStep(
           const colId = sheet.columnIds[colName];
           if (colId) {
             const rows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, sheet.tableId));
-            extractedDomains = rows
+            const rawValues = rows
               .map(r => (r.data as Record<string, CellValue>)[colId]?.value)
               .filter((v): v is string => typeof v === 'string' && v.length > 0);
-            log(`Extracted ${extractedDomains.length} domains from ${sheetName}:${colName}`);
+            // Validate + normalize: drop junk URLs (wa.me, social hosts,
+            // etc.) and strip protocol/www/path so AI Ark / Clay see bare
+            // hosts like "stripe.com". Also dedupe.
+            const seen = new Set<string>();
+            extractedDomains = [];
+            const dropped: string[] = [];
+            for (const v of rawValues) {
+              if (!isUsableCompanyDomain(v)) {
+                dropped.push(v);
+                continue;
+              }
+              const host = normalizeDomainHost(v);
+              if (host && !seen.has(host)) {
+                seen.add(host);
+                extractedDomains.push(host);
+              }
+            }
+            log(
+              `Extracted ${extractedDomains.length} usable domains from ${sheetName}:${colName} ` +
+              `(${dropped.length} junk values dropped)`,
+            );
+            if (dropped.length > 0 && dropped.length <= 5) {
+              log(`Sample dropped: ${dropped.join(', ')}`);
+            }
           }
         }
         (step.params as Record<string, unknown>).domains = extractedDomains;
@@ -311,7 +389,16 @@ export async function executeStep(
           const colId = sheet.columnIds[filter.column];
           if (!colId) continue;
           const val = data[colId]?.value;
-          if (filter.operator === 'is_empty' && (!val || String(val).trim() === '')) {
+          // is_empty on a Domain-like column also catches junk values (e.g.
+          // WhatsApp/social URLs that some search providers return as
+          // "domain"). Without this, find_domains has nothing to backfill
+          // and the people search downstream sees garbage in companyDomain.
+          const isDomainCol = /domain/i.test(filter.column);
+          const isEmptyOrJunk =
+            filter.operator === 'is_empty' &&
+            ((!val || String(val).trim() === '') ||
+              (isDomainCol && !isUsableCompanyDomain(val)));
+          if (isEmptyOrJunk) {
             idsToDelete.push(row.id);
             break;
           }
@@ -496,12 +583,14 @@ export async function executeStep(
       if (!domainColId) throw new Error(`Domain column "${domainColName}" not found`);
       if (!nameColId) throw new Error(`Name column "${nameColName}" not found`);
 
-      const emptyRowIds = await listEmptyRowIds(sheet.tableId, domainColId);
+      // Catch BOTH truly-empty cells AND garbage values (WhatsApp links,
+      // social URLs, etc. that some search providers return as "domain").
+      const emptyRowIds = await listMissingOrJunkDomainRowIds(sheet.tableId, domainColId);
       if (emptyRowIds.length === 0) {
-        log(`find_domains: no rows missing a domain — skip`);
+        log(`find_domains: no rows missing a usable domain — skip`);
         return { result: { backfilled: 0, attempted: 0 }, contextUpdate: {} };
       }
-      log(`find_domains: ${emptyRowIds.length} rows missing a domain — backfilling via web search`);
+      log(`find_domains: ${emptyRowIds.length} rows missing/junk domain — backfilling via web search`);
 
       const config = await createEnrichmentConfig({
         name: `Domain Finder (${sheetName})`,
@@ -519,12 +608,12 @@ export async function executeStep(
       });
       await runRealtimeEnrichment(config.id, sheet.tableId, domainColId, emptyRowIds);
 
-      const stillEmpty = await listEmptyRowIds(sheet.tableId, domainColId);
+      const stillEmpty = await listMissingOrJunkDomainRowIds(sheet.tableId, domainColId);
       const backfilled = emptyRowIds.length - stillEmpty.length;
-      log(`find_domains: backfilled ${backfilled}/${emptyRowIds.length} (${stillEmpty.length} still empty)`);
+      log(`find_domains: backfilled ${backfilled}/${emptyRowIds.length} (${stillEmpty.length} still missing/junk)`);
 
       if (step.params.failIfMissing === true && stillEmpty.length > 0) {
-        throw new Error(`Domain backfill incomplete: ${stillEmpty.length} rows still missing a domain`);
+        throw new Error(`Domain backfill incomplete: ${stillEmpty.length} rows still missing a usable domain`);
       }
       return {
         result: { attempted: emptyRowIds.length, backfilled, stillEmpty: stillEmpty.length },
