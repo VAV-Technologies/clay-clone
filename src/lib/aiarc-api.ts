@@ -1,5 +1,26 @@
-// AI Ark People & Company Search API Client
-// Docs: https://docs.ai-ark.com/
+// AI Ark People & Company Search API Client.
+//
+// Endpoints we hit (all under https://api.ai-ark.com/api/developer-portal/v1):
+//   POST /people              — people search          docs.ai-ark.com/docs/api-reference-overview
+//   POST /companies           — company search          (same)
+//   POST /people/email-finder — async email lookup; results POST'd back to a
+//                               webhook URL we sign with HMAC-SHA256.
+//   GET  /payments/credits    — current credit balance
+//
+// Auth:        X-TOKEN: $AI_ARC_API_KEY        docs.ai-ark.com/docs/authentication
+// Rate limits: 5 req/s, 300 req/min, 18,000 req/hr   docs.ai-ark.com/docs/rate-limits
+//   This client enforces 5/s + 280/min as a safety margin and does up-to-3
+//   exponential-backoff retries on 429s and 5xxs.
+//
+// Filter request shape: nested { account, contact } objects with `any.include`
+// arrays. Most string filters take a `mode` of 'SMART' | 'WORD' | 'EXACT'.
+// SMART expands abbreviations + variants; WORD splits multi-word phrases per
+// token (so "Director" matches "Board of Directors" — we post-filter to fix
+// false positives via titleMatchesAny); EXACT does literal matching.
+//
+// Note: AI Ark also publishes an MCP server at https://api.ai-ark.com/v1/mcp?
+// token=... — that's for AI assistants (Claude, etc.), NOT what this client
+// uses. We talk to the REST API directly.
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -37,6 +58,10 @@ export interface AiArcPeopleFilters {
 
   // Results
   limit?: number;
+  // Client-side post-filter: cap unique people per company_domain. Not an
+  // AI Ark filter — applied after dedup to keep one giant company from
+  // dominating the result set.
+  limitPerCompany?: number;
 }
 
 export interface AiArcCompanyFilters {
@@ -262,6 +287,24 @@ function titleMatchesAny(title: string, keywords: string[]): boolean {
   const t = title.toLowerCase();
   const expanded = expandTitleKeywords(keywords);
   return expanded.some(kw => t.includes(kw));
+}
+
+// Post-filter: drop any people past `cap` per unique company_domain. Preserves
+// input order. Rows with an empty company_domain are kept ungrouped (one
+// implicit "no-domain" bucket capped the same way).
+function applyLimitPerCompany(people: AiArcPerson[], cap: number): AiArcPerson[] {
+  if (!cap || cap <= 0) return people;
+  const counts = new Map<string, number>();
+  const out: AiArcPerson[] = [];
+  for (const p of people) {
+    const key = (p.company_domain || '').toLowerCase();
+    const seen = counts.get(key) ?? 0;
+    if (seen < cap) {
+      counts.set(key, seen + 1);
+      out.push(p);
+    }
+  }
+  return out;
 }
 
 // ─── Filter Builders ────────────────────────────────────────────────────────
@@ -656,8 +699,16 @@ async function searchPeopleMultiTitle(
     onProgress?.(`  "${title}": ${titleTotal} API results, ${results.length} matched after filter`);
   }
 
-  onProgress?.(`Search complete — ${results.length} results (filtered from ${seen.size} API results)`);
-  return { items: results.slice(0, limit), totalCount: results.length };
+  // Per-company cap (client-side post-filter, not an AI Ark filter)
+  const capped = filters.limitPerCompany
+    ? applyLimitPerCompany(results, filters.limitPerCompany)
+    : results;
+  if (filters.limitPerCompany && capped.length < results.length) {
+    onProgress?.(`Per-company cap (${filters.limitPerCompany}): ${results.length} → ${capped.length}`);
+  }
+
+  onProgress?.(`Search complete — ${capped.length} results (filtered from ${seen.size} API results)`);
+  return { items: capped.slice(0, limit), totalCount: capped.length };
 }
 
 async function searchPeopleSingle(
@@ -706,8 +757,23 @@ async function searchPeopleSingle(
     }
   }
 
-  onProgress?.(`Search complete — ${allItems.length} results${hasPostFilter ? ' after title filter' : ''}`);
-  return { items: allItems.slice(0, limit), totalCount: hasPostFilter ? allItems.length : totalElements };
+  // Per-company cap (client-side post-filter, not an AI Ark filter)
+  const capped = filters.limitPerCompany
+    ? applyLimitPerCompany(allItems, filters.limitPerCompany)
+    : allItems;
+  if (filters.limitPerCompany && capped.length < allItems.length) {
+    onProgress?.(`Per-company cap (${filters.limitPerCompany}): ${allItems.length} → ${capped.length}`);
+  }
+
+  onProgress?.(`Search complete — ${capped.length} results${hasPostFilter ? ' after title filter' : ''}`);
+  // For totalCount: if a post-filter (title or limitPerCompany) is active,
+  // the AI Ark totalElements no longer reflects what we'd actually return —
+  // surface our filtered count instead so previews aren't misleading.
+  const filteringActive = hasPostFilter || !!filters.limitPerCompany;
+  return {
+    items: capped.slice(0, limit),
+    totalCount: filteringActive ? capped.length : totalElements,
+  };
 }
 
 export async function searchCompanies(

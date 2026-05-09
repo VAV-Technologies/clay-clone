@@ -67,7 +67,15 @@ export default function AgentDocsPage() {
             />
             <ConfigRow
               label="Default data source"
-              value="AI Ark (filter shapes: location, employeeSize, seniority, departments, titleKeywords/Mode)"
+              value="AI Ark — REST API at api.ai-ark.com/api/developer-portal/v1 (X-TOKEN header). Full filter schema in the system prompt below."
+            />
+            <ConfigRow
+              label="AI Ark people filters"
+              value="Account: companyDomain, companyName, industries(±), accountLocation, employeeSize, technology, revenue. Contact: fullName, linkedinUrl, contactLocation, seniority, departments, titleKeywords/Mode, skills, certifications, schoolNames, languages. Results: limit, limitPerCompany."
+            />
+            <ConfigRow
+              label="AI Ark company filters"
+              value="domain, name, lookalikeDomains (≤5), industries(±), keywords, location, employeeSize, technology, fundingType, fundingTotalMin/Max, revenueMin/Max, foundedYearMin/Max, limit."
             />
           </div>
         </section>

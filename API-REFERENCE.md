@@ -891,7 +891,9 @@ Same response format as `GET /api/formula/run?jobId=`.
 
 ## 8. Find Email
 
-Three providers, all sharing the same request shape and writing into `emailColumnId` (the address) and `emailStatusColumnId` (a human-readable status). Pick a provider by URL.
+Three providers, all sharing the same request shape. Each writes the resolved email into a single **result column** (an `enrichment`-typed column) — `cell.value` is the address, and the full provider response (status, confidence, source, provider name, etc.) lives in `cell.enrichmentData`. The cell shows status badges; clicking it opens the data viewer the manual UI uses.
+
+If you want a clean plain-text Email column for downstream consumption, create that text column separately and copy `cell.value` from each result-column cell. (`find_emails_waterfall` in the campaign engine does this automatically — see §11.)
 
 | Provider | Endpoint | Mode | Notes |
 |----------|----------|------|-------|
@@ -909,22 +911,21 @@ Three providers, all sharing the same request shape and writing into `emailColum
   "firstNameColumnId": "first-col-id",
   "lastNameColumnId": "last-col-id",
   "domainColumnId": "domain-col-id",
-  "emailColumnId": "email-output-col-id",
-  "emailStatusColumnId": "status-output-col-id"
+  "resultColumnId": "result-enrichment-col-id"
 }
 ```
-`inputMode` is `"full_name"` or `"first_last"`. Provide `fullNameColumnId` for the first, or `firstNameColumnId` + `lastNameColumnId` for the second. `domainColumnId` is required either way.
+`inputMode` is `"full_name"` or `"first_last"`. Provide `fullNameColumnId` for the first, or `firstNameColumnId` + `lastNameColumnId` for the second. `domainColumnId` is required either way. `resultColumnId` must be an `enrichment`-typed column — create one via `POST /api/columns` with `{ "tableId": "...", "name": "Email (AI)", "type": "enrichment", "actionKind": "find_email_<provider>", "actionConfig": { /* the input column ids */ } }` first.
 
 ### Common response shape
 ```json
 {
-  "results": [{"rowId": "...", "success": true, "email": "...", "status": "found"}],
+  "results": [{"rowId": "...", "success": true, "email": "...", "status": "found", "enrichmentData": {"...": "..."}}],
   "processedCount": 2,
   "foundCount": 1,
   "errorCount": 0
 }
 ```
-Status strings: `found`, `not_found`, `catch_all` (Ninjer), `skipped` (missing inputs), `error`. AI Ark adds `submitted` and `VALID`/`INVALID`/`CATCH_ALL` as the final cell value (see below).
+Status strings: `found`, `not_found`, `catch_all` (Ninjer), `skipped` (missing inputs), `error`. AI Ark adds `submitted` (cell stays in `processing` status) and writes the final `VALID`/`INVALID`/`CATCH_ALL` into `enrichmentData.status` once its webhook fires (see below).
 
 ---
 
@@ -984,10 +985,11 @@ The `trackId` expires within minutes of the search, so search and email-finder m
 #### The webhook callback (AI Ark calls this; you don't)
 
 ```
-POST /api/find-email/ai-ark/webhook?tableId=...&rowId=...&emailColId=...&statusColId=...&token=...
+POST /api/find-email/ai-ark/webhook?tableId=...&rowId=...&resultColId=...&token=...
 ```
 
-- The query string carries the cell coordinates plus an HMAC token computed as `HMAC-SHA256(tableId:rowId:emailColId:statusColId, CRON_SECRET)`. The handler verifies the token before writing — anyone can hit the URL but only AI Ark (or whoever holds `CRON_SECRET`) can land an email in a cell.
+- The query string carries the cell coordinates plus an HMAC token computed as `HMAC-SHA256(tableId:rowId:resultColId, CRON_SECRET)`. The handler verifies the token before writing — anyone can hit the URL but only AI Ark (or whoever holds `CRON_SECRET`) can land an email in a cell.
+- For backward-compatibility with in-flight submissions made before the result-column refactor, the webhook also accepts the legacy `emailColId` + `statusColId` query params with their 4-part HMAC payload (`tableId:rowId:emailColId:statusColId`). New submissions all use the 3-part shape above.
 - The path is exempt from the bearer-auth middleware (AI Ark doesn't have your `DATAFLOW_API_KEY`); HMAC verification replaces it.
 - Always returns `200 {"ok": true}` even on parse errors so AI Ark doesn't retry forever. Failures are logged as `[ai-ark webhook] ...`.
 - `GET` returns a small JSON health probe.
@@ -1020,7 +1022,9 @@ POST /api/find-email/ai-ark/webhook?tableId=...&rowId=...&emailColId=...&statusC
 }
 ```
 
-The handler walks `data[].output[]` and writes the first `address` into `emailColumnId`. The corresponding `status` (`VALID`, `INVALID`, `CATCH_ALL`, etc.) is written to `emailStatusColumnId`. If no address is present, the cell is set to empty with status `not_found (<state>)`.
+The handler walks `data[].output[]` and writes the first `address` into the result column's `cell.value` and `cell.enrichmentData.email`. The corresponding `status` (`VALID`, `INVALID`, `CATCH_ALL`, etc.) lands in `cell.enrichmentData.status`, with `cell.enrichmentData.provider = "ai_ark"`. The cell's `status` flips from `processing` to `complete` (a real address was returned) or stays empty with `enrichmentData.status = "not_found"` if none was. Any prior `enrichmentData.track_id` / `person_id` set at submission time are preserved.
+
+The `Email (AI)` cell is the result column the user clicks to inspect. Downstream campaign steps (and `materialize_send_ready`) read the *clean* `Email` text column — `find_emails_waterfall` copies `cell.value` from the result column into that text column after each pass. See §11 (`find_emails_waterfall`) for the full result-column + clean-text-column pattern.
 
 #### End-to-end timing
 

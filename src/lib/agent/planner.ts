@@ -250,13 +250,24 @@ Step "params" follow the campaign-executor's expected shape:
 
 - create_workbook: { name }
 - search_companies (AI Ark): { filters: {
-    location: string[],            // ["Brunei", "Singapore", "Jakarta"] - country/region/city
-    industries: string[],
-    industriesExclude?: string[],
-    employeeSize: [{ start: number, end: number }],
+    // Identity / lookalike
+    domain?: string[],             // ["stripe.com"] — exact-match against owned domain
+    name?: string[],               // SMART-mode name match
+    lookalikeDomains?: string[],   // up to 5 — find companies similar to these
+    // Industry / keywords
+    industries?: string[],         // SMART
+    industriesExclude?: string[],  // WORD
     keywords?: string[],           // free-text description match
-    technology?: string[],
+    // Location / size
+    location: string[],            // ["Brunei", "Singapore", "Jakarta"] — country/region/city
+    employeeSize: [{ start: number, end: number }],
+    // Technology / financial / founded
+    technology?: string[],         // SMART — tech stack signals
+    fundingType?: string[],        // ["Seed","Series A","Series B",...]
+    fundingTotalMin?: number, fundingTotalMax?: number,
+    revenueMin?: number, revenueMax?: number,  // USD; sparse data — use sparingly
     foundedYearMin?: number, foundedYearMax?: number,
+    // Results
     limit: number
   } }
 - search_companies (Clay, only if source==="clay"): { filters: {
@@ -265,15 +276,30 @@ Step "params" follow the campaign-executor's expected shape:
 - search_people (AI Ark): {
     domainsFrom?: "sheet:Sheet:Column",  // domains pulled into companyDomain filter
     filters: {
-      contactLocation?: string[],
-      seniority: string[],
-      departments?: string[],
+      // Account-level (company context) — narrow before contact-level
+      companyDomain?: string[],          // explicit list (executor also fills from domainsFrom)
+      companyName?: string[],            // SMART
+      industries?: string[],             // SMART
+      industriesExclude?: string[],      // WORD
+      accountLocation?: string[],        // company's country/region/city
+      employeeSize?: [{ start, end }],
+      technology?: string[],             // SMART — company's tech stack
+      revenue?: [{ start, end }],        // company revenue band — sparse, use sparingly
+      // Contact-level (person)
+      fullName?: string,                 // SMART, single name (used by find_emails_waterfall)
+      linkedinUrl?: string,
+      contactLocation?: string[],        // person's country/region/city
+      seniority?: string[],              // ["c_level","vp","director","head","senior","manager","lead","owner","founder","entry"]
+      departments?: string[],            // ["Sales","Marketing","Engineering",...]
       titleKeywords?: string[],
       titleMode?: "SMART" | "WORD" | "EXACT",
-      employeeSize?: [{ start, end }],
-      industries?: string[],
+      skills?: string[],                 // SMART
+      certifications?: string[],         // SMART
+      schoolNames?: string[],
+      languages?: string[],              // SMART
+      // Results
       limit: number,
-      limitPerCompany?: number
+      limitPerCompany?: number           // client-side post-filter cap of unique people per company_domain
     }
   }
 - search_people (Clay, only if source==="clay"): {
