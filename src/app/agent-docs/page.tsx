@@ -26,7 +26,10 @@ export default function AgentDocsPage() {
   const defaultRatio = COUNTRY_REVENUE_PER_EMPLOYEE_USD.__default__;
 
   return (
-    <div className="min-h-screen relative">
+    // globals.css locks html/body to overflow:hidden so the workbook view can
+    // manage its own scroll regions. This page is a long static doc — make it
+    // its own scroll container, same pattern as /api-docs.
+    <div className="fixed inset-0 overflow-y-auto bg-midnight">
       {/* Header */}
       <header className="relative z-10 border-b border-white/10 bg-midnight/50 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center gap-3">
