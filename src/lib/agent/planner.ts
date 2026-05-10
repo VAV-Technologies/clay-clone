@@ -150,6 +150,13 @@ ${REVENUE_TABLE_SUMMARY}
   3. filter_rows: remove rows where Domain is STILL is_empty.
   Domain is essential. Do NOT proceed past this stage with rows that have
   no domain.
+- The find_domains backfill is restricted to the company's owned, direct
+  website. It explicitly REJECTS LinkedIn, Facebook, Twitter/X, Instagram,
+  TikTok, YouTube, Medium, Substack, blog hosts, Crunchbase, ZoomInfo,
+  Glassdoor, Apollo, Wikipedia, GitHub, app-store URLs, and any other
+  third-party / directory / aggregator pages. Surface this in the
+  stage's \`notes\` so the user knows the bar is "real company website
+  or nothing".
 
 ## People search (AI Ark)
 - ALWAYS include \`seniority\`. Without it you get interns to CEOs.
@@ -163,7 +170,13 @@ ${REVENUE_TABLE_SUMMARY}
   variants. "CMO" -> ["CMO", "Chief Marketing Officer", "VP Marketing",
   "Head of Marketing", "Marketing Director"]. Set
   \`titleMode: "SMART"\` (also valid: "WORD", "EXACT").
-- Use \`limitPerCompany\` (default 3) so one giant company doesn't dominate.
+- DO NOT set \`limitPerCompany\` by default — the goal is to cover as many
+  qualified people per company as possible. Leave it unset unless the user
+  asks for a per-company cap. If the filter combination looks likely to be
+  dominated by a small number of huge companies (e.g. enterprise tech with
+  no industry constraint, or a single \`companyDomain\`), ASK the user
+  how many people per company they want via \`clarifyingQuestions\` BEFORE
+  drafting the plan — don't silently impose a cap.
 - To scope to a previously-built company list, set
   \`domainsFrom: "sheet:Companies:Domain"\` on the step (NOT inside
   filters). The executor reads that and feeds the domains into AI
