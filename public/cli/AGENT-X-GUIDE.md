@@ -1440,6 +1440,148 @@ Completely deletes a table and ALL associated data (columns, rows, enrichment jo
 
 ---
 
+## 16. Campaigns
+
+Campaigns are the multi-step execution unit launched by the planner (`POST /api/agent/conversations/{id}/launch`). One campaign = ordered `CampaignStep[]`, advanced one step per cron tick by `/api/cron/process-campaigns`.
+
+### Get Campaign Status
+```
+GET /api/campaigns/{id}
+```
+Returns:
+```json
+{
+  "id": "camp_...",
+  "name": "Vietnam Mid-Market CFOs",
+  "status": "pending | running | complete | error | cancelled",
+  "workbookId": "wb_...",
+  "currentStepIndex": 3,
+  "steps": [
+    {
+      "type": "search_companies",
+      "status": "complete | running | error | pending | skipped",
+      "result": { "totalCount": 216, "...": "..." },
+      "error": null,
+      "startedAt": "...",
+      "completedAt": "..."
+    }
+  ],
+  "createdAt": "...",
+  "completedAt": null
+}
+```
+
+### Retry an Errored Campaign
+```
+POST /api/campaigns/{id}
+{ "action": "retry" }
+```
+Resets every errored / skipped step (and any stuck `running` step) back to `pending`, flips campaign status to `running`. The cron picks it up on the next tick. Only valid when the campaign's current `status === "error"` — otherwise returns 400.
+
+Response: `{ success: true, message: "Resuming from step N", resetSteps: <count> }`.
+
+CLI shortcut: `agent-x retry <conv_id>` resolves the campaign id off the conversation, then calls this endpoint.
+
+### Cancel a Campaign
+```
+DELETE /api/campaigns/{id}
+```
+Sets status to `cancelled`; cron stops advancing it. The workbook + any rows produced so far are preserved. Returns 400 if the campaign is already `complete` or `cancelled`.
+
+---
+
+## 17. Planner / Agent X conversations
+
+Conversational front-end to the campaign engine. The chat at `/agent/[id]` and the CLI's `agent-x new / turn / preview / launch` both drive these endpoints. The planner produces a JSON `CampaignPlan`; once approved + previewed, `launch` converts it into a Campaign (§16).
+
+### List Conversations
+```
+GET /api/agent/conversations
+```
+Returns up to 200 recent conversations ordered by `updatedAt desc`:
+```json
+{ "conversations": [{ "id": "conv_...", "title": "...", "status": "...", "campaignId": "camp_..."|null, "createdAt": "...", "updatedAt": "..." }] }
+```
+
+### Create a Conversation (first turn)
+```
+POST /api/agent/conversations
+{
+  "prompt": "find 50 CFOs in Vietnam",
+  "model": "gpt-5-mini"   // optional — any Azure model id; default gpt-5-mini
+}
+```
+Persists the user message, runs one planner turn against gpt-5-mini, persists the assistant reply. Returns:
+```json
+{
+  "conversationId": "conv_...",
+  "title": "find 50 CFOs in Vietnam",
+  "status": "planning | awaiting_approval",
+  "nextAction": "await_user_reply | awaiting_approval | awaiting_count_confirm | launched",
+  "planJson": { /* CampaignPlan or null */ },
+  "clarifyingQuestions": ["..."],
+  "messages": [{ "id", "role", "content", "planJson", "createdAt" }]
+}
+```
+
+### Get a Conversation
+```
+GET /api/agent/conversations/{id}
+```
+Full conversation + every message + linked campaign snapshot (if launched). Same shape as `messages` from the create response, plus `campaign: {...}` if applicable.
+
+### Append a Turn
+```
+POST /api/agent/conversations/{id}/turn
+{
+  "message": "approve",
+  "model": "gpt-5-mini"   // optional override for this turn only
+}
+```
+**Approval short-circuit:** if `message` is a pure approval phrase (`approve`, `go`, `looks good`, `lgtm`, `yes`, `run it`, `ship it`, `ok`, `sounds good`, `do it`, `confirm`, `proceed` …) and the conversation has a `planJson` in status `planning | awaiting_approval | previewing`, the server skips the LLM call entirely, flips `status` to `awaiting_approval`, and returns the existing `planJson` unchanged. Anything containing `but / change / add / only / instead / ?` etc. routes through the planner for a fresh draft.
+
+### Preview the Search
+```
+POST /api/agent/conversations/{id}/preview
+```
+Runs `/api/add-aiarc-data/preview` (or `/api/add-data/preview` for Clay plans) using the first search step's filters. Persists `status = previewing`. Returns:
+```json
+{
+  "conversationId": "conv_...",
+  "status": "previewing",
+  "searchType": "companies | people",
+  "estimatedTotal": 216,
+  "preview": [/* sample rows */],
+  "previewCount": 3,
+  "source": "ai-ark | clay"
+}
+```
+
+### Launch the Plan
+```
+POST /api/agent/conversations/{id}/launch
+{ "confirmedLimit": 50 }   // optional — clamps the first search step's limit
+```
+Validates the stored plan, flattens it to `CampaignStep[]`, stamps `source` onto every search step, POSTs to `/api/campaigns`, links the resulting `campaignId` back to the conversation. Returns:
+```json
+{
+  "conversationId": "conv_...",
+  "campaignId": "camp_...",
+  "status": "running",
+  "workbookId": "wb_...",
+  "totalSteps": 15,
+  "message": "Campaign launched. The cron processor will advance it step by step."
+}
+```
+
+### Delete a Conversation
+```
+DELETE /api/agent/conversations/{id}
+```
+Cascades message deletes; if a campaign is still running, marks it `cancelled` first (no rows deleted). Returns `{ success: true, cancelledCampaign: boolean }`.
+
+---
+
 ## Data Types
 
 ### Column Types

@@ -175,39 +175,96 @@ async function cmdTurn(positional, flags) {
   printChatResponse(data);
 }
 
-async function cmdGet(positional) {
-  const [convId] = positional;
-  if (!convId) throw new Error('usage: agent-x get <id>');
-  const data = await request('GET', `/api/agent/conversations/${encodeURIComponent(convId)}`);
+function renderConversationSnapshot(data) {
   const conv = data.conversation;
-  console.log(`conversation: ${conv.id}`);
-  console.log(`title:        ${conv.title}`);
-  console.log(`status:       ${conv.status}`);
-  console.log(`campaignId:   ${conv.campaignId ?? '(none)'}`);
+  const lines = [];
+  lines.push(`conversation: ${conv.id}`);
+  lines.push(`title:        ${conv.title}`);
+  lines.push(`status:       ${conv.status}`);
+  lines.push(`campaignId:   ${conv.campaignId ?? '(none)'}`);
   const lastAssistant = Array.isArray(data.messages)
     ? data.messages.filter(m => m.role === 'assistant').slice(-1)[0]
     : null;
   if (lastAssistant) {
-    console.log('\nlast assistant message:');
-    console.log(lastAssistant.content);
+    lines.push('');
+    lines.push('last assistant message:');
+    lines.push(lastAssistant.content);
   }
   if (conv.planJson) {
-    console.log('\nplan:');
-    console.log(summarizePlan(conv.planJson));
+    lines.push('');
+    lines.push('plan:');
+    lines.push(summarizePlan(conv.planJson));
   }
   if (data.campaign) {
     const c = data.campaign;
-    console.log('\ncampaign:');
-    console.log(`  id:       ${c.id}`);
-    console.log(`  status:   ${c.status}`);
-    console.log(`  workbook: ${c.workbookId ?? '(none)'}`);
-    console.log(`  progress: step ${c.progress?.currentStep ?? '?'} / ${c.progress?.totalSteps ?? '?'}  (${c.progress?.completedSteps ?? 0} complete)`);
+    lines.push('');
+    lines.push('campaign:');
+    lines.push(`  id:       ${c.id}`);
+    lines.push(`  status:   ${c.status}`);
+    lines.push(`  workbook: ${c.workbookId ?? '(none)'}`);
+    lines.push(`  progress: step ${c.progress?.currentStep ?? '?'} / ${c.progress?.totalSteps ?? '?'}  (${c.progress?.completedSteps ?? 0} complete)`);
     if (Array.isArray(c.steps)) {
       for (const s of c.steps) {
         const tag = s.status === 'complete' ? 'OK' : s.status === 'error' ? 'ERR' : s.status === 'running' ? '..' : '  ';
-        console.log(`    [${tag}] ${s.step}. ${s.type}${s.error ? '  err=' + String(s.error).slice(0, 120) : ''}`);
+        lines.push(`    [${tag}] ${s.step}. ${s.type}${s.error ? '  err=' + String(s.error).slice(0, 120) : ''}`);
       }
     }
+  }
+  return lines.join('\n');
+}
+
+function snapshotFingerprint(data) {
+  const conv = data.conversation;
+  const camp = data.campaign;
+  const parts = [conv?.status, camp?.status, camp?.progress?.completedSteps];
+  if (Array.isArray(camp?.steps)) {
+    for (const s of camp.steps) parts.push(s.status);
+  }
+  return parts.join('|');
+}
+
+async function cmdGet(positional, flags) {
+  const [convId] = positional;
+  if (!convId) throw new Error('usage: agent-x get <id> [--watch]');
+  const fetchOnce = () => request('GET', `/api/agent/conversations/${encodeURIComponent(convId)}`);
+
+  if (!flags.watch) {
+    const data = await fetchOnce();
+    console.log(renderConversationSnapshot(data));
+    return;
+  }
+
+  // --watch: poll every 5s, reprint only when fingerprint changes, exit on
+  // terminal state (campaign done/cancelled/error, or conversation
+  // complete/cancelled with no campaign).
+  let lastFp = null;
+  const isTty = process.stdout.isTTY;
+  while (true) {
+    let data;
+    try {
+      data = await fetchOnce();
+    } catch (err) {
+      process.stderr.write(`\n[watch] fetch failed: ${err instanceof Error ? err.message : err}\n`);
+      await new Promise(r => setTimeout(r, 5000));
+      continue;
+    }
+    const fp = snapshotFingerprint(data);
+    if (fp !== lastFp) {
+      if (isTty) process.stdout.write('\x1b[2J\x1b[H');
+      console.log(renderConversationSnapshot(data));
+      console.log(`\n[watch] polling every 5s — Ctrl-C to exit`);
+      lastFp = fp;
+    }
+    const campStatus = data.campaign?.status;
+    const convStatus = data.conversation?.status;
+    if (
+      (campStatus && ['complete', 'cancelled', 'error'].includes(campStatus)) ||
+      (!data.campaign && ['complete', 'cancelled'].includes(convStatus))
+    ) {
+      console.log(`\n[watch] terminal state reached (${campStatus ?? convStatus}) — exiting`);
+      return;
+    }
+    await new Promise(r => setTimeout(r, 5000));
   }
 }
 
@@ -260,6 +317,25 @@ async function cmdDelete(positional) {
   console.log(`deleted: ${convId}  cancelledCampaign=${!!data.cancelledCampaign}`);
 }
 
+async function cmdRetry(positional) {
+  const [id] = positional;
+  if (!id) throw new Error('usage: agent-x retry <conv_id | camp_id>');
+  // Accept either a conversation id or a campaign id. Conversation ids begin
+  // with `conv_`; everything else is treated as a campaign id directly.
+  let campaignId = id;
+  if (id.startsWith('conv_')) {
+    const data = await request('GET', `/api/agent/conversations/${encodeURIComponent(id)}`);
+    if (!data.conversation?.campaignId) {
+      throw new Error(`conversation ${id} has no linked campaign — nothing to retry`);
+    }
+    campaignId = data.conversation.campaignId;
+  }
+  const res = await request('POST', `/api/campaigns/${encodeURIComponent(campaignId)}`, { action: 'retry' });
+  console.log(`retried: ${campaignId}`);
+  if (res.message) console.log(`message: ${res.message}`);
+  if (res.resetSteps !== undefined) console.log(`reset:   ${res.resetSteps} step${res.resetSteps === 1 ? '' : 's'}`);
+}
+
 function cmdSetKey(positional) {
   const [token] = positional;
   if (!token) throw new Error('usage: agent-x set-key <token>');
@@ -278,7 +354,7 @@ function cmdSetBaseUrl(positional) {
 // --data-file, --query can appear in any order. --query is repeatable.
 function parseApiArgs(rest) {
   let method, path;
-  let data, dataFile;
+  let data, dataFile, output;
   const queries = [];
   let i = 0;
   while (i < rest.length) {
@@ -296,6 +372,10 @@ function parseApiArgs(rest) {
       if (q === undefined) throw new Error('--query requires a k=v value');
       queries.push(q);
       i += 2;
+    } else if (a === '--output' || a === '-o') {
+      output = rest[i + 1];
+      if (output === undefined) throw new Error('--output requires a path');
+      i += 2;
     } else if (a.startsWith('--')) {
       throw new Error(`unknown flag for api: ${a}`);
     } else if (!method) {
@@ -306,13 +386,13 @@ function parseApiArgs(rest) {
       throw new Error(`unexpected positional argument: ${a}`);
     }
   }
-  return { method, path, data, dataFile, queries };
+  return { method, path, data, dataFile, queries, output };
 }
 
 async function cmdApi(rest) {
-  const { method, path, data, dataFile, queries } = parseApiArgs(rest);
+  const { method, path, data, dataFile, queries, output } = parseApiArgs(rest);
   if (!method || !path) {
-    throw new Error('usage: agent-x api <METHOD> <path> [--data <json>] [--data-file <path>] [--query k=v ...]');
+    throw new Error('usage: agent-x api <METHOD> <path> [--data <json>] [--data-file <path>] [--query k=v ...] [--output <path>]');
   }
   const m = method.toUpperCase();
   const allowed = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']);
@@ -360,6 +440,17 @@ async function cmdApi(rest) {
 
   const res = await fetch(`${BASE_URL}${pathOnly}`, { method: m, headers: headers(), body });
   const text = await res.text();
+
+  if (output) {
+    writeFileSync(output, text);
+    process.stderr.write(`wrote ${text.length} bytes to ${output}\n`);
+    if (!res.ok) {
+      process.stderr.write(`${m} ${pathOnly} -> ${res.status}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   let out = text;
   try { out = JSON.stringify(JSON.parse(text), null, 2); } catch { /* keep raw */ }
   process.stdout.write(out);
@@ -373,7 +464,7 @@ async function cmdApi(rest) {
 async function cmdView(positional, flags) {
   const [tableId] = positional;
   if (!tableId) {
-    throw new Error('usage: agent-x view <tableId> [--limit N] [--cols a,b,c] [--filter <json>] [--wide] [--json]');
+    throw new Error('usage: agent-x view <tableId> [--limit N] [--cols a,b,c] [--filter <json>] [--wide] [--json] [--meta] [--inspect <columnName>]');
   }
 
   // Fetch the column schema for this sheet.
@@ -390,6 +481,39 @@ async function cmdView(positional, flags) {
     console.log(`(no columns on table ${tableId})`);
     return;
   }
+
+  // --inspect: short-circuit grid render, show per-cell status + error
+  // samples for one column via /api/columns/{id}/progress. Useful when an
+  // AI column has empty cells and you need to know why.
+  if (flags.inspect) {
+    const wanted = flags.inspect.toLowerCase();
+    const target = cols.find(c => c.name.toLowerCase().includes(wanted));
+    if (!target) throw new Error(`no column matched --inspect=${flags.inspect}`);
+    const progRes = await fetch(
+      `${BASE_URL}/api/columns/${encodeURIComponent(target.id)}/progress`,
+      { headers: headers() }
+    );
+    if (!progRes.ok) {
+      const text = await progRes.text();
+      throw new Error(`GET /api/columns/${target.id}/progress -> ${progRes.status}: ${text.slice(0, 300)}`);
+    }
+    const prog = await progRes.json();
+    console.log(`column: ${prog.columnName} (${prog.columnType})  id=${prog.columnId}`);
+    console.log(`table:  ${prog.tableId}`);
+    console.log(`rows:   ${prog.totalRows}`);
+    console.log('\nstatuses:');
+    for (const [k, v] of Object.entries(prog.cellStatuses || {})) {
+      if (v > 0) console.log(`  ${k.padEnd(18)} ${v}`);
+    }
+    if (prog.errors?.count > 0 && Array.isArray(prog.errors.samples) && prog.errors.samples.length) {
+      console.log(`\nfirst ${Math.min(3, prog.errors.samples.length)} error sample${prog.errors.samples.length === 1 ? '' : 's'}:`);
+      for (const e of prog.errors.samples.slice(0, 3)) {
+        console.log(`  row ${e.rowId}: ${String(e.error ?? '').slice(0, 200)}`);
+      }
+    }
+    return;
+  }
+
   let displayCols = cols.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   if (flags.cols) {
     const wanted = flags.cols.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
@@ -424,7 +548,9 @@ async function cmdView(positional, flags) {
     const out = rows.map(r => {
       const o = { _id: r.id };
       for (const c of displayCols) {
-        o[c.name] = r.data?.[c.id]?.value ?? null;
+        const cell = r.data?.[c.id];
+        // --meta: include the full cell object (value, status, enrichmentData, metadata).
+        o[c.name] = flags.meta ? (cell ?? null) : (cell?.value ?? null);
       }
       return o;
     });
@@ -441,7 +567,14 @@ async function cmdView(positional, flags) {
   };
 
   const head = displayCols.map(c => c.name);
-  const body = rows.map(r => displayCols.map(c => trunc(r.data?.[c.id]?.value)));
+  const body = rows.map(r => displayCols.map(c => {
+    const cell = r.data?.[c.id];
+    const value = trunc(cell?.value);
+    if (flags.meta && cell?.status && cell.status !== 'complete') {
+      return `${value} [${cell.status}]`.slice(0, MAX_W);
+    }
+    return value;
+  }));
   const widths = head.map((h, i) =>
     Math.max(h.length, ...body.map(row => row[i].length), 1)
   );
@@ -472,20 +605,25 @@ function usage() {
 Commands:
   new   "<prompt>"        [--model <id>]   start a new conversation
   turn  <id> "<message>"  [--model <id>]   append a follow-up turn
-  get   <id>                               show conversation + campaign status
+  get   <id>              [--watch]        show conversation + campaign status
+                                             --watch: poll every 5s, exit on terminal state
   preview <id>                             run search-count preview
   launch  <id>            [--limit <n>]    launch the approved plan as a campaign
   list                                     list recent conversations
   delete <id>                              delete a conversation
+  retry  <conv_id|camp_id>                 resume an errored campaign from where it failed
   set-key <token>                          save DATAFLOW_API_KEY to ~/.config/agent-x/env
   set-base-url <url>                       save DATAFLOW_BASE_URL to ~/.config/agent-x/env
   api <METHOD> <path> [opts]               passthrough to any /api/* endpoint
                                              opts: --data <json>, --data-file <path>,
-                                                   --query k=v (repeatable)
+                                                   --query k=v (repeatable),
+                                                   --output <path> (write body to file)
   view <tableId> [opts]                    pretty-print rows from a sheet
                                              opts: --limit N (default 20),
                                                    --cols a,b,c (substring match),
-                                                   --filter <json>, --wide, --json
+                                                   --filter <json>, --wide, --json,
+                                                   --meta (show cell status when not "complete"),
+                                                   --inspect <columnName> (per-column status + errors)
   docs [--api] [--url]                     fetch and print AGENT-X-GUIDE.md
                                              --api: only the endpoint reference
                                              --url: just print the URL
@@ -513,11 +651,12 @@ async function main() {
   switch (cmd) {
     case 'new':          return cmdNew(positional, flags);
     case 'turn':         return cmdTurn(positional, flags);
-    case 'get':          return cmdGet(positional);
+    case 'get':          return cmdGet(positional, flags);
     case 'preview':      return cmdPreview(positional);
     case 'launch':       return cmdLaunch(positional, flags);
     case 'list':         return cmdList();
     case 'delete':       return cmdDelete(positional);
+    case 'retry':        return cmdRetry(positional);
     case 'set-key':      return cmdSetKey(positional);
     case 'set-base-url': return cmdSetBaseUrl(positional);
     case 'docs':         return cmdDocs(flags);
