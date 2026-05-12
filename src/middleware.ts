@@ -18,7 +18,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith('/api/nuke-table') ||
     pathname.startsWith('/api/find-email/ai-ark/webhook') ||
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon')
+    pathname.startsWith('/favicon') ||
+    pathname.startsWith('/cli/')
   ) {
     return NextResponse.next();
   }
