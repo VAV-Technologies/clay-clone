@@ -1,31 +1,37 @@
-#!/usr/bin/env tsx
-// scripts/agent-x.ts — terminal client for the DataFlow GTM Campaign Builder ("Agent X").
+#!/usr/bin/env node
+// agent-x — terminal client for DataFlow Agent X (GTM Campaign Builder).
 //
 // Drives the same /api/agent/conversations endpoints the web UI uses, so the
 // full chat -> approve -> preview -> launch flow is available from the
-// terminal. Pass --model claude-sonnet-4-6 (or any other claude-* model) to
-// route the planner's LLM call through Anthropic instead of the default
-// Azure gpt-5-mini.
+// terminal (including from inside Claude Code via its Bash tool).
+//
+// Install: curl -fsSL https://dataflow-pi.vercel.app/cli/install.sh | bash
+//          (PowerShell)  irm https://dataflow-pi.vercel.app/cli/install.ps1 | iex
 //
 // Usage:
-//   npx tsx scripts/agent-x.ts new   "<prompt>"       [--model <id>]
-//   npx tsx scripts/agent-x.ts turn  <id> "<message>" [--model <id>]
-//   npx tsx scripts/agent-x.ts get   <id>
-//   npx tsx scripts/agent-x.ts preview <id>
-//   npx tsx scripts/agent-x.ts launch  <id>           [--limit <n>]
-//   npx tsx scripts/agent-x.ts list
-//   npx tsx scripts/agent-x.ts delete <id>
+//   agent-x new   "<prompt>"        [--model <id>]
+//   agent-x turn  <id> "<message>"  [--model <id>]
+//   agent-x get   <id>
+//   agent-x preview <id>
+//   agent-x launch  <id>            [--limit <n>]
+//   agent-x list
+//   agent-x delete <id>
+//   agent-x set-key <token>
+//   agent-x set-base-url <url>
 //
-// Env:
-//   DATAFLOW_BASE_URL  default https://dataflow-pi.vercel.app
-//   DATAFLOW_API_KEY   bearer token for /api/* (already in .env.local)
+// Config precedence: process env > ~/.config/agent-x/env > defaults.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 
-function loadEnvLocal() {
+const CONFIG_DIR = join(homedir(), '.config', 'agent-x');
+const CONFIG_FILE = join(CONFIG_DIR, 'env');
+
+function loadConfigFile() {
+  if (!existsSync(CONFIG_FILE)) return;
   try {
-    const text = readFileSync(join(process.cwd(), '.env.local'), 'utf8');
+    const text = readFileSync(CONFIG_FILE, 'utf8');
     for (const raw of text.split('\n')) {
       const line = raw.trim();
       if (!line || line.startsWith('#')) continue;
@@ -39,43 +45,39 @@ function loadEnvLocal() {
       if (!(key in process.env)) process.env[key] = value;
     }
   } catch {
-    /* no .env.local — fine */
+    /* ignore */
   }
 }
-loadEnvLocal();
+loadConfigFile();
 
 const BASE_URL = process.env.DATAFLOW_BASE_URL || 'https://dataflow-pi.vercel.app';
 const API_KEY = process.env.DATAFLOW_API_KEY || '';
 
-function headers(): Record<string, string> {
-  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+function headers() {
+  const h = { 'Content-Type': 'application/json' };
   if (API_KEY) h.Authorization = `Bearer ${API_KEY}`;
   return h;
 }
 
-async function request(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<any> {
+async function request(method, path, body) {
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     headers: headers(),
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
-  let data: any = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = { raw: text };
-  }
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
   if (!res.ok) {
-    const msg = data?.error || text.slice(0, 400) || res.statusText;
+    const msg = (data && data.error) || text.slice(0, 400) || res.statusText;
     throw new Error(`${method} ${path} -> ${res.status}: ${msg}`);
   }
   return data;
 }
 
-function parseFlags(args: string[]): { positional: string[]; flags: Record<string, string> } {
-  const positional: string[] = [];
-  const flags: Record<string, string> = {};
+function parseFlags(args) {
+  const positional = [];
+  const flags = {};
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a.startsWith('--')) {
@@ -94,13 +96,13 @@ function parseFlags(args: string[]): { positional: string[]; flags: Record<strin
   return { positional, flags };
 }
 
-function summarizePlan(plan: any): string {
+function summarizePlan(plan) {
   if (!plan || typeof plan !== 'object') return '';
-  const lines: string[] = [];
+  const lines = [];
   lines.push(`  plan: ${plan.name ?? '(unnamed)'}  source=${plan.source ?? '?'}`);
   if (plan.rationale) lines.push(`  rationale: ${String(plan.rationale).slice(0, 200)}`);
   if (Array.isArray(plan.stages)) {
-    plan.stages.forEach((stage: any, i: number) => {
+    plan.stages.forEach((stage, i) => {
       const stepCount = Array.isArray(stage?.steps) ? stage.steps.length : 0;
       lines.push(`  stage ${i + 1}: ${stage?.title ?? '(no title)'}  (${stepCount} step${stepCount === 1 ? '' : 's'})`);
       if (Array.isArray(stage?.steps)) {
@@ -113,13 +115,13 @@ function summarizePlan(plan: any): string {
   return lines.join('\n');
 }
 
-function printChatResponse(data: any) {
+function printChatResponse(data) {
   console.log(`conversation: ${data.conversationId}`);
   if (data.title) console.log(`title:        ${data.title}`);
   console.log(`status:       ${data.status}`);
   console.log(`nextAction:   ${data.nextAction}`);
   const assistant = Array.isArray(data.messages)
-    ? data.messages.filter((m: any) => m.role === 'assistant').slice(-1)[0]
+    ? data.messages.filter(m => m.role === 'assistant').slice(-1)[0]
     : null;
   if (assistant?.content) {
     console.log('\nassistant:');
@@ -135,25 +137,45 @@ function printChatResponse(data: any) {
   }
 }
 
-async function cmdNew(positional: string[], flags: Record<string, string>) {
+function writeConfig(key, value) {
+  mkdirSync(CONFIG_DIR, { recursive: true });
+  const existing = existsSync(CONFIG_FILE) ? readFileSync(CONFIG_FILE, 'utf8').split('\n') : [];
+  const next = [];
+  let replaced = false;
+  for (const raw of existing) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) { next.push(raw); continue; }
+    const eq = line.indexOf('=');
+    if (eq !== -1 && line.slice(0, eq).trim() === key) {
+      next.push(`${key}=${value}`);
+      replaced = true;
+    } else {
+      next.push(raw);
+    }
+  }
+  if (!replaced) next.push(`${key}=${value}`);
+  writeFileSync(CONFIG_FILE, next.filter(Boolean).join('\n') + '\n', { mode: 0o600 });
+}
+
+async function cmdNew(positional, flags) {
   const prompt = positional[0];
   if (!prompt) throw new Error('usage: agent-x new "<prompt>" [--model <id>]');
-  const body: Record<string, unknown> = { prompt };
+  const body = { prompt };
   if (flags.model) body.model = flags.model;
   const data = await request('POST', '/api/agent/conversations', body);
   printChatResponse(data);
 }
 
-async function cmdTurn(positional: string[], flags: Record<string, string>) {
+async function cmdTurn(positional, flags) {
   const [convId, message] = positional;
   if (!convId || !message) throw new Error('usage: agent-x turn <id> "<message>" [--model <id>]');
-  const body: Record<string, unknown> = { message };
+  const body = { message };
   if (flags.model) body.model = flags.model;
   const data = await request('POST', `/api/agent/conversations/${encodeURIComponent(convId)}/turn`, body);
   printChatResponse(data);
 }
 
-async function cmdGet(positional: string[]) {
+async function cmdGet(positional) {
   const [convId] = positional;
   if (!convId) throw new Error('usage: agent-x get <id>');
   const data = await request('GET', `/api/agent/conversations/${encodeURIComponent(convId)}`);
@@ -163,7 +185,7 @@ async function cmdGet(positional: string[]) {
   console.log(`status:       ${conv.status}`);
   console.log(`campaignId:   ${conv.campaignId ?? '(none)'}`);
   const lastAssistant = Array.isArray(data.messages)
-    ? data.messages.filter((m: any) => m.role === 'assistant').slice(-1)[0]
+    ? data.messages.filter(m => m.role === 'assistant').slice(-1)[0]
     : null;
   if (lastAssistant) {
     console.log('\nlast assistant message:');
@@ -189,7 +211,7 @@ async function cmdGet(positional: string[]) {
   }
 }
 
-async function cmdPreview(positional: string[]) {
+async function cmdPreview(positional) {
   const [convId] = positional;
   if (!convId) throw new Error('usage: agent-x preview <id>');
   const data = await request('POST', `/api/agent/conversations/${encodeURIComponent(convId)}/preview`, {});
@@ -205,10 +227,10 @@ async function cmdPreview(positional: string[]) {
   }
 }
 
-async function cmdLaunch(positional: string[], flags: Record<string, string>) {
+async function cmdLaunch(positional, flags) {
   const [convId] = positional;
   if (!convId) throw new Error('usage: agent-x launch <id> [--limit <n>]');
-  const body: Record<string, unknown> = {};
+  const body = {};
   if (flags.limit) {
     const n = Number(flags.limit);
     if (!Number.isFinite(n) || n <= 0) throw new Error('--limit must be a positive number');
@@ -225,20 +247,31 @@ async function cmdLaunch(positional: string[], flags: Record<string, string>) {
 async function cmdList() {
   const data = await request('GET', '/api/agent/conversations');
   const rows = Array.isArray(data.conversations) ? data.conversations : [];
-  if (!rows.length) {
-    console.log('(no conversations)');
-    return;
-  }
+  if (!rows.length) { console.log('(no conversations)'); return; }
   for (const r of rows) {
     console.log(`${r.id}  ${r.status.padEnd(20)}  ${r.updatedAt}  ${r.title}`);
   }
 }
 
-async function cmdDelete(positional: string[]) {
+async function cmdDelete(positional) {
   const [convId] = positional;
   if (!convId) throw new Error('usage: agent-x delete <id>');
   const data = await request('DELETE', `/api/agent/conversations/${encodeURIComponent(convId)}`);
   console.log(`deleted: ${convId}  cancelledCampaign=${!!data.cancelledCampaign}`);
+}
+
+function cmdSetKey(positional) {
+  const [token] = positional;
+  if (!token) throw new Error('usage: agent-x set-key <token>');
+  writeConfig('DATAFLOW_API_KEY', token);
+  console.log(`saved DATAFLOW_API_KEY to ${CONFIG_FILE}`);
+}
+
+function cmdSetBaseUrl(positional) {
+  const [url] = positional;
+  if (!url) throw new Error('usage: agent-x set-base-url <url>');
+  writeConfig('DATAFLOW_BASE_URL', url.replace(/\/$/, ''));
+  console.log(`saved DATAFLOW_BASE_URL to ${CONFIG_FILE}`);
 }
 
 function usage() {
@@ -252,32 +285,28 @@ Commands:
   launch  <id>            [--limit <n>]    launch the approved plan as a campaign
   list                                     list recent conversations
   delete <id>                              delete a conversation
+  set-key <token>                          save DATAFLOW_API_KEY to ~/.config/agent-x/env
+  set-base-url <url>                       save DATAFLOW_BASE_URL to ~/.config/agent-x/env
 
-Env:
+Config (override precedence): env vars > ~/.config/agent-x/env > defaults
   DATAFLOW_BASE_URL  (default: https://dataflow-pi.vercel.app)
-  DATAFLOW_API_KEY   (read from .env.local; required for non-agent endpoints)
-
-Model override (passed to the planner LLM):
-  --model claude-sonnet-4-6      # use Anthropic via ANTHROPIC_API_KEY on the server
-  --model claude-opus-4-7
-  --model gpt-5-mini             # default (Azure)`);
+  DATAFLOW_API_KEY   (bearer token for /api/* endpoints)`);
 }
 
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
-  if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
-    usage();
-    return;
-  }
+  if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') { usage(); return; }
   const { positional, flags } = parseFlags(rest);
   switch (cmd) {
-    case 'new':     return cmdNew(positional, flags);
-    case 'turn':    return cmdTurn(positional, flags);
-    case 'get':     return cmdGet(positional);
-    case 'preview': return cmdPreview(positional);
-    case 'launch':  return cmdLaunch(positional, flags);
-    case 'list':    return cmdList();
-    case 'delete':  return cmdDelete(positional);
+    case 'new':          return cmdNew(positional, flags);
+    case 'turn':         return cmdTurn(positional, flags);
+    case 'get':          return cmdGet(positional);
+    case 'preview':      return cmdPreview(positional);
+    case 'launch':       return cmdLaunch(positional, flags);
+    case 'list':         return cmdList();
+    case 'delete':       return cmdDelete(positional);
+    case 'set-key':      return cmdSetKey(positional);
+    case 'set-base-url': return cmdSetBaseUrl(positional);
     default:
       usage();
       process.exitCode = 1;
