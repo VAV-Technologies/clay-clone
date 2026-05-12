@@ -20,11 +20,13 @@ import {
   ChevronRight,
   ExternalLink,
   Send,
+  Terminal,
   Trash2,
   XCircle,
 } from 'lucide-react';
 import { ToastProvider, useToast } from '@/components/ui';
 import { cn } from '@/lib/utils';
+import { CliAccessModal } from './CliAccessModal';
 
 const AnimatedBackground = dynamic(
   () => import('@/components/ui/AnimatedBackground').then(m => m.AnimatedBackground),
@@ -128,6 +130,7 @@ function AgentChatPage() {
   }>({ loading: false, data: null });
   const [chosenLimit, setChosenLimit] = useState<number | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [cliModalOpen, setCliModalOpen] = useState(false);
 
   const threadRef = useRef<HTMLDivElement>(null);
 
@@ -392,6 +395,18 @@ function AgentChatPage() {
             )}
           </div>
         </div>
+
+        {/* CLI access — bottom of the sidebar */}
+        <div className="px-3 py-3 border-t border-white/10">
+          <button
+            onClick={() => setCliModalOpen(true)}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-white/10 hover:border-white/30 hover:bg-white/[0.03] transition text-sm text-white/70 hover:text-white/90"
+            title="Use Agent X from your terminal"
+          >
+            <Terminal className="w-4 h-4" />
+            Use from terminal
+          </button>
+        </div>
       </aside>
 
       {/* Main pane */}
@@ -519,6 +534,8 @@ function AgentChatPage() {
           </form>
         </div>
       </div>
+
+      <CliAccessModal isOpen={cliModalOpen} onClose={() => setCliModalOpen(false)} />
     </div>
   );
 }
