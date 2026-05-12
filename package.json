@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node -e \"require('fs').copyFileSync('API-REFERENCE.md','public/cli/API-REFERENCE.md')\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

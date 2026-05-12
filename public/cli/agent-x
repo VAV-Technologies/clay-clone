@@ -274,6 +274,112 @@ function cmdSetBaseUrl(positional) {
   console.log(`saved DATAFLOW_BASE_URL to ${CONFIG_FILE}`);
 }
 
+// Parse the api subcommand's argv. METHOD + path are positional; --data,
+// --data-file, --query can appear in any order. --query is repeatable.
+function parseApiArgs(rest) {
+  let method, path;
+  let data, dataFile;
+  const queries = [];
+  let i = 0;
+  while (i < rest.length) {
+    const a = rest[i];
+    if (a === '--data') {
+      data = rest[i + 1];
+      if (data === undefined) throw new Error('--data requires a value');
+      i += 2;
+    } else if (a === '--data-file') {
+      dataFile = rest[i + 1];
+      if (dataFile === undefined) throw new Error('--data-file requires a path');
+      i += 2;
+    } else if (a === '--query') {
+      const q = rest[i + 1];
+      if (q === undefined) throw new Error('--query requires a k=v value');
+      queries.push(q);
+      i += 2;
+    } else if (a.startsWith('--')) {
+      throw new Error(`unknown flag for api: ${a}`);
+    } else if (!method) {
+      method = a; i++;
+    } else if (!path) {
+      path = a; i++;
+    } else {
+      throw new Error(`unexpected positional argument: ${a}`);
+    }
+  }
+  return { method, path, data, dataFile, queries };
+}
+
+async function cmdApi(rest) {
+  const { method, path, data, dataFile, queries } = parseApiArgs(rest);
+  if (!method || !path) {
+    throw new Error('usage: agent-x api <METHOD> <path> [--data <json>] [--data-file <path>] [--query k=v ...]');
+  }
+  const m = method.toUpperCase();
+  const allowed = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']);
+  if (!allowed.has(m)) throw new Error(`unsupported HTTP method: ${method}`);
+
+  // Defensive: Git Bash / MSYS on Windows rewrites leading "/" args as
+  // absolute Windows paths (e.g. "/api/projects" -> "C:/Program Files/
+  // Git/api/projects"). If we see that shape, snap back to the
+  // /api or /cli segment the user intended.
+  let pathOnly = path;
+  if (/^[A-Za-z]:[\\/]/.test(pathOnly) || /Program Files/.test(pathOnly) || pathOnly.includes('\\')) {
+    const m = pathOnly.replace(/\\/g, '/').match(/\/(api|cli)\/.+$/);
+    if (m) pathOnly = m[0];
+  }
+  if (!pathOnly.startsWith('/')) pathOnly = '/' + pathOnly;
+  if (queries.length) {
+    const sep = pathOnly.includes('?') ? '&' : '?';
+    const qs = queries.map(q => {
+      const eq = q.indexOf('=');
+      if (eq === -1) return encodeURIComponent(q) + '=';
+      return encodeURIComponent(q.slice(0, eq)) + '=' + encodeURIComponent(q.slice(eq + 1));
+    }).join('&');
+    pathOnly = pathOnly + sep + qs;
+  }
+
+  if (data !== undefined && dataFile !== undefined) {
+    throw new Error('--data and --data-file are mutually exclusive');
+  }
+  let body;
+  if (data !== undefined) {
+    try { JSON.parse(data); } catch (e) {
+      throw new Error(`--data is not valid JSON: ${e.message}`);
+    }
+    body = data;
+  } else if (dataFile !== undefined) {
+    const raw = readFileSync(dataFile, 'utf8');
+    try { JSON.parse(raw); } catch (e) {
+      throw new Error(`--data-file contents not valid JSON: ${e.message}`);
+    }
+    body = raw;
+  }
+  if (body !== undefined && (m === 'GET' || m === 'HEAD')) {
+    throw new Error(`${m} requests cannot have a body — drop --data/--data-file`);
+  }
+
+  const res = await fetch(`${BASE_URL}${pathOnly}`, { method: m, headers: headers(), body });
+  const text = await res.text();
+  let out = text;
+  try { out = JSON.stringify(JSON.parse(text), null, 2); } catch { /* keep raw */ }
+  process.stdout.write(out);
+  if (!out.endsWith('\n')) process.stdout.write('\n');
+  if (!res.ok) {
+    process.stderr.write(`\n${m} ${pathOnly} -> ${res.status}\n`);
+    process.exitCode = 1;
+  }
+}
+
+async function cmdDocs(flags) {
+  const url = `${BASE_URL}/cli/API-REFERENCE.md`;
+  if (flags.url) { console.log(url); return; }
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`docs fetch failed: GET ${url} -> ${res.status}`);
+  }
+  process.stdout.write(await res.text());
+}
+
 function usage() {
   console.log(`agent-x — terminal client for DataFlow Agent X (GTM Campaign Builder)
 
@@ -287,15 +393,28 @@ Commands:
   delete <id>                              delete a conversation
   set-key <token>                          save DATAFLOW_API_KEY to ~/.config/agent-x/env
   set-base-url <url>                       save DATAFLOW_BASE_URL to ~/.config/agent-x/env
+  api <METHOD> <path> [opts]               passthrough to any /api/* endpoint
+                                             opts: --data <json>, --data-file <path>,
+                                                   --query k=v (repeatable)
+  docs [--url]                             fetch and print API-REFERENCE.md
 
 Config (override precedence): env vars > ~/.config/agent-x/env > defaults
   DATAFLOW_BASE_URL  (default: https://dataflow-pi.vercel.app)
-  DATAFLOW_API_KEY   (bearer token for /api/* endpoints)`);
+  DATAFLOW_API_KEY   (bearer token for /api/* endpoints)
+
+Examples (driving the workbook API directly):
+  agent-x api GET /api/projects
+  agent-x api POST /api/tables --data '{"projectId":"p_...","name":"Companies"}'
+  agent-x api GET /api/rows --query tableId=t_xxx --query 'filterLogic=AND'
+  agent-x docs | less                      # full API spec`);
 }
 
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') { usage(); return; }
+  // `api` has its own arg shape (repeatable --query); handle before the
+  // generic parseFlags which would collapse repeats.
+  if (cmd === 'api') return cmdApi(rest);
   const { positional, flags } = parseFlags(rest);
   switch (cmd) {
     case 'new':          return cmdNew(positional, flags);
@@ -307,6 +426,7 @@ async function main() {
     case 'delete':       return cmdDelete(positional);
     case 'set-key':      return cmdSetKey(positional);
     case 'set-base-url': return cmdSetBaseUrl(positional);
+    case 'docs':         return cmdDocs(flags);
     default:
       usage();
       process.exitCode = 1;
