@@ -52,6 +52,48 @@ export default function AgentDocsPage() {
       </header>
 
       <main className="relative z-10 max-w-4xl mx-auto px-6 py-8 space-y-10">
+        {/* Access points */}
+        <section>
+          <h2 className="text-xs uppercase tracking-wider text-white/40 mb-3">
+            Other ways to use Agent X
+          </h2>
+          <div className="border border-white/10 bg-white/[0.02] p-5 text-sm text-white/70 leading-relaxed space-y-2">
+            <p>
+              You're on the <strong className="text-white/90">web UI</strong> — the chat lives at{' '}
+              <Link href="/agent" className="text-lavender hover:underline">/agent</Link>.
+              Two other access points exist:
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-white/60">
+              <li>
+                <strong className="text-white/80">Terminal / Claude Code:</strong>{' '}
+                install the CLI with{' '}
+                <code className="text-white/85 bg-white/5 px-1.5 py-0.5">curl -fsSL https://dataflow-pi.vercel.app/cli/install.sh | bash</code>{' '}
+                (PowerShell: <code className="text-white/85 bg-white/5 px-1.5 py-0.5">irm .../cli/install.ps1 | iex</code>),
+                then drive everything the UI can — <code className="text-white/85 bg-white/5 px-1.5 py-0.5">agent-x new</code>,{' '}
+                <code className="text-white/85 bg-white/5 px-1.5 py-0.5">turn</code>,{' '}
+                <code className="text-white/85 bg-white/5 px-1.5 py-0.5">preview</code>,{' '}
+                <code className="text-white/85 bg-white/5 px-1.5 py-0.5">launch</code>,{' '}
+                <code className="text-white/85 bg-white/5 px-1.5 py-0.5">view</code>,{' '}
+                <code className="text-white/85 bg-white/5 px-1.5 py-0.5">api</code>. Full guide:{' '}
+                <a
+                  href="/cli/AGENT-X-GUIDE.md"
+                  className="text-lavender hover:underline"
+                >/cli/AGENT-X-GUIDE.md</a>.
+              </li>
+              <li>
+                <strong className="text-white/80">Manual API / scripts:</strong>{' '}
+                hit any endpoint directly with a{' '}
+                <code className="text-white/85 bg-white/5 px-1.5 py-0.5">Bearer DATAFLOW_API_KEY</code>{' '}
+                header. Endpoint reference:{' '}
+                <a
+                  href="/cli/API-REFERENCE.md"
+                  className="text-lavender hover:underline"
+                >/cli/API-REFERENCE.md</a>.
+              </li>
+            </ul>
+          </div>
+        </section>
+
         {/* Runtime config */}
         <section>
           <h2 className="text-xs uppercase tracking-wider text-white/40 mb-3">Runtime</h2>

@@ -3,6 +3,11 @@
 **Base URL:** `https://dataflow-pi.vercel.app`
 **Auth:** `Authorization: Bearer {DATAFLOW_API_KEY}`
 
+> **Three ways to reach this API:**
+> 1. **Chat UI** — natural-language campaign builder at [`/agent`](https://dataflow-pi.vercel.app/agent). See the [planner rules](https://dataflow-pi.vercel.app/agent-docs).
+> 2. **CLI (`agent-x`)** — drive everything from the terminal. Install: `curl -fsSL https://dataflow-pi.vercel.app/cli/install.sh | bash` (or `irm .../cli/install.ps1 | iex` on Windows). Full CLI + API guide: [`/cli/AGENT-X-GUIDE.md`](https://dataflow-pi.vercel.app/cli/AGENT-X-GUIDE.md).
+> 3. **Direct HTTP** — the endpoints below, called with any client that can set a Bearer header. This document.
+
 ---
 
 ## Authentication
