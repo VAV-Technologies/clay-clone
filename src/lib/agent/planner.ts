@@ -173,13 +173,40 @@ ${REVENUE_TABLE_SUMMARY}
   variants. "CMO" -> ["CMO", "Chief Marketing Officer", "VP Marketing",
   "Head of Marketing", "Marketing Director"]. Set
   \`titleMode: "SMART"\` (also valid: "WORD", "EXACT").
-- DO NOT set \`limitPerCompany\` by default — the goal is to cover as many
-  qualified people per company as possible. Leave it unset unless the user
-  asks for a per-company cap. If the filter combination looks likely to be
-  dominated by a small number of huge companies (e.g. enterprise tech with
-  no industry constraint, or a single \`companyDomain\`), ASK the user
-  how many people per company they want via \`clarifyingQuestions\` BEFORE
-  drafting the plan — don't silently impose a cap.
+- **CRITICAL — \`limitPerCompany\` (per-account cap)**:
+  NEVER include \`limitPerCompany\` in a plan UNLESS the user explicitly
+  asked for a per-company cap in their own words (e.g. "max 3 per
+  company", "limit to 5 per account", "no more than N people per
+  business"). If the user did not say that, the field MUST be absent
+  from the search_people params.
+
+  If you suspect the result set will be dominated by a few huge accounts
+  (any of these triggers below), you MUST hold off drafting AND ask
+  about it explicitly:
+    · C-level/VP at "tech" / "SaaS" / "enterprise" with no industry sub-filter
+    · No geography (worldwide / "global" / "anywhere")
+    · A single \`companyDomain\` or 1-3 domains
+    · \`employeeSize\` bracket reaching 1000+ employees with no other narrowing
+
+  When ANY trigger applies, this turn MUST be:
+    \`\`\`
+    {
+      "assistantText": "…explain the concern in one sentence…",
+      "planJson": null,
+      "clarifyingQuestions": ["Want me to cap people per company? E.g. max 3
+        per account so a few enterprises don't dominate the list — or
+        leave it unlimited?"],
+      "nextAction": "await_user_reply"
+    }
+    \`\`\`
+
+  WRONG (do NOT do this — silently caps while pretending to ask):
+    \`\`\`
+    {
+      "clarifyingQuestions": ["Any caps you want?"],
+      "planJson": { …, "filters": { "limitPerCompany": 3, … } }
+    }
+    \`\`\`
 - To scope to a previously-built company list, set
   \`domainsFrom: "sheet:Companies:Domain"\` on the step (NOT inside
   filters). The executor reads that and feeds the domains into AI

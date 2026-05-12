@@ -11,6 +11,31 @@ import { runPlannerTurn, type PlannerHistoryItem } from '@/lib/agent/planner';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
+// Recognize a bare "approve" turn so we can short-circuit the LLM round.
+// The planner is instructed to leave an approved plan unchanged, but in
+// practice it sometimes re-emits stage titles / step phrasing. Doing this
+// server-side makes approval idempotent + saves a turn's worth of tokens.
+function isPureApproval(raw: string): boolean {
+  const t = raw.toLowerCase().trim().replace(/[.!]+$/, '');
+  if (!t || t.length > 40) return false;
+  if (t.includes('?')) return false;
+  if (/\b(but|however|though|except|change|swap|replace|drop|remove|add(?!.*\bplease\b)|also|instead|smaller|bigger|fewer|more|less|only|just|narrow|broaden|wider|tighter)\b/.test(t)) return false;
+  const phrases = new Set([
+    'approve','approved','approve it','approve this','approve please',
+    'go','go ahead','lets go',"let's go",
+    'looks good','looks great','lgtm',
+    'run it','run this','run that','run',
+    'ship it','ship this','ship',
+    'yes','yep','yeah','yup','y',
+    'ok','okay','okay go','ok go',
+    'sounds good','sounds great','perfect','great',
+    'do it','do this',
+    'confirm','confirmed','confirm it',
+    'proceed','proceed please',
+  ]);
+  return phrases.has(t);
+}
+
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     await ensureAgentTables().catch(() => undefined);
@@ -50,6 +75,55 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       toolResult: null,
       createdAt: now,
     });
+
+    // Short-circuit: pure approval keywords on a conversation that already
+    // has a plan in planning|awaiting_approval|previewing — skip the LLM
+    // round entirely. Without this the planner sometimes re-edits stage
+    // titles on "approve" even though its system prompt says not to.
+    if (
+      isPureApproval(message) &&
+      conversation.planJson &&
+      (conversation.status === 'planning' ||
+        conversation.status === 'awaiting_approval' ||
+        conversation.status === 'previewing')
+    ) {
+      const assistantMsgId = `msg_${generateId()}`;
+      const assistantNow = new Date();
+      const assistantText =
+        'Plan approved. Run preview to see how many matches we expect, then launch when you\'re happy with the count.';
+      await db.insert(schema.agentMessages).values({
+        id: assistantMsgId,
+        conversationId: conversation.id,
+        role: 'assistant',
+        content: assistantText,
+        planJson: null,
+        toolName: null,
+        toolArgs: null,
+        toolResult: null,
+        createdAt: assistantNow,
+      });
+      await db
+        .update(schema.agentConversations)
+        .set({ status: 'awaiting_approval', updatedAt: assistantNow })
+        .where(eq(schema.agentConversations.id, conversation.id));
+      return NextResponse.json({
+        conversationId: conversation.id,
+        status: 'awaiting_approval',
+        nextAction: 'awaiting_approval',
+        planJson: conversation.planJson,
+        clarifyingQuestions: [],
+        messages: [
+          { id: userMsgId, role: 'user', content: message, createdAt: now.toISOString() },
+          {
+            id: assistantMsgId,
+            role: 'assistant',
+            content: assistantText,
+            planJson: null,
+            createdAt: assistantNow.toISOString(),
+          },
+        ],
+      });
+    }
 
     // Pull the full thread (now including the just-inserted user msg).
     const messages = await db
