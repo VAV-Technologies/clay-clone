@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node -e \"require('fs').copyFileSync('API-REFERENCE.md','public/cli/API-REFERENCE.md')\"",
+    "prebuild": "node -e \"const fs=require('fs');fs.copyFileSync('API-REFERENCE.md','public/cli/API-REFERENCE.md');fs.writeFileSync('public/cli/AGENT-X-GUIDE.md',fs.readFileSync('AGENT-X-CLI.md','utf8')+'\\n---\\n\\n'+fs.readFileSync('API-REFERENCE.md','utf8'));\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

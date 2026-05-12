@@ -370,8 +370,94 @@ async function cmdApi(rest) {
   }
 }
 
+async function cmdView(positional, flags) {
+  const [tableId] = positional;
+  if (!tableId) {
+    throw new Error('usage: agent-x view <tableId> [--limit N] [--cols a,b,c] [--filter <json>] [--wide] [--json]');
+  }
+
+  // Fetch the column schema for this sheet.
+  const colsRes = await fetch(
+    `${BASE_URL}/api/columns?tableId=${encodeURIComponent(tableId)}`,
+    { headers: headers() }
+  );
+  if (!colsRes.ok) {
+    const text = await colsRes.text();
+    throw new Error(`GET /api/columns -> ${colsRes.status}: ${text.slice(0, 300)}`);
+  }
+  const cols = await colsRes.json();
+  if (!Array.isArray(cols) || cols.length === 0) {
+    console.log(`(no columns on table ${tableId})`);
+    return;
+  }
+  let displayCols = cols.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  if (flags.cols) {
+    const wanted = flags.cols.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    displayCols = displayCols.filter(c => wanted.some(w => c.name.toLowerCase().includes(w)));
+    if (!displayCols.length) {
+      throw new Error(`no columns matched --cols=${flags.cols}`);
+    }
+  }
+
+  // Fetch rows.
+  const limit = flags.limit ? Number(flags.limit) : 20;
+  if (!Number.isFinite(limit) || limit <= 0) throw new Error('--limit must be a positive number');
+  const params = new URLSearchParams({ tableId, limit: String(limit) });
+  if (flags.filter) {
+    try { JSON.parse(flags.filter); } catch (e) {
+      throw new Error(`--filter is not valid JSON: ${e.message}`);
+    }
+    params.set('filters', flags.filter);
+    params.set('filterLogic', 'AND');
+  }
+  const rowsRes = await fetch(`${BASE_URL}/api/rows?${params.toString()}`, { headers: headers() });
+  if (!rowsRes.ok) {
+    const text = await rowsRes.text();
+    throw new Error(`GET /api/rows -> ${rowsRes.status}: ${text.slice(0, 300)}`);
+  }
+  const totalHeader = rowsRes.headers.get('x-total-count');
+  const filteredHeader = rowsRes.headers.get('x-filtered-count');
+  const rows = await rowsRes.json();
+  const total = filteredHeader ?? totalHeader ?? String(rows.length);
+
+  if (flags.json) {
+    const out = rows.map(r => {
+      const o = { _id: r.id };
+      for (const c of displayCols) {
+        o[c.name] = r.data?.[c.id]?.value ?? null;
+      }
+      return o;
+    });
+    console.log(JSON.stringify(out, null, 2));
+    return;
+  }
+
+  const MAX_W = flags.wide ? 200 : 30;
+  const trunc = v => {
+    let s = v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+    s = s.replace(/\s+/g, ' ').trim();
+    if (s.length > MAX_W) s = s.slice(0, MAX_W - 1) + '…';
+    return s;
+  };
+
+  const head = displayCols.map(c => c.name);
+  const body = rows.map(r => displayCols.map(c => trunc(r.data?.[c.id]?.value)));
+  const widths = head.map((h, i) =>
+    Math.max(h.length, ...body.map(row => row[i].length), 1)
+  );
+  const pad = (s, w) => s + ' '.repeat(Math.max(0, w - s.length));
+
+  console.log(head.map((h, i) => pad(h, widths[i])).join(' | '));
+  console.log(widths.map(w => '-'.repeat(w)).join('-+-'));
+  for (const row of body) {
+    console.log(row.map((c, i) => pad(c, widths[i])).join(' | '));
+  }
+  console.log(`\n${rows.length} of ${total} rows  (table ${tableId})`);
+}
+
 async function cmdDocs(flags) {
-  const url = `${BASE_URL}/cli/API-REFERENCE.md`;
+  const path = flags.api ? '/cli/API-REFERENCE.md' : '/cli/AGENT-X-GUIDE.md';
+  const url = `${BASE_URL}${path}`;
   if (flags.url) { console.log(url); return; }
   const res = await fetch(url);
   if (!res.ok) {
@@ -396,7 +482,13 @@ Commands:
   api <METHOD> <path> [opts]               passthrough to any /api/* endpoint
                                              opts: --data <json>, --data-file <path>,
                                                    --query k=v (repeatable)
-  docs [--url]                             fetch and print API-REFERENCE.md
+  view <tableId> [opts]                    pretty-print rows from a sheet
+                                             opts: --limit N (default 20),
+                                                   --cols a,b,c (substring match),
+                                                   --filter <json>, --wide, --json
+  docs [--api] [--url]                     fetch and print AGENT-X-GUIDE.md
+                                             --api: only the endpoint reference
+                                             --url: just print the URL
 
 Config (override precedence): env vars > ~/.config/agent-x/env > defaults
   DATAFLOW_BASE_URL  (default: https://dataflow-pi.vercel.app)
@@ -406,7 +498,9 @@ Examples (driving the workbook API directly):
   agent-x api GET /api/projects
   agent-x api POST /api/tables --data '{"projectId":"p_...","name":"Companies"}'
   agent-x api GET /api/rows --query tableId=t_xxx --query 'filterLogic=AND'
-  agent-x docs | less                      # full API spec`);
+  agent-x view <tableId> --limit 5 --cols name,domain
+  agent-x docs | less                      # full guide (CLI + API)
+  agent-x docs --api                       # just the API reference`);
 }
 
 async function main() {
@@ -427,6 +521,7 @@ async function main() {
     case 'set-key':      return cmdSetKey(positional);
     case 'set-base-url': return cmdSetBaseUrl(positional);
     case 'docs':         return cmdDocs(flags);
+    case 'view':         return cmdView(positional, flags);
     default:
       usage();
       process.exitCode = 1;
