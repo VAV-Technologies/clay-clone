@@ -48,6 +48,9 @@ export interface RunPlannerArgs {
   // Free-form context the API layer wants to inject into this turn — e.g.
   // "PREVIEW RESULT: 1840 matches" or "USER REQUESTED CHANGE: smaller list".
   injectedContext?: string;
+  // Override the default planner model. callAI dispatches to Azure for
+  // gpt-* and to Anthropic for claude-* — see src/lib/ai-provider.ts.
+  model?: string;
 }
 
 const REVENUE_TABLE_SUMMARY = (() => {
@@ -352,7 +355,8 @@ export async function runPlannerTurn(args: RunPlannerArgs): Promise<PlannerOutpu
     ? `${conversation}\n\n[SYSTEM CONTEXT FOR THIS TURN]\n${args.injectedContext}\n\nProduce your next response now as a single JSON object.`
     : `${conversation}\n\nProduce your next response now as a single JSON object.`;
 
-  const result = await callAI(userPart, PLANNER_MODEL, {
+  const modelId = args.model || PLANNER_MODEL;
+  const result = await callAI(userPart, modelId, {
     temperature: PLANNER_TEMPERATURE,
     systemHint: PLANNER_SYSTEM_PROMPT,
     maxOutputTokens: PLANNER_MAX_OUTPUT_TOKENS,

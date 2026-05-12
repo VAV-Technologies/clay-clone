@@ -32,7 +32,16 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
   // DeepSeek models (deployed on Azure AI Foundry)
   'deepseek-chat': { input: 0.56, output: 1.68 },
   'deepseek-reasoner': { input: 0.56, output: 1.68 },
+  // Anthropic models (called directly via @anthropic-ai/sdk)
+  'claude-opus-4-7': { input: 15.00, output: 75.00 },
+  'claude-sonnet-4-6': { input: 3.00, output: 15.00 },
+  'claude-haiku-4-5': { input: 1.00, output: 5.00 },
+  'claude-haiku-4-5-20251001': { input: 1.00, output: 5.00 },
 };
+
+export function isClaudeModel(modelId: string): boolean {
+  return modelId.startsWith('claude-');
+}
 
 export const DEFAULT_PRICING = { input: 0.15, output: 0.60 };
 
@@ -76,6 +85,11 @@ export async function callAI(
   modelId: string,
   config: AIGenerationConfig = {}
 ): Promise<AIResult> {
+  if (isClaudeModel(modelId)) {
+    const { generateContentAnthropic } = await import('./anthropic-provider');
+    return generateContentAnthropic(modelId, prompt, config);
+  }
+
   if (!isAzureConfigured()) {
     throw new Error(
       'Azure OpenAI not configured. Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY environment variables.'

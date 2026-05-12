@@ -19,6 +19,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (!message) {
       return NextResponse.json({ error: 'message is required' }, { status: 400 });
     }
+    const modelOverride = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : undefined;
 
     const [conversation] = await db
       .select()
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     let planner;
     try {
-      planner = await runPlannerTurn({ history });
+      planner = await runPlannerTurn({ history, model: modelOverride });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       console.error('[agent/turn] planner failed:', errMsg);

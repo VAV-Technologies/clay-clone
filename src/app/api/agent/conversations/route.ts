@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
     if (!prompt) {
       return NextResponse.json({ error: 'prompt is required' }, { status: 400 });
     }
+    const modelOverride = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : undefined;
 
     const now = new Date();
     const conversationId = `conv_${generateId()}`;
@@ -74,6 +75,7 @@ export async function POST(request: NextRequest) {
     try {
       planner = await runPlannerTurn({
         history: [{ role: 'user', content: prompt }],
+        model: modelOverride,
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
