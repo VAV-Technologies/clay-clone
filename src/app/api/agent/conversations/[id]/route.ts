@@ -65,6 +65,21 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       }
     }
 
+    // If a workbook is attached, fetch its name + sheet count so the client
+    // can render a meaningful chip without a second roundtrip.
+    let attachedWorkbookName: string | null = null;
+    let attachedWorkbookSheetCount = 0;
+    if (conversation.attachedWorkbookId) {
+      const [wb] = await db.select().from(schema.projects)
+        .where(eq(schema.projects.id, conversation.attachedWorkbookId)).limit(1);
+      if (wb) {
+        attachedWorkbookName = wb.name;
+        const tables = await db.select().from(schema.tables)
+          .where(eq(schema.tables.projectId, wb.id));
+        attachedWorkbookSheetCount = tables.length;
+      }
+    }
+
     return NextResponse.json({
       conversation: {
         id: conversation.id,
@@ -73,6 +88,10 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
         initialPrompt: conversation.initialPrompt,
         campaignId: conversation.campaignId,
         planJson: conversation.planJson,
+        attachedWorkbookId: conversation.attachedWorkbookId,
+        attachedWorkbookName,
+        attachedWorkbookSheetCount,
+        attachedCsv: conversation.attachedCsv,
         createdAt: conversation.createdAt.toISOString(),
         updatedAt: conversation.updatedAt.toISOString(),
       },

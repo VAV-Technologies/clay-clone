@@ -14,6 +14,25 @@ import { db, schema, ensureAgentTables } from '@/lib/db';
 import { desc, eq } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
 import { runPlannerTurn, deriveTitle } from '@/lib/agent/planner';
+import { buildAttachedContext } from '@/lib/agent/attached-context';
+import type { AttachedCsv } from '@/lib/db/schema';
+
+const MAX_CSV_ROWS = 10000;
+
+function validateAttachedCsv(input: unknown): AttachedCsv | null {
+  if (!input || typeof input !== 'object') return null;
+  const c = input as Record<string, unknown>;
+  if (typeof c.name !== 'string' || !Array.isArray(c.headers) || !Array.isArray(c.rows)) return null;
+  if (c.rows.length > MAX_CSV_ROWS) {
+    throw new Error(`CSV exceeds ${MAX_CSV_ROWS} rows — use \`agent-x api POST /api/import/csv\` directly for larger files`);
+  }
+  return {
+    name: c.name,
+    headers: (c.headers as unknown[]).filter((h): h is string => typeof h === 'string'),
+    rowCount: typeof c.rowCount === 'number' ? c.rowCount : c.rows.length,
+    rows: c.rows as Array<Record<string, string | number | null>>,
+  };
+}
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -39,6 +58,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'prompt is required' }, { status: 400 });
     }
     const modelOverride = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : undefined;
+    const attachedWorkbookId = typeof body.attachedWorkbookId === 'string' && body.attachedWorkbookId.trim()
+      ? body.attachedWorkbookId.trim()
+      : null;
+    let attachedCsv: AttachedCsv | null;
+    try {
+      attachedCsv = validateAttachedCsv(body.attachedCsv);
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : 'invalid attachedCsv' }, { status: 400 });
+    }
 
     const now = new Date();
     const conversationId = `conv_${generateId()}`;
@@ -54,6 +82,8 @@ export async function POST(request: NextRequest) {
       initialPrompt: prompt,
       campaignId: null,
       planJson: null,
+      attachedWorkbookId,
+      attachedCsv,
       createdAt: now,
       updatedAt: now,
     });
@@ -70,12 +100,23 @@ export async function POST(request: NextRequest) {
       createdAt: now,
     });
 
+    // Build attached-context block (workbook schema and/or CSV summary)
+    let injectedContext: string | undefined;
+    try {
+      const built = await buildAttachedContext(attachedWorkbookId, attachedCsv);
+      if (built.contextText) injectedContext = built.contextText;
+    } catch (err) {
+      console.error('[agent/conversations] buildAttachedContext failed:', err);
+      // Non-fatal — proceed without injected context.
+    }
+
     // Run the planner turn
     let planner;
     try {
       planner = await runPlannerTurn({
         history: [{ role: 'user', content: prompt }],
         model: modelOverride,
+        injectedContext,
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';

@@ -193,6 +193,9 @@ export const campaigns = sqliteTable('campaigns', {
 
 export type CampaignStepType =
   | 'create_workbook'
+  | 'use_existing_workbook'
+  | 'use_existing_sheet'
+  | 'import_csv'
   | 'search_companies'
   | 'search_people'
   | 'create_sheet'
@@ -219,9 +222,21 @@ export const agentConversations = sqliteTable('agent_conversations', {
   initialPrompt: text('initial_prompt').notNull(),
   campaignId: text('campaign_id'),
   planJson: text('plan_json', { mode: 'json' }).$type<unknown>(),
+  // Attached starting context: either an existing workbook (id) or a CSV
+  // (name + headers + sample + rows[]). The planner sees a summary on every
+  // turn; the rows ride along as the import_csv step's `data` on launch.
+  attachedWorkbookId: text('attached_workbook_id'),
+  attachedCsv: text('attached_csv', { mode: 'json' }).$type<AttachedCsv | null>(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
+
+export interface AttachedCsv {
+  name: string;
+  headers: string[];
+  rowCount: number;
+  rows: Array<Record<string, string | number | null>>;
+}
 
 export const agentMessages = sqliteTable('agent_messages', {
   id: text('id').primaryKey(),

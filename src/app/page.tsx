@@ -8,10 +8,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { Loader2, Trash2 } from 'lucide-react';
+import { FileSpreadsheet, FolderOpen, Loader2, Paperclip, Trash2, X } from 'lucide-react';
 import { ToastProvider, useToast } from '@/components/ui';
 import { AppNav } from '@/components/layout/AppNav';
 import { cn } from '@/lib/utils';
+import { AttachContextModal, type AttachedCsv, type AttachedWorkbook } from './agent/[id]/AttachContextModal';
 
 interface ConversationListItem {
   id: string;
@@ -48,6 +49,9 @@ function AgentHomeContent() {
   const [history, setHistory] = useState<ConversationListItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [attachModalOpen, setAttachModalOpen] = useState(false);
+  const [attachedWorkbook, setAttachedWorkbook] = useState<AttachedWorkbook | null>(null);
+  const [attachedCsv, setAttachedCsv] = useState<AttachedCsv | null>(null);
 
   const fetchHistory = async () => {
     setLoadingHistory(true);
@@ -118,7 +122,11 @@ function AgentHomeContent() {
       const res = await fetch('/api/agent/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+          prompt,
+          attachedWorkbookId: attachedWorkbook?.id ?? null,
+          attachedCsv: attachedCsv ?? null,
+        }),
       });
       // Robustly extract an error message: try JSON, fall back to body text,
       // fall back to status code so we never silently land on the generic
@@ -177,6 +185,30 @@ function AgentHomeContent() {
             </h2>
 
             <form onSubmit={handleSubmit} className="mt-10 text-left">
+              {(attachedWorkbook || attachedCsv) && (
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {attachedWorkbook && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-lavender/10 border border-lavender/30 text-white/85">
+                      <FolderOpen className="w-3 h-3" />
+                      <span className="truncate max-w-[260px]">{attachedWorkbook.name}</span>
+                      <span className="text-white/40">({attachedWorkbook.sheetCount} sheet{attachedWorkbook.sheetCount === 1 ? '' : 's'})</span>
+                      <button type="button" onClick={() => setAttachedWorkbook(null)} className="ml-1 text-white/55 hover:text-white" title="Detach">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                  {attachedCsv && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-lavender/10 border border-lavender/30 text-white/85">
+                      <FileSpreadsheet className="w-3 h-3" />
+                      <span className="truncate max-w-[260px]">{attachedCsv.name}</span>
+                      <span className="text-white/40">({attachedCsv.rowCount} row{attachedCsv.rowCount === 1 ? '' : 's'})</span>
+                      <button type="button" onClick={() => setAttachedCsv(null)} className="ml-1 text-white/55 hover:text-white" title="Detach">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                </div>
+              )}
               <textarea
                 value={agentPrompt}
                 onChange={(e) => setAgentPrompt(e.target.value)}
@@ -199,6 +231,15 @@ function AgentHomeContent() {
               <div className="mt-2 flex items-center justify-between text-xs text-white/30">
                 <span>Press Enter to start. Shift+Enter for newline.</span>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAttachModalOpen(true)}
+                    className="px-3 py-1 border border-white/15 hover:border-white/40 hover:text-white/70 transition flex items-center gap-1.5"
+                    title="Attach existing workbook or CSV"
+                  >
+                    <Paperclip className="w-3 h-3" />
+                    Attach
+                  </button>
                   <button
                     type="button"
                     onClick={toggleHistory}
@@ -270,6 +311,13 @@ function AgentHomeContent() {
           </div>
         </section>
       </main>
+
+      <AttachContextModal
+        isOpen={attachModalOpen}
+        onClose={() => setAttachModalOpen(false)}
+        onAttachWorkbook={(wb) => { setAttachedWorkbook(wb); setAttachedCsv(null); }}
+        onAttachCsv={(csv) => { setAttachedCsv(csv); setAttachedWorkbook(null); }}
+      />
     </div>
   );
 }

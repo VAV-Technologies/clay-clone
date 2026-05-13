@@ -76,6 +76,21 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       }
     }
 
+    // For import_csv steps, substitute "__PLACEHOLDER__" data with the
+    // conversation's attachedCsv.rows. The planner uses the placeholder so
+    // it doesn't have to embed the entire CSV in planJson.
+    for (const s of steps) {
+      if (s.type === 'import_csv' && s.params.data === '__PLACEHOLDER__') {
+        if (!conversation.attachedCsv) {
+          return NextResponse.json(
+            { error: 'Plan contains import_csv with placeholder data but no CSV is attached to the conversation.' },
+            { status: 400 },
+          );
+        }
+        s.params = { ...s.params, data: conversation.attachedCsv.rows };
+      }
+    }
+
     const campaignsRes = await fetch(`${internalBaseUrl(request)}/api/campaigns`, {
       method: 'POST',
       headers: {

@@ -189,6 +189,42 @@ You are reading this because you (Claude Code, or any LLM driving the `agent-x` 
 
 **Do NOT call `/api/agent/conversations*` from the CLI.** Those endpoints delegate to gpt-5-mini server-side, defeating the point of using Claude as the planner. They exist for the web UI only.
 
+## Campaign target — what's the starting state?
+
+Three starting states exist. Identify which before drafting:
+
+1. **Fresh build (no existing data)** — first step is `create_workbook`. Then search → import → clean → emails → send-ready (the classic flow).
+
+2. **Edit an existing workbook** — user references a real workbook (by ID, name, or URL). First fetch the schema:
+   ```bash
+   agent-x api GET /api/projects                              # find the workbook id
+   agent-x api GET /api/tables --query projectId=<wbId>       # list sheets
+   agent-x api GET /api/columns --query tableId=<sheetId>     # confirm columns per sheet
+   ```
+   Then build a plan that starts with:
+   ```json
+   { "type": "use_existing_workbook", "params": { "workbookId": "<wbId>" } },
+   { "type": "use_existing_sheet",    "params": { "sheet": "People", "sheetId": "<sheetId>" } }
+   ```
+   followed by whatever the user asked for (e.g. `find_emails_waterfall`, `enrich`, `filter_rows`). **Do NOT `create_sheet` for sheets that already exist.** Do NOT re-run searches if the data is already in the sheet.
+
+3. **Ingest a CSV** — user pastes/uploads CSV content. Parse it into an array of `{header: value}` objects. Then:
+   ```json
+   { "type": "create_workbook",      "params": { "name": "..." } },
+   { "type": "import_csv",           "params": { "sheet": "MyList", "data": [/* rows */] } }
+   ```
+   followed by whatever work the user asked for. The `import_csv` step creates the sheet, derives column names from the row keys, and bulk-inserts. If the user already has a workbook attached, replace `create_workbook` with `use_existing_workbook` and `import_csv` will create the new sheet INSIDE that workbook.
+
+The three new step `params` shapes:
+
+```json
+{ "type": "use_existing_workbook", "params": { "workbookId": "wb_xxx" } }
+{ "type": "use_existing_sheet",    "params": { "sheet": "<display name>", "sheetId": "<existing tableId>" } }
+{ "type": "import_csv",            "params": { "sheet": "<name>", "columns": ["A","B"]?, "data": [{ "A": "...", "B": "..." }] } }
+```
+
+For `import_csv`, `columns` is optional — if omitted, columns are inferred from the keys of the first row (insertion order preserved). Column type is auto-inferred: `email` if header contains "email", `url` if it contains "linkedin"/"domain"/"url"/"website", else `text`.
+
 ## How execution works
 
 Conceptually a **CampaignPlan** is `{name, source, stages[]}`, where each stage is `{title, summary, notes, steps[]}`. You design this plan in your head (or as markdown for the user). Once approved, **flatten** all `stages[].steps[]` into one ordered `steps[]` array and POST a single payload:

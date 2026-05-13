@@ -357,6 +357,103 @@ export async function executeStep(
       return { result: { workbookId: id }, contextUpdate: { workbookId: id } };
     }
 
+    case 'use_existing_workbook': {
+      const workbookId = step.params.workbookId as string;
+      if (!workbookId) throw new Error('use_existing_workbook requires params.workbookId');
+      const [wb] = await db.select().from(schema.projects)
+        .where(eq(schema.projects.id, workbookId)).limit(1);
+      if (!wb) throw new Error(`Workbook ${workbookId} not found`);
+      log(`Using existing workbook: ${wb.name} (${workbookId})`);
+      return {
+        result: { workbookId, workbookName: wb.name },
+        contextUpdate: { workbookId },
+      };
+    }
+
+    case 'use_existing_sheet': {
+      const sheetName = step.params.sheet as string;
+      const sheetId = step.params.sheetId as string;
+      if (!sheetName || !sheetId) {
+        throw new Error('use_existing_sheet requires params.sheet (name) and params.sheetId');
+      }
+      const cols = await db.select().from(schema.columns)
+        .where(eq(schema.columns.tableId, sheetId));
+      if (cols.length === 0) throw new Error(`Sheet ${sheetId} has no columns (or doesn't exist)`);
+      const columnIds: Record<string, string> = {};
+      for (const col of cols) columnIds[col.name] = col.id;
+      const sheets = { ...context.sheets, [sheetName]: { tableId: sheetId, columnIds } };
+      log(`Bound existing sheet: ${sheetName} -> ${sheetId} (${cols.length} columns)`);
+      return {
+        result: { tableId: sheetId, columnCount: cols.length },
+        contextUpdate: { sheets },
+      };
+    }
+
+    case 'import_csv': {
+      const sheetName = (step.params.sheet as string) || 'Imported';
+      const rows = (step.params.data as Array<Record<string, unknown>>) || [];
+      if (!Array.isArray(rows) || rows.length === 0) {
+        throw new Error('import_csv requires params.data: an array of row objects');
+      }
+      const workbookId = context.workbookId;
+      if (!workbookId) {
+        throw new Error('import_csv needs a workbookId in context — emit create_workbook or use_existing_workbook first');
+      }
+      let columnNames = (step.params.columns as string[]) || [];
+      if (columnNames.length === 0) {
+        // Preserve insertion order from the first row's keys
+        columnNames = Object.keys(rows[0]);
+      }
+
+      const now = new Date();
+      const tableId = generateId();
+      await db.insert(schema.tables).values({
+        id: tableId, projectId: workbookId, name: sheetName, createdAt: now, updatedAt: now,
+      });
+
+      const columnIds: Record<string, string> = {};
+      for (let i = 0; i < columnNames.length; i++) {
+        const colId = generateId();
+        const lower = columnNames[i].toLowerCase();
+        const colType: 'text' | 'url' | 'email' =
+          lower.includes('email') ? 'email' :
+          lower.includes('linkedin') || lower.includes('domain') || lower.includes('url') || lower.includes('website') ? 'url' :
+          'text';
+        await db.insert(schema.columns).values({
+          id: colId, tableId, name: columnNames[i], type: colType, order: i, width: 150,
+        });
+        columnIds[columnNames[i]] = colId;
+      }
+
+      const BATCH_SIZE = 500;
+      const rowIds: string[] = [];
+      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+        const batch = rows.slice(i, i + BATCH_SIZE);
+        const rowsToInsert = batch.map(record => {
+          const rowId = generateId();
+          rowIds.push(rowId);
+          const data: Record<string, CellValue> = {};
+          for (const colName of columnNames) {
+            const colId = columnIds[colName];
+            const raw = record[colName];
+            if (raw !== undefined && raw !== null && raw !== '') {
+              data[colId] = { value: String(raw), status: 'complete' };
+            }
+          }
+          return { id: rowId, tableId, data, createdAt: now };
+        });
+        await db.insert(schema.rows).values(rowsToInsert);
+      }
+
+      const sheets = { ...context.sheets, [sheetName]: { tableId, columnIds } };
+      const existingRowIds = context.rowIds || {};
+      log(`Imported CSV: ${rowIds.length} rows into ${sheetName} (${tableId}), ${columnNames.length} columns`);
+      return {
+        result: { tableId, rowCount: rowIds.length, columnCount: columnNames.length },
+        contextUpdate: { sheets, rowIds: { ...existingRowIds, [sheetName]: rowIds } },
+      };
+    }
+
     case 'search_companies': {
       // Source is stamped onto each search step by /api/agent/.../launch.
       // Default to clay for back-compat with the original /campaign skill,

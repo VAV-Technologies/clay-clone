@@ -19,14 +19,19 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  Paperclip,
   Send,
   Terminal,
   Trash2,
+  X,
   XCircle,
+  FileSpreadsheet,
+  FolderOpen,
 } from 'lucide-react';
 import { ToastProvider, useToast } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { CliAccessModal } from './CliAccessModal';
+import { AttachContextModal, type AttachedCsv, type AttachedWorkbook } from './AttachContextModal';
 
 const AnimatedBackground = dynamic(
   () => import('@/components/ui/AnimatedBackground').then(m => m.AnimatedBackground),
@@ -95,6 +100,10 @@ interface ConversationResponse {
     initialPrompt: string;
     campaignId: string | null;
     planJson: CampaignPlan | null;
+    attachedWorkbookId: string | null;
+    attachedWorkbookName: string | null;
+    attachedWorkbookSheetCount: number;
+    attachedCsv: AttachedCsv | null;
     createdAt: string;
     updatedAt: string;
   };
@@ -131,6 +140,9 @@ function AgentChatPage() {
   const [chosenLimit, setChosenLimit] = useState<number | null>(null);
   const [launching, setLaunching] = useState(false);
   const [cliModalOpen, setCliModalOpen] = useState(false);
+  const [attachModalOpen, setAttachModalOpen] = useState(false);
+  const [attachedWorkbook, setAttachedWorkbook] = useState<AttachedWorkbook | null>(null);
+  const [attachedCsv, setAttachedCsv] = useState<AttachedCsv | null>(null);
 
   const threadRef = useRef<HTMLDivElement>(null);
 
@@ -145,6 +157,16 @@ function AgentChatPage() {
       const data: ConversationResponse = await res.json();
       setConversation(data.conversation);
       setMessages(data.messages);
+      if (data.conversation.attachedWorkbookId && data.conversation.attachedWorkbookName) {
+        setAttachedWorkbook({
+          id: data.conversation.attachedWorkbookId,
+          name: data.conversation.attachedWorkbookName,
+          sheetCount: data.conversation.attachedWorkbookSheetCount ?? 0,
+        });
+      } else {
+        setAttachedWorkbook(null);
+      }
+      setAttachedCsv(data.conversation.attachedCsv ?? null);
       setCampaign(data.campaign);
     } catch {
       toast.error('Failed to load conversation');
@@ -228,7 +250,11 @@ function AgentChatPage() {
       const res = await fetch(`/api/agent/conversations/${conversationId}/turn`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({
+          message: text,
+          attachedWorkbookId: attachedWorkbook?.id ?? null,
+          attachedCsv: attachedCsv ?? null,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -494,6 +520,38 @@ function AgentChatPage() {
 
         {/* Input */}
         <div className="border-t border-white/10 bg-midnight/50 backdrop-blur-sm px-6 py-3">
+          {(attachedWorkbook || attachedCsv) && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {attachedWorkbook && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-lavender/10 border border-lavender/30 text-white/85">
+                  <FolderOpen className="w-3 h-3" />
+                  <span className="truncate max-w-[200px]">{attachedWorkbook.name}</span>
+                  <span className="text-white/40">({attachedWorkbook.sheetCount} sheet{attachedWorkbook.sheetCount === 1 ? '' : 's'})</span>
+                  <button
+                    onClick={() => setAttachedWorkbook(null)}
+                    className="ml-1 text-white/55 hover:text-white"
+                    title="Detach"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {attachedCsv && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-lavender/10 border border-lavender/30 text-white/85">
+                  <FileSpreadsheet className="w-3 h-3" />
+                  <span className="truncate max-w-[200px]">{attachedCsv.name}</span>
+                  <span className="text-white/40">({attachedCsv.rowCount} row{attachedCsv.rowCount === 1 ? '' : 's'})</span>
+                  <button
+                    onClick={() => setAttachedCsv(null)}
+                    className="ml-1 text-white/55 hover:text-white"
+                    title="Detach"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -501,6 +559,15 @@ function AgentChatPage() {
             }}
             className="flex items-stretch gap-2"
           >
+            <button
+              type="button"
+              onClick={() => setAttachModalOpen(true)}
+              disabled={sending}
+              className="h-10 w-10 flex items-center justify-center bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/30 transition flex-shrink-0 disabled:opacity-50"
+              title="Attach workbook or CSV"
+            >
+              <Paperclip className="w-4 h-4 text-white/70" />
+            </button>
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -536,6 +603,12 @@ function AgentChatPage() {
       </div>
 
       <CliAccessModal isOpen={cliModalOpen} onClose={() => setCliModalOpen(false)} />
+      <AttachContextModal
+        isOpen={attachModalOpen}
+        onClose={() => setAttachModalOpen(false)}
+        onAttachWorkbook={(wb) => { setAttachedWorkbook(wb); setAttachedCsv(null); }}
+        onAttachCsv={(csv) => { setAttachedCsv(csv); setAttachedWorkbook(null); }}
+      />
     </div>
   );
 }

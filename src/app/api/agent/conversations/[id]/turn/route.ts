@@ -7,6 +7,25 @@ import { db, schema, ensureAgentTables } from '@/lib/db';
 import { eq, asc } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
 import { runPlannerTurn, type PlannerHistoryItem } from '@/lib/agent/planner';
+import { buildAttachedContext } from '@/lib/agent/attached-context';
+import type { AttachedCsv } from '@/lib/db/schema';
+
+const MAX_CSV_ROWS = 10000;
+
+function validateAttachedCsv(input: unknown): AttachedCsv | null {
+  if (!input || typeof input !== 'object') return null;
+  const c = input as Record<string, unknown>;
+  if (typeof c.name !== 'string' || !Array.isArray(c.headers) || !Array.isArray(c.rows)) return null;
+  if (c.rows.length > MAX_CSV_ROWS) {
+    throw new Error(`CSV exceeds ${MAX_CSV_ROWS} rows`);
+  }
+  return {
+    name: c.name,
+    headers: (c.headers as unknown[]).filter((h): h is string => typeof h === 'string'),
+    rowCount: typeof c.rowCount === 'number' ? c.rowCount : c.rows.length,
+    rows: c.rows as Array<Record<string, string | number | null>>,
+  };
+}
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -46,6 +65,21 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
     const modelOverride = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : undefined;
 
+    // Attached context: the client sends the current chip state on every
+    // turn. Missing -> keep stored. Explicit null -> clear. Truthy -> replace.
+    const hasWorkbookField = 'attachedWorkbookId' in body;
+    const hasCsvField = 'attachedCsv' in body;
+    const incomingWorkbookId = hasWorkbookField
+      ? (typeof body.attachedWorkbookId === 'string' && body.attachedWorkbookId.trim()
+        ? body.attachedWorkbookId.trim()
+        : null)
+      : undefined;
+    let incomingCsv: AttachedCsv | null | undefined;
+    if (hasCsvField) {
+      try { incomingCsv = body.attachedCsv === null ? null : validateAttachedCsv(body.attachedCsv); }
+      catch (err) { return NextResponse.json({ error: err instanceof Error ? err.message : 'invalid attachedCsv' }, { status: 400 }); }
+    }
+
     const [conversation] = await db
       .select()
       .from(schema.agentConversations)
@@ -75,6 +109,18 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       toolResult: null,
       createdAt: now,
     });
+
+    // Persist incoming attachment changes (if any) to the conversation row.
+    const attachmentPatch: Record<string, unknown> = {};
+    if (hasWorkbookField) attachmentPatch.attachedWorkbookId = incomingWorkbookId;
+    if (hasCsvField) attachmentPatch.attachedCsv = incomingCsv;
+    if (Object.keys(attachmentPatch).length > 0) {
+      await db.update(schema.agentConversations)
+        .set({ ...attachmentPatch, updatedAt: now })
+        .where(eq(schema.agentConversations.id, conversation.id));
+    }
+    const effectiveWorkbookId = hasWorkbookField ? incomingWorkbookId : conversation.attachedWorkbookId;
+    const effectiveCsv = hasCsvField ? incomingCsv : conversation.attachedCsv;
 
     // Short-circuit: pure approval keywords on a conversation that already
     // has a plan in planning|awaiting_approval|previewing — skip the LLM
@@ -138,9 +184,17 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       planJson: m.planJson ?? undefined,
     }));
 
+    let injectedContext: string | undefined;
+    try {
+      const built = await buildAttachedContext(effectiveWorkbookId, effectiveCsv);
+      if (built.contextText) injectedContext = built.contextText;
+    } catch (err) {
+      console.error('[agent/turn] buildAttachedContext failed:', err);
+    }
+
     let planner;
     try {
-      planner = await runPlannerTurn({ history, model: modelOverride });
+      planner = await runPlannerTurn({ history, model: modelOverride, injectedContext });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       console.error('[agent/turn] planner failed:', errMsg);

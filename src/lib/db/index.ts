@@ -38,10 +38,22 @@ export function ensureAgentTables(): Promise<void> {
         initial_prompt TEXT NOT NULL,
         campaign_id TEXT,
         plan_json TEXT,
+        attached_workbook_id TEXT,
+        attached_csv TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
     `);
+    // ALTER for warm databases that pre-date the attachment columns.
+    const tryAlter = async (sql: string) => {
+      try { await libsqlClient!.execute(sql); }
+      catch (err) {
+        const msg = (err as Error).message || '';
+        if (!/duplicate column/i.test(msg)) console.error('[ensureAgentTables] ALTER failed:', msg);
+      }
+    };
+    await tryAlter('ALTER TABLE agent_conversations ADD COLUMN attached_workbook_id TEXT');
+    await tryAlter('ALTER TABLE agent_conversations ADD COLUMN attached_csv TEXT');
     await exec(`
       CREATE TABLE IF NOT EXISTS agent_messages (
         id TEXT PRIMARY KEY,

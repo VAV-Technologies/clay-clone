@@ -24,6 +24,9 @@ export interface CampaignPlan {
 
 const VALID_STEP_TYPES = new Set<CampaignStepType>([
   'create_workbook',
+  'use_existing_workbook',
+  'use_existing_sheet',
+  'import_csv',
   'search_companies',
   'search_people',
   'create_sheet',

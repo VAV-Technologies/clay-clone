@@ -80,6 +80,42 @@ outside the JSON. Your JSON has these top-level fields:
   "nextAction": string            // One of: "await_user_reply", "awaiting_approval", "awaiting_count_confirm", "launched"
 }
 
+# Campaign target — what's the starting state?
+
+Before drafting, look at \`injectedContext\` (passed below the conversation
+history this turn). Three starting states exist:
+
+1. **Fresh build (no attachment)** — original default behavior.
+   First step is \`create_workbook\`. Then search, import, clean, emails,
+   send-ready.
+
+2. **Attached workbook** — when injectedContext contains \`ATTACHED WORKBOOK\`
+   with workbookId + sheets list:
+   - First step is \`use_existing_workbook { workbookId }\`.
+   - For each sheet you plan to touch, emit \`use_existing_sheet
+     { sheet: "<display name>", sheetId: "<id from attached schema>" }\`
+     so subsequent steps can reference the sheet by name.
+   - DO NOT \`create_sheet\` for sheets that already exist in the workbook.
+   - If the user asks to "add an email column and find emails", DON'T
+     re-search people — bind the existing People sheet via
+     \`use_existing_sheet\` then emit \`find_emails_waterfall\` directly.
+
+3. **Attached CSV** — when injectedContext contains \`ATTACHED CSV\` with
+   name, headers, row count, and a sample:
+   - First two steps are \`create_workbook\` + \`import_csv { sheet:
+     "<name from CSV>", data: "__PLACEHOLDER__" }\`. The launch endpoint
+     replaces the placeholder with the full rows array from the
+     conversation's attachedCsv field — you do not embed the rows in
+     planJson yourself (avoids huge JSON in chat).
+   - Then run whatever work the user asked for against that sheet.
+   - If the CSV obviously contains people (headers like "name", "email",
+     "linkedin", "company"), proceed straight to enrichment/find_emails
+     etc. without re-searching.
+
+You can also COMBINE: attached workbook + CSV means import the CSV as a
+new sheet INSIDE the existing workbook. Use \`use_existing_workbook\`
+then \`import_csv\` (no second \`create_workbook\`).
+
 # What the campaign engine can do
 
 You can emit any of these step types. The engine runs them in order with a
@@ -99,7 +135,10 @@ shared context (workbookId + sheets + searchResults).
 
 | step.type                | What it does                                                                |
 |--------------------------|-----------------------------------------------------------------------------|
-| create_workbook          | Creates the top-level workbook for the campaign. Auto-prepended.            |
+| create_workbook          | Creates the top-level workbook for the campaign. Use when fresh build.      |
+| use_existing_workbook    | Binds ctx.workbookId to an existing workbook id (no DB writes).             |
+| use_existing_sheet       | Binds an existing sheet to a name in ctx so later steps can reference it.   |
+| import_csv               | Creates a new sheet from inline CSV rows. Auto-creates columns from headers.|
 | search_companies         | Clay/AI-Ark company search using filters. Stores results in context.        |
 | search_people            | Clay/AI-Ark people search. Pass domains[] OR domainsFrom: "sheet:S:Col".    |
 | create_sheet             | Creates a sheet with named columns. Save column IDs in context.             |
@@ -292,6 +331,9 @@ ${REVENUE_TABLE_SUMMARY}
 Step "params" follow the campaign-executor's expected shape:
 
 - create_workbook: { name }
+- use_existing_workbook: { workbookId }
+- use_existing_sheet: { sheet: "<display name>", sheetId: "<existing tableId>" }
+- import_csv: { sheet: "<name>", columns?: string[], data: "__PLACEHOLDER__" }   // launch substitutes the rows from attachedCsv
 - search_companies (AI Ark): { filters: {
     // Identity / lookalike
     domain?: string[],             // ["stripe.com"] — exact-match against owned domain
