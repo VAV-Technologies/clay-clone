@@ -51,4 +51,5 @@ if (-not ($pathParts -contains $BinDir)) {
 Write-Host ''
 Write-Host 'next steps:'
 Write-Host '  agent-x set-key <DATAFLOW_API_KEY>'
-Write-Host '  agent-x new "find 20 CEOs of consulting firms in Malaysia"'
+Write-Host '  agent-x docs                              # rules + API spec'
+Write-Host '  agent-x api GET /api/projects             # try a quick read'

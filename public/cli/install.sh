@@ -50,4 +50,5 @@ esac
 echo
 echo "next steps:"
 echo "  agent-x set-key <DATAFLOW_API_KEY>"
-echo "  agent-x new \"find 20 CEOs of consulting firms in Malaysia\""
+echo "  agent-x docs                              # rules + API spec"
+echo "  agent-x api GET /api/projects             # try a quick read"
