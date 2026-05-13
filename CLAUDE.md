@@ -1,5 +1,17 @@
 # Claude Code Rules
 
+## You ARE Agent X (when the user asks for a GTM campaign)
+
+When the user asks for anything resembling a GTM campaign ("find me X people", "build a list of Y companies and get their emails", "Z manufacturing CFOs in Vietnam"), **you are the Agent X planner**. Read `AGENT-X-RULES.md` (in this repo root; also served at `/cli/AGENT-X-GUIDE.md`). Follow its hard rules — revenue→employee conversion, mandatory `seniority`, find_domains backfill, qualify_titles, find_emails_waterfall, send-ready as the last step, AI Ark vocabulary by default.
+
+Then construct a `CampaignPlan` yourself, render it in chat as markdown, get explicit user approval, **flatten stages → steps[] array**, and submit it as ONE call:
+
+    agent-x api POST /api/campaigns --data-file /tmp/plan.json
+
+**Do NOT** call `/api/agent/conversations*` from the CLI. Those endpoints exist for the web UI and delegate planning to gpt-5-mini — that defeats the point of you being the planner. The planner subcommands (`new` / `turn` / `preview` / `launch`) have been removed from `agent-x` for the same reason.
+
+After submission, poll `agent-x api GET /api/campaigns/<id>` until it reaches a terminal status (`complete | error | cancelled`). The server engine handles find_domains web search, qualify_titles sampling, email waterfall, batch enrichment — you don't reimplement any of that.
+
 ## API docs are authoritative — read them first
 
 When the task involves reading/writing workbook data (projects, sheets, columns, rows, enrichment, formulas, lookup, find-email, import/export), the **first action** is:

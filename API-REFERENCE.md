@@ -1281,7 +1281,36 @@ Completely deletes a table and ALL associated data (columns, rows, enrichment jo
 
 ## 16. Campaigns
 
-Campaigns are the multi-step execution unit launched by the planner (`POST /api/agent/conversations/{id}/launch`). One campaign = ordered `CampaignStep[]`, advanced one step per cron tick by `/api/cron/process-campaigns`.
+Campaigns are the multi-step execution unit. One campaign = ordered `CampaignStep[]`, advanced one step per cron tick by `/api/cron/process-campaigns`. They can be created two ways:
+
+- **Via the web UI** — gpt-5-mini drafts the plan, `POST /api/agent/conversations/{id}/launch` flattens + submits it.
+- **Directly from a CLI/LLM** — you (or Claude Code) draft the plan, flatten it, and `POST /api/campaigns` yourself. This is the recommended path from the terminal.
+
+The step type catalog (search_companies, find_domains, qualify_titles, find_emails_waterfall, materialize_send_ready, etc.) and the rules that produce a valid plan are in `AGENT-X-RULES.md` (also served at `/cli/AGENT-X-GUIDE.md`).
+
+### Create a Campaign
+```
+POST /api/campaigns
+{
+  "name": "Vietnam Mid-Market CFOs",
+  "steps": [
+    { "type": "search_companies", "params": { "filters": {...}, "source": "ai-ark" } },
+    { "type": "create_sheet",     "params": { "name": "Companies", "columns": [...] } },
+    ...
+  ]
+}
+```
+Returns:
+```json
+{
+  "id": "camp_...",
+  "workbookId": "wb_...",
+  "totalSteps": 14,
+  "message": "Campaign queued. Cron will advance it step by step."
+}
+```
+
+A `create_workbook` step is auto-prepended if you don't include one. Every `search_companies` / `search_people` step should carry `params.source: "ai-ark" | "clay"` so the executor dispatches to the right backend.
 
 ### Get Campaign Status
 ```

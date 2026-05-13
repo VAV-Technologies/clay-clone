@@ -1,10 +1,8 @@
 # Agent X — DataFlow Terminal Guide
 
-`agent-x` is the terminal client for **DataFlow** (the GTM data engine behind `dataflow-pi.vercel.app`). It lets you (or Claude Code, or any script) drive everything the web UI does — from natural-language campaign building to direct row/column CRUD — without leaving the shell.
+`agent-x` is the terminal client for **DataFlow** (the GTM data engine behind `dataflow-pi.vercel.app`). It is the **execution layer** — not the planner. The planner brain is **you** (or Claude Code, or any LLM driving it). You read the rules in this guide, draft a `CampaignPlan` yourself, then submit it via `agent-x api POST /api/campaigns`.
 
-Two modes:
-1. **Conversational planner** — `agent-x new "find 50 CFOs in Vietnam"` → multi-turn chat → preview → launch.
-2. **Direct API** — `agent-x api <METHOD> <path>` and `agent-x view <tableId>` for anything outside the planner.
+> If you want gpt-5-mini to do the planning, use the web UI at [`/agent`](https://dataflow-pi.vercel.app/agent). The CLI does not delegate.
 
 ---
 
@@ -21,7 +19,7 @@ export PATH="$HOME/.local/bin:$PATH"   # if your shell rc doesn't already
 irm https://dataflow-pi.vercel.app/cli/install.ps1 | iex
 ```
 
-Both installers require **Node.js ≥ 18** on PATH. The bash installer drops a single Node script at `~/.local/bin/agent-x`; the PowerShell variant writes `~/.local/bin/agent-x.mjs` plus a `.cmd` shim so you can type `agent-x` from any prompt.
+Both installers require **Node.js ≥ 18** on PATH. Linux/macOS gets a single Node script at `~/.local/bin/agent-x`. Windows gets `~/.local/bin/agent-x.mjs` plus a `.cmd` shim so you can type `agent-x` from any prompt.
 
 ### Install location overrides
 - `AGENT_X_INSTALL_DIR` — where the binary lands (default `~/.local/bin`).
@@ -32,95 +30,110 @@ Both installers require **Node.js ≥ 18** on PATH. The bash installer drops a s
 ## Configure
 
 ```
-agent-x set-key <DATAFLOW_API_KEY>          # saved to ~/.config/agent-x/env
-agent-x set-base-url https://staging.example # optional, defaults to prod
+agent-x set-key <DATAFLOW_API_KEY>             # saved to ~/.config/agent-x/env
+agent-x set-base-url https://staging.example   # optional, defaults to prod
 ```
 
 Lookup precedence at runtime: **env vars > ~/.config/agent-x/env > defaults**. So `DATAFLOW_API_KEY=other agent-x …` wins for one-off overrides.
 
----
-
-## Two ways to drive DataFlow
-
-| Use the planner (`new` / `turn` / `preview` / `launch`) | Use the API (`api` / `view`) |
-|---|---|
-| The user describes a goal in plain English | You already know which rows/columns/tables to touch |
-| You want filter conversion, qualify-titles, email waterfall, send-ready sheet — for free | You want to inspect, edit, or backfill specific cells |
-| Result: a running campaign with multiple sheets | Result: one HTTP request, one response |
-
-Both authenticate via the same `DATAFLOW_API_KEY`. You can mix them — e.g. let the planner build the workbook, then use `agent-x view` to inspect a sheet and `agent-x api POST /api/enrichment/setup-and-run` to add an AI column afterwards.
+You can also get your API key from the web UI: open `/agent/<id>`, click **Use from terminal** in the sidebar, copy the install line and `set-key` command from the modal.
 
 ---
 
 ## Command reference
 
-### Conversational planner
+The CLI has 5 subcommands. That's the whole surface — there is no `new` / `turn` / `preview` / `launch` / `get` / `list` / `delete` / `retry`. Those were the gpt-5-mini delegation path and have been removed.
 
 | Command | Purpose |
 |---|---|
-| `agent-x new "<prompt>" [--model <id>]` | Start a new campaign conversation. Default model: `gpt-5-mini` (Azure). |
-| `agent-x turn <conv_id> "<msg>" [--model <id>]` | Append a follow-up turn. Send `"approve"` (or `"go"`, `"looks good"`, etc.) to lock the plan. |
-| `agent-x get <conv_id>` | Show conversation status, last assistant message, plan summary, and (if launched) campaign progress. |
-| `agent-x preview <conv_id>` | After approval: run the search-count preview. Shows `estimatedTotal` so you can pick a sensible launch limit. |
-| `agent-x launch <conv_id> [--limit N]` | Launch the approved plan as a real campaign. `--limit` caps the initial search size. |
-| `agent-x list` | Recent conversations. |
-| `agent-x delete <conv_id>` | Delete a conversation (cancels its campaign if still running). |
+| `agent-x api <METHOD> <path> [opts]` | HTTP passthrough to any `/api/*` endpoint. Auth handled. |
+| `agent-x view <tableId> [opts]` | Pretty-print rows of a sheet (ASCII grid or `--json`). |
+| `agent-x docs [--api] [--url]` | Fetch this guide. `--api`: endpoint reference only. `--url`: just the URL. |
+| `agent-x set-key <token>` | Save `DATAFLOW_API_KEY`. |
+| `agent-x set-base-url <url>` | Save `DATAFLOW_BASE_URL`. |
 
-**Approval keywords** (short-circuit; no LLM call): `approve`, `approved`, `go`, `go ahead`, `looks good`, `looks great`, `lgtm`, `run it`, `ship it`, `yes`, `ok`, `okay`, `sounds good`, `do it`, `confirm`, `proceed`. Anything with `but / change / add / only / instead / ?` etc. routes back to the planner for a fresh draft.
-
-### Direct API
-
-| Command | Purpose |
-|---|---|
-| `agent-x api <METHOD> <path> [opts]` | HTTP passthrough to any endpoint in the API reference below. |
-| `agent-x view <tableId> [opts]` | Pretty-print rows of a sheet as an ASCII grid (or JSON with `--json`). |
-| `agent-x docs [--api] [--url]` | Fetch this guide. `--api` returns only the endpoint reference. `--url` just prints the URL. |
-
-**`api` flags:**
-- `--data '<json>'` — request body. Validated as JSON before any HTTP call.
+### `api` flags
+- `--data '<json>'` — request body. Validated as JSON before the HTTP call.
 - `--data-file <path>` — body from a file. Mutually exclusive with `--data`.
 - `--query k=v` — repeatable. Becomes URL-encoded query params.
+- `--output <path>` (or `-o`) — write response body to a file instead of stdout.
 
-**`view` flags:**
+### `view` flags
 - `--limit N` — number of rows (default 20).
 - `--cols a,b,c` — show only matching columns (substring, case-insensitive).
 - `--filter '<json>'` — server-side filter, e.g. `[{"columnId":"...","operator":"is_empty"}]`.
 - `--wide` — disable cell truncation (default 30 chars).
-- `--json` — emit JSON array of `{ _id, "Col Name": value, … }` instead of a grid.
+- `--json` — emit JSON array `[{ _id, "Col": value, ... }]` instead of a grid.
+- `--meta` — show non-`complete` cell status next to values (grid) or include full cell object (json).
+- `--inspect <columnName>` — per-column status tally + first 3 error samples (substring match on name).
 
 ---
 
 ## Examples
 
-### Build and launch a campaign end-to-end
-```bash
-agent-x new "find 50 CFOs of mid-market manufacturing companies in Vietnam"
-# -> conv_295bad99-...
+### Build and launch a campaign end-to-end (you are the planner)
 
-agent-x turn conv_295bad99-... "approve"
-agent-x preview conv_295bad99-...        # estimatedTotal: 216
-agent-x launch  conv_295bad99-... --limit 50
-agent-x get     conv_295bad99-...        # poll status / step progress
+```bash
+# 1. Read the rules first.
+agent-x docs
+
+# 2. Plan in your head (or in chat with the user), write the plan to disk.
+cat > /tmp/plan.json <<'EOF'
+{
+  "name": "Vietnam Mid-Market Manufacturing CFOs",
+  "steps": [
+    { "type": "search_companies", "params": { "source": "ai-ark",
+        "filters": { "location": ["Vietnam"],
+                     "industries": ["Manufacturing"],
+                     "employeeSize": [{"start": 50, "end": 500}],
+                     "limit": 1000 } } },
+    { "type": "create_sheet",  "params": { "name": "Companies",
+        "columns": ["Company Name","Domain","Size","Industry","Country","Location","LinkedIn URL","Description"] } },
+    { "type": "import_rows",   "params": { "sheet": "Companies", "source": "companies" } },
+    { "type": "filter_rows",   "params": { "sheet": "Companies",
+        "remove": [{"column":"Domain","operator":"is_empty"}] } },
+    { "type": "find_domains",  "params": { "sheet": "Companies" } },
+    { "type": "filter_rows",   "params": { "sheet": "Companies",
+        "remove": [{"column":"Domain","operator":"is_empty"}] } },
+    { "type": "search_people", "params": { "source": "ai-ark",
+        "domainsFrom": "sheet:Companies:Domain",
+        "filters": { "accountLocation": ["Vietnam"],
+                     "departments": ["Finance"],
+                     "seniority": ["c_level","vp"],
+                     "limit": 500 } } },
+    { "type": "create_sheet",  "params": { "name": "People",
+        "columns": ["First Name","Last Name","Full Name","Job Title","Company Domain","Location","LinkedIn URL"] } },
+    { "type": "import_rows",   "params": { "sheet": "People", "source": "people" } },
+    { "type": "qualify_titles","params": { "sheet": "People", "intent": "CFOs at mid-market manufacturing companies in Vietnam" } },
+    { "type": "find_emails_waterfall", "params": { "sheet": "People", "removeEmpty": true } },
+    { "type": "clean_company_name",    "params": { "sheet": "People", "inputColumn": "Company Domain" } },
+    { "type": "clean_person_name",     "params": { "sheet": "People" } },
+    { "type": "materialize_send_ready","params": { "sourceSheet": "People" } }
+  ]
+}
+EOF
+
+# 3. Submit.
+agent-x api POST /api/campaigns --data-file /tmp/plan.json
+# -> { "id": "camp_...", "workbookId": "wb_...", "totalSteps": 14 }
+
+# 4. Poll for progress.
+while sleep 8; do
+  agent-x api GET /api/campaigns/camp_xxx | jq '{status, currentStepIndex, steps: [.steps[] | {type, status}]}'
+done
 ```
 
-### Inspect a sheet from a running campaign
+### Inspect a workbook
 ```bash
-# Find the workbook
-agent-x list
-agent-x get conv_295bad99-...
-#   workbook: bc55c139-6c0d-49b4-b032-ba7e91aa95d1
-
-# List its sheets
-agent-x api GET /api/tables --query projectId=bc55c139-6c0d-49b4-b032-ba7e91aa95d1
-
-# View the Companies sheet
-agent-x view 94d0262a-f25b-437a-91c4-81f13ab2ccbd --limit 10 --cols name,domain,size
+agent-x api GET /api/projects                                        # list workbooks
+agent-x api GET /api/tables --query projectId=wb_xxx                 # list sheets
+agent-x view <tableId> --limit 10 --cols name,domain,size            # peek
+agent-x view <tableId> --inspect "Email (AI)"                        # diagnose AI column
 ```
 
-### Run an AI enrichment on existing rows
+### Run AI enrichment on existing rows
 ```bash
 agent-x api POST /api/enrichment/setup-and-run --data-file ./enrich-config.json
-# enrich-config.json: { tableId, columnName, prompt, model, ... }  — see §6.1 below
 ```
 
 ### Filter, then bulk delete
@@ -132,30 +145,361 @@ agent-x api GET /api/rows \
   --query filterLogic=AND \
   | jq -r '.[].id' > /tmp/ids.txt
 
-# Delete them
 agent-x api DELETE /api/rows --data "{\"rowIds\": $(jq -R . /tmp/ids.txt | jq -s .)}"
+```
+
+### Export a sheet as CSV
+```bash
+agent-x api GET /api/export/csv --query tableId=$TID --output /tmp/out.csv
+```
+
+### Retry an errored campaign
+```bash
+agent-x api POST /api/campaigns/<id> --data '{"action":"retry"}'
 ```
 
 ### Just pull the spec
 ```bash
-agent-x docs           # this guide (CLI + API reference, ~1500 lines)
+agent-x docs           # full guide (CLI + planner rules + API reference)
 agent-x docs --api     # endpoint reference only
-agent-x docs --url     # the URL (handy for `curl` pipes)
+agent-x docs --url     # just the URL — handy for `curl` pipes
 ```
 
 ---
 
-## Notes for Claude Code
+## Notes for Claude Code (or any LLM driving this CLI)
 
-If you're an AI agent reading this via `agent-x docs`:
+**You ARE Agent X.** The rules below — drawn from the same system prompt gpt-5-mini follows in the web UI — apply to you. Don't shortcut them.
 
-- **Column IDs are per-sheet.** Always call `GET /api/columns?tableId={this-sheet}` before constructing any filter, sort, or enrichment request. Reusing a column ID from another sheet returns `400 invalidColumnIds`.
-- **Prefer the planner for whole campaigns**, the API for surgical edits. The planner already encodes hard-won rules (revenue → employee conversion, mandatory seniority filter, find_domains backfill, email waterfall, send-ready sheet). Don't reimplement.
-- **`approve` is idempotent** — calling it twice on the same conversation is safe and free (no LLM round-trip).
-- **`agent-x view` is the fastest way to verify a campaign worked** — pipe to `--json | jq` if you need to assert on values programmatically.
+1. **Always `agent-x docs` first** if you don't already have the guide in context. The rules + plan schema + step recipes are in the section that follows the CLI reference.
+2. **Don't call `/api/agent/conversations*` endpoints from the CLI.** Those exist for the web UI; using them delegates to gpt-5-mini, which defeats the point of you being the planner.
+3. **Column IDs are per-sheet.** Always call `GET /api/columns?tableId={this-sheet}` before constructing any filter, sort, or enrichment request. Reusing a column ID from another sheet returns `400 invalidColumnIds`.
+4. **Construct ONE plan, submit ONCE.** Don't fire individual `search_companies` / `create_sheet` / `import_rows` etc. via separate API calls — flatten them into a `steps[]` array and POST to `/api/campaigns`. The server's engine handles ordering, retries, batch enrichment polling, and find_domains web search. Reimplementing that in your head is a bug waiting to happen.
+5. **Approval flow:** draft the plan, render it in chat as markdown, ask for explicit approval, then POST. Don't auto-launch.
+6. **`agent-x view --inspect <col>` is your debug tool** when an AI column has empty cells.
 
 ---
 
+
+---
+
+# Agent X — Rules for Claude Code
+
+You are reading this because you (Claude Code, or any LLM driving the `agent-x` CLI) are playing the **Agent X planner role**. The web UI uses gpt-5-mini with these same rules; you replace gpt-5-mini when called from the terminal. Same outputs expected.
+
+**Do NOT call `/api/agent/conversations*` from the CLI.** Those endpoints delegate to gpt-5-mini server-side, defeating the point of using Claude as the planner. They exist for the web UI only.
+
+## How execution works
+
+Conceptually a **CampaignPlan** is `{name, source, stages[]}`, where each stage is `{title, summary, notes, steps[]}`. You design this plan in your head (or as markdown for the user). Once approved, **flatten** all `stages[].steps[]` into one ordered `steps[]` array and POST a single payload:
+
+```bash
+agent-x api POST /api/campaigns --data-file /tmp/plan.json
+# body: { "name": "Vietnam CFOs", "steps": [{type, params}, ...] }
+# returns: { "id": "camp_...", "workbookId": "wb_...", "totalSteps": N, "message": "..." }
+```
+
+The server's existing campaign engine then runs each step sequentially via cron (`/api/cron/process-campaigns`). It handles `find_domains` web search, `qualify_titles` sampling, `find_emails_waterfall` provider chain, batch enrichment polling, retries — you do not orchestrate any of that. You only construct the plan and submit it.
+
+For each search step in the flattened array, stamp `source: "ai-ark"` (or `"clay"`) into `params` so the executor dispatches to the right backend:
+
+```json
+{ "type": "search_companies", "params": { "filters": {...}, "source": "ai-ark" } }
+```
+
+To monitor: `agent-x api GET /api/campaigns/<id>` returns `{status, currentStepIndex, steps:[{status,result,error}], …}`. Poll every few seconds until `status === "complete" | "error" | "cancelled"`.
+
+If a step errors, `agent-x api POST /api/campaigns/<id> --data '{"action":"retry"}'` resets the errored step to pending and resumes.
+
+## Step type catalog
+
+The campaign engine accepts these step types. Most user requests for "build me a list of X and get their emails" turn into the standard 4-stage shape: search → import + clean domains → search people → emails + names + send-ready.
+
+| `step.type`              | What it does |
+|--------------------------|--------------|
+| `create_workbook`        | Top-level workbook for the campaign. **Always the first step.** Auto-prepended by the engine if you forget. |
+| `search_companies`       | Clay/AI-Ark company search. Stores results in execution context for the next `import_rows`. |
+| `search_people`          | Clay/AI-Ark people search. Pass `domains[]` OR `domainsFrom: "sheet:Sheet:Column"`. |
+| `create_sheet`           | Creates a sheet with named columns. |
+| `import_rows`            | Imports the most recent search result into a sheet (`source: "companies" \| "people"`). |
+| `filter_rows`            | Removes rows matching a filter. Operators: `is_empty`, `is_not_empty`. |
+| `find_domains`           | Creates a "Domain Finder (AI)" result column (web-search enabled) and backfills the existing "Domain" text column for empty/junk rows. **Restricted to the company's own direct website** — rejects LinkedIn, Facebook, Crunchbase, ZoomInfo, Glassdoor, Apollo, Wikipedia, GitHub, app-store URLs, and any third-party / directory / aggregator page. |
+| `qualify_titles`         | Samples ~8% of people, AI-classifies. If `unqualifiedRate >= 0.3`, classifies all rows and removes those classified "no". |
+| `find_emails_waterfall`  | AI Ark → Ninjer → TryKitt provider chain. ONE "Email (AI)" result column shared across providers + a clean "Email" text column. Drops rows still without an email. |
+| `find_emails`            | **Legacy** single-provider. Don't use — always prefer `find_emails_waterfall`. |
+| `clean_company_name`     | Creates "Sending Company Name (AI)" result column + clean "Sending Company Name" text column. |
+| `clean_person_name`      | Creates "Sending Name (AI)" result column + clean "Sending Name" text column. |
+| `materialize_send_ready` | Builds a third sheet "Send-Ready" with exactly four columns: Sending Name, Sending Company Name, Domain, Email. Reads the clean text columns. **Always the last step.** |
+| `lookup`                 | Cross-sheet VLOOKUP. Creates a "Lookup: <SourceSheet>" result column + extracted text column. |
+| `enrich`                 | Generic AI enrichment via `setup-and-run`. One result column the user clicks to inspect datapoints + cost/time. |
+| `cleanup`                | Legacy: removes rows with empty Email. Prefer `find_emails_waterfall`'s built-in `removeEmpty`. |
+
+## Hard rules — apply these in EVERY plan
+
+### Filters (AI Ark vocabulary — default)
+
+- Apply the **minimum** number of filters. Every filter shrinks the list; most filters are estimates.
+- **NEVER use revenue filters on the search step.** Revenue is sparse and unreliable. Convert the user's revenue threshold to an employee-size range using the country ratios in `src/lib/agent/revenue-employee-table.ts`, then filter on `employeeSize` (an array of `{start, end}` ranges).
+
+  Conversion: `minEmployees = round(revenueUSD / ratio * 0.4)`, `maxEmployees = round(revenueUSD / ratio * 3)`.
+
+  Example for "$10M+ rev in Brunei (~$80k/employee)": `employeeSize: [{ start: 50, end: 1000 }]`.
+
+  Always state the conversion in the stage's `notes` so the user can sanity-check.
+
+### Domains (companies)
+
+After importing companies, **always**:
+1. `filter_rows` — remove rows where Domain `is_empty` (most are missing anyway — try this cheap pass first).
+2. `find_domains` — web-search-enabled backfill for the rest.
+3. `filter_rows` — remove rows where Domain is STILL `is_empty`.
+
+Domain is essential. Do not proceed past this stage with rows that have no domain.
+
+Surface the "real company website or nothing" rule in the stage's `notes`.
+
+### People search (AI Ark)
+
+- **ALWAYS include `seniority`.** Without it you get interns to CEOs. Values: `["c_level","vp","director","head","senior","manager","lead","owner","founder","entry"]`. Pick the band that matches the user's intent.
+- Prefer broader signals over title strings, in priority order:
+  1. `departments` (e.g. `["Sales", "Marketing", "Engineering"]`)
+  2. `seniority`
+  3. (Last resort) `titleKeywords` — and when used, EXPAND to all plausible variants. "CMO" → `["CMO", "Chief Marketing Officer", "VP Marketing", "Head of Marketing", "Marketing Director"]`. Set `titleMode: "SMART"` (also valid: "WORD", "EXACT").
+
+#### CRITICAL — `limitPerCompany`
+
+NEVER include `limitPerCompany` in a plan UNLESS the user **explicitly** asked for a per-company cap ("max 3 per company", "limit to 5 per account"). If they didn't say it, the field must be absent.
+
+If you suspect the result set will be dominated by a few huge accounts (any one trigger below), you MUST hold off drafting AND ask:
+
+- C-level/VP at "tech" / "SaaS" / "enterprise" with no industry sub-filter
+- No geography (worldwide / "global" / "anywhere")
+- A single `companyDomain` or 1–3 domains
+- `employeeSize` bracket reaching 1000+ employees with no other narrowing
+
+When ANY trigger applies, do NOT submit a plan. Reply in chat with the concern and a clarifying question, e.g.: *"This is broad — want me to cap people per company? E.g. max 3 per account so a few enterprises don't dominate the list, or leave it unlimited?"*
+
+Wrong (don't do this — silently caps while pretending to ask):
+```
+"Any caps you want?"           ← vague question
++ filters: { limitPerCompany: 3 }   ← silent cap
+```
+
+To scope to a previously-built company list, set `domainsFrom: "sheet:Companies:Domain"` on the `search_people` step (not inside filters). The executor reads that and feeds the domains into AI Ark's `companyDomain` filter automatically.
+
+### Title qualification
+
+After people import, ALWAYS emit `qualify_titles`. It samples 8% in real time; if ≥ 30% of the sample is unqualified, classifies the rest and removes the unqualified rows. Cheap and safe.
+
+`intent` param: 1-sentence description of who the campaign is targeting (e.g. *"CEOs of consulting firms"*).
+
+### Emails
+
+- ALWAYS use `find_emails_waterfall`. Never the legacy single-provider `find_emails` for new campaigns.
+- Set `removeEmpty: true` (default). Do not proceed past this stage with rows that have no email.
+
+### Name cleaning
+
+After emails, ALWAYS emit `clean_company_name` then `clean_person_name`. They produce "Sending Company Name" and "Sending Name" columns on the People sheet.
+
+For `clean_company_name`, prefer `inputColumn: "Company Domain"` (the domain encodes the spoken brand name better than the legal name from search results). Fall back to "Company Name" if the domain is unavailable.
+
+### Final view
+
+ALWAYS emit `materialize_send_ready` as the LAST step. Builds a third sheet "Send-Ready" with exactly four columns: Sending Name, Sending Company Name, Domain, Email. This is what the user exports for their cold-email tool.
+
+### Data source
+
+Default to `"ai-ark"`. Filter shapes are AI Ark's (`accountLocation` / `contactLocation`, `employeeSize:[{start,end}]`, `seniority`, `departments`, `titleKeywords` + `titleMode`).
+
+Use `"clay"` only if the user explicitly asks for Clay — and if you do, switch to Clay's filter vocabulary (`country_names`, `sizes` / `minimum_member_count`, `seniority_levels`, `job_title_keywords` + `job_title_mode`, `job_functions`). Do not mix shapes between sources — AI Ark silently drops unknown fields and returns the entire unfiltered database.
+
+## Conversation behavior
+
+- **On the FIRST turn, draft a complete plan immediately.** Don't ask for permission to draft — the user already gave the prompt. Render the plan in chat as markdown (stages + steps + notes) and ask for approval.
+- Show your reasoning in stage notes. Be specific: *"filtering 25–200 employees because $10M+ revenue in Malaysia is roughly that range ($80k revenue per employee × 200 employees = $16M)"*.
+- Ask clarifying questions ONLY when the request is genuinely ambiguous:
+  - Geography is missing entirely.
+  - Role is missing entirely.
+  - Industry-defining term needs disambiguation ("startups" — what sector? "tech companies" — SaaS? hardware? services?).
+  - A `limitPerCompany` trigger fires (see above).
+
+  Do NOT ask about: data source (default AI Ark), filters you can reasonably infer, exact result limits (user can pass a limit at launch).
+- When the user says **"approve"** / **"go"** / **"looks good"** / **"run it"** / **"ship it"** / **"yes"**: stop drafting, optionally call `/api/add-aiarc-data/preview` (or `/api/add-data/preview` for Clay) to surface an `estimatedTotal`, then immediately POST the plan to `/api/campaigns`. Report `campaignId` and `workbookId` back to the user.
+- If the user asks you to change the plan after approval, draft a revised plan and re-ask for approval.
+
+## Plan schema (CampaignPlan)
+
+```json
+{
+  "name": "Malaysia Consulting CEOs",
+  "rationale": "2-4 sentence justification (shown in plan card).",
+  "source": "ai-ark",
+  "stages": [
+    {
+      "title": "Stage 1: Find target companies",
+      "summary": "Search Malaysia consulting firms with 50-375 employees.",
+      "notes": ["$10M revenue / $80k per-employee ≈ 125; range 50-375 brackets that."],
+      "steps": [
+        { "type": "search_companies", "params": { "filters": { ... } } },
+        ...
+      ]
+    },
+    ...
+  ]
+}
+```
+
+### Flattening for `/api/campaigns`
+
+To submit, concatenate every stage's `steps[]` into one flat array (in order), stamp `source` onto search-step params, and POST:
+
+```json
+{
+  "name": "Malaysia Consulting CEOs",
+  "steps": [
+    { "type": "search_companies", "params": { "filters": {...}, "source": "ai-ark" } },
+    { "type": "create_sheet",     "params": { "name": "Companies", "columns": [...] } },
+    { "type": "import_rows",      "params": { "sheet": "Companies", "source": "companies" } },
+    ...
+  ]
+}
+```
+
+Stages are a UX organizing layer; the engine doesn't care about them.
+
+## Step `params` shapes
+
+### create_workbook
+```json
+{ "name": "Workbook Title" }
+```
+
+### search_companies (AI Ark)
+```json
+{ "filters": {
+    "domain": ["stripe.com"],            // optional — exact-match against owned domain
+    "name": ["..."],                     // optional, SMART
+    "lookalikeDomains": ["..."],         // optional, up to 5
+    "industries": ["..."],               // optional, SMART
+    "industriesExclude": ["..."],        // optional, WORD
+    "keywords": ["..."],                 // optional, free-text
+    "location": ["Malaysia"],            // country/region/city
+    "employeeSize": [{ "start": 50, "end": 375 }],
+    "technology": ["..."],               // optional, SMART
+    "fundingType": ["Series A", "Series B"],
+    "fundingTotalMin": 0, "fundingTotalMax": 0,
+    "foundedYearMin": 0, "foundedYearMax": 0,
+    "limit": 1000
+  }
+}
+```
+
+### search_companies (Clay, only when source==="clay")
+```json
+{ "filters": { "country_names": [...], "industries": [...], "sizes": [...],
+               "minimum_member_count": 50, "semantic_description": "...", "limit": 1000 } }
+```
+
+### search_people (AI Ark)
+```json
+{
+  "domainsFrom": "sheet:Companies:Domain",   // OR pass companyDomain explicitly in filters
+  "filters": {
+    "companyDomain": ["..."],                // optional explicit list (filled from domainsFrom otherwise)
+    "companyName": ["..."], "industries": ["..."], "industriesExclude": ["..."],
+    "accountLocation": ["..."], "employeeSize": [{"start": 50, "end": 500}],
+    "technology": ["..."], "revenue": [{"start": 0, "end": 0}],
+    "fullName": "...", "linkedinUrl": "...", "contactLocation": ["..."],
+    "seniority": ["c_level","vp"],
+    "departments": ["Marketing"],
+    "titleKeywords": ["CMO"], "titleMode": "SMART",
+    "skills": ["..."], "certifications": ["..."], "schoolNames": ["..."], "languages": ["..."],
+    "limit": 500
+    // limitPerCompany: ABSENT unless user explicitly asked for a cap
+  }
+}
+```
+
+### search_people (Clay, only when source==="clay")
+```json
+{ "domainsFrom": "sheet:Companies:Domain",
+  "filters": { "seniority_levels": [...], "job_title_keywords": [...], "job_title_mode": "smart",
+               "job_functions": [...], "countries_include": [...], "limit": 500, "limit_per_company": 0 } }
+```
+
+### create_sheet
+```json
+{ "name": "Companies", "columns": ["Company Name", "Domain", "Size", "Industry", "Location", "LinkedIn URL", "Description"] }
+```
+
+Standard column lists (use these unless the user asks for more):
+
+- **Companies sheet:** `["Company Name","Domain","Size","Industry","Country","Location","LinkedIn URL","Description"]`
+- **People sheet:** `["First Name","Last Name","Full Name","Job Title","Company Domain","Location","LinkedIn URL"]`
+
+### import_rows
+```json
+{ "sheet": "Companies", "source": "companies" }   // or "people"
+```
+
+### filter_rows
+```json
+{ "sheet": "Companies", "remove": [{ "column": "Domain", "operator": "is_empty" }] }
+```
+
+### find_domains
+```json
+{ "sheet": "Companies", "domainColumn": "Domain", "nameColumn": "Company Name", "failIfMissing": false }
+```
+
+### qualify_titles
+```json
+{ "sheet": "People", "intent": "CEOs of consulting firms in Malaysia", "titleColumn": "Job Title", "unqualifiedThreshold": 0.3 }
+```
+
+### find_emails_waterfall
+```json
+{ "sheet": "People", "nameColumn": "Full Name", "domainColumn": "Company Domain", "removeEmpty": true }
+```
+
+### clean_company_name
+```json
+{ "sheet": "People", "inputColumn": "Company Domain", "outputColumn": "Sending Company Name" }
+```
+
+### clean_person_name
+```json
+{ "sheet": "People", "fullNameColumn": "Full Name", "firstNameColumn": "First Name", "outputColumn": "Sending Name" }
+```
+
+### materialize_send_ready
+```json
+{
+  "sourceSheet": "People",
+  "targetSheet": "Send-Ready",
+  "columnMap": {
+    "Sending Name": "Sending Name",
+    "Sending Company Name": "Sending Company Name",
+    "Domain": "Company Domain",
+    "Email": "Email"
+  }
+}
+```
+
+### lookup
+```json
+{ "sourceSheet": "Companies", "targetSheet": "People", "matchColumn": "Domain", "returnColumn": "Industry" }
+```
+
+### enrich
+```json
+{ "sheet": "People", "outputColumn": "Pitch Hook", "prompt": "Write a one-line opener referencing {{Company Name}}'s {{Industry}}.", "model": "gpt-5-mini", "onlyEmpty": true, "webSearchEnabled": false }
+```
+
+## Workflow in one line
+
+`agent-x docs` → read these rules → draft plan in chat → get approval → flatten stages → `agent-x api POST /api/campaigns --data-file plan.json` → poll `agent-x api GET /api/campaigns/<id>` until terminal → done.
 
 ---
 
@@ -1442,7 +1786,36 @@ Completely deletes a table and ALL associated data (columns, rows, enrichment jo
 
 ## 16. Campaigns
 
-Campaigns are the multi-step execution unit launched by the planner (`POST /api/agent/conversations/{id}/launch`). One campaign = ordered `CampaignStep[]`, advanced one step per cron tick by `/api/cron/process-campaigns`.
+Campaigns are the multi-step execution unit. One campaign = ordered `CampaignStep[]`, advanced one step per cron tick by `/api/cron/process-campaigns`. They can be created two ways:
+
+- **Via the web UI** — gpt-5-mini drafts the plan, `POST /api/agent/conversations/{id}/launch` flattens + submits it.
+- **Directly from a CLI/LLM** — you (or Claude Code) draft the plan, flatten it, and `POST /api/campaigns` yourself. This is the recommended path from the terminal.
+
+The step type catalog (search_companies, find_domains, qualify_titles, find_emails_waterfall, materialize_send_ready, etc.) and the rules that produce a valid plan are in `AGENT-X-RULES.md` (also served at `/cli/AGENT-X-GUIDE.md`).
+
+### Create a Campaign
+```
+POST /api/campaigns
+{
+  "name": "Vietnam Mid-Market CFOs",
+  "steps": [
+    { "type": "search_companies", "params": { "filters": {...}, "source": "ai-ark" } },
+    { "type": "create_sheet",     "params": { "name": "Companies", "columns": [...] } },
+    ...
+  ]
+}
+```
+Returns:
+```json
+{
+  "id": "camp_...",
+  "workbookId": "wb_...",
+  "totalSteps": 14,
+  "message": "Campaign queued. Cron will advance it step by step."
+}
+```
+
+A `create_workbook` step is auto-prepended if you don't include one. Every `search_companies` / `search_people` step should carry `params.source: "ai-ark" | "clay"` so the executor dispatches to the right backend.
 
 ### Get Campaign Status
 ```

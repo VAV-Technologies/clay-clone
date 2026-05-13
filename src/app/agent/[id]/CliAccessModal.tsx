@@ -47,7 +47,7 @@ export function CliAccessModal({ isOpen, onClose }: CliAccessModalProps) {
   const setKeyCmd = `agent-x set-key ${apiKey || '<your-key>'}`;
   const installPs = `irm ${baseUrl}/cli/install.ps1 | iex`;
   const installSh = `curl -fsSL ${baseUrl}/cli/install.sh | bash`;
-  const tryCmd = 'agent-x new "find 20 CFOs of manufacturing companies in Vietnam"';
+  const tryCmd = 'agent-x docs';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="2xl" title="Get CLI access" description="Drive Agent X from your terminal — same model, same data, same campaigns.">
@@ -94,9 +94,10 @@ export function CliAccessModal({ isOpen, onClose }: CliAccessModalProps) {
 
         {/* Step 3 — Try it */}
         <Step n={3} label="Try it">
-          <Code label="Start a campaign" cmd={tryCmd} onCopy={() => copy(tryCmd, 'try')} copied={copiedKey === 'try'} />
+          <Code label="Read the rules + API spec" cmd={tryCmd} onCopy={() => copy(tryCmd, 'try')} copied={copiedKey === 'try'} />
           <p className="text-xs text-white/45 mt-2">
-            Then <code className="text-white/65 bg-white/5 px-1">agent-x turn &lt;id&gt; &quot;approve&quot;</code> → <code className="text-white/65 bg-white/5 px-1">preview</code> → <code className="text-white/65 bg-white/5 px-1">launch --limit 20</code>.
+            The CLI is execution-only — the planner brain is <strong className="text-white/70">you</strong> (or Claude Code).
+            From an LLM-capable terminal, just say: <em>&quot;use agent-x to find 50 CFOs of manufacturing companies in Vietnam.&quot;</em> Claude reads <code className="text-white/65 bg-white/5 px-1">/cli/AGENT-X-GUIDE.md</code>, drafts the plan, gets your approval, and submits via <code className="text-white/65 bg-white/5 px-1">agent-x api POST /api/campaigns</code>.
           </p>
         </Step>
 

@@ -59,22 +59,6 @@ function headers() {
   return h;
 }
 
-async function request(method, path, body) {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers: headers(),
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-  if (!res.ok) {
-    const msg = (data && data.error) || text.slice(0, 400) || res.statusText;
-    throw new Error(`${method} ${path} -> ${res.status}: ${msg}`);
-  }
-  return data;
-}
-
 function parseFlags(args) {
   const positional = [];
   const flags = {};
@@ -96,47 +80,6 @@ function parseFlags(args) {
   return { positional, flags };
 }
 
-function summarizePlan(plan) {
-  if (!plan || typeof plan !== 'object') return '';
-  const lines = [];
-  lines.push(`  plan: ${plan.name ?? '(unnamed)'}  source=${plan.source ?? '?'}`);
-  if (plan.rationale) lines.push(`  rationale: ${String(plan.rationale).slice(0, 200)}`);
-  if (Array.isArray(plan.stages)) {
-    plan.stages.forEach((stage, i) => {
-      const stepCount = Array.isArray(stage?.steps) ? stage.steps.length : 0;
-      lines.push(`  stage ${i + 1}: ${stage?.title ?? '(no title)'}  (${stepCount} step${stepCount === 1 ? '' : 's'})`);
-      if (Array.isArray(stage?.steps)) {
-        for (const step of stage.steps) {
-          lines.push(`    - ${step?.type ?? '?'}`);
-        }
-      }
-    });
-  }
-  return lines.join('\n');
-}
-
-function printChatResponse(data) {
-  console.log(`conversation: ${data.conversationId}`);
-  if (data.title) console.log(`title:        ${data.title}`);
-  console.log(`status:       ${data.status}`);
-  console.log(`nextAction:   ${data.nextAction}`);
-  const assistant = Array.isArray(data.messages)
-    ? data.messages.filter(m => m.role === 'assistant').slice(-1)[0]
-    : null;
-  if (assistant?.content) {
-    console.log('\nassistant:');
-    console.log(assistant.content);
-  }
-  if (Array.isArray(data.clarifyingQuestions) && data.clarifyingQuestions.length) {
-    console.log('\nclarifying questions:');
-    for (const q of data.clarifyingQuestions) console.log(`  - ${q}`);
-  }
-  if (data.planJson) {
-    console.log('\nplan:');
-    console.log(summarizePlan(data.planJson));
-  }
-}
-
 function writeConfig(key, value) {
   mkdirSync(CONFIG_DIR, { recursive: true });
   const existing = existsSync(CONFIG_FILE) ? readFileSync(CONFIG_FILE, 'utf8').split('\n') : [];
@@ -155,185 +98,6 @@ function writeConfig(key, value) {
   }
   if (!replaced) next.push(`${key}=${value}`);
   writeFileSync(CONFIG_FILE, next.filter(Boolean).join('\n') + '\n', { mode: 0o600 });
-}
-
-async function cmdNew(positional, flags) {
-  const prompt = positional[0];
-  if (!prompt) throw new Error('usage: agent-x new "<prompt>" [--model <id>]');
-  const body = { prompt };
-  if (flags.model) body.model = flags.model;
-  const data = await request('POST', '/api/agent/conversations', body);
-  printChatResponse(data);
-}
-
-async function cmdTurn(positional, flags) {
-  const [convId, message] = positional;
-  if (!convId || !message) throw new Error('usage: agent-x turn <id> "<message>" [--model <id>]');
-  const body = { message };
-  if (flags.model) body.model = flags.model;
-  const data = await request('POST', `/api/agent/conversations/${encodeURIComponent(convId)}/turn`, body);
-  printChatResponse(data);
-}
-
-function renderConversationSnapshot(data) {
-  const conv = data.conversation;
-  const lines = [];
-  lines.push(`conversation: ${conv.id}`);
-  lines.push(`title:        ${conv.title}`);
-  lines.push(`status:       ${conv.status}`);
-  lines.push(`campaignId:   ${conv.campaignId ?? '(none)'}`);
-  const lastAssistant = Array.isArray(data.messages)
-    ? data.messages.filter(m => m.role === 'assistant').slice(-1)[0]
-    : null;
-  if (lastAssistant) {
-    lines.push('');
-    lines.push('last assistant message:');
-    lines.push(lastAssistant.content);
-  }
-  if (conv.planJson) {
-    lines.push('');
-    lines.push('plan:');
-    lines.push(summarizePlan(conv.planJson));
-  }
-  if (data.campaign) {
-    const c = data.campaign;
-    lines.push('');
-    lines.push('campaign:');
-    lines.push(`  id:       ${c.id}`);
-    lines.push(`  status:   ${c.status}`);
-    lines.push(`  workbook: ${c.workbookId ?? '(none)'}`);
-    lines.push(`  progress: step ${c.progress?.currentStep ?? '?'} / ${c.progress?.totalSteps ?? '?'}  (${c.progress?.completedSteps ?? 0} complete)`);
-    if (Array.isArray(c.steps)) {
-      for (const s of c.steps) {
-        const tag = s.status === 'complete' ? 'OK' : s.status === 'error' ? 'ERR' : s.status === 'running' ? '..' : '  ';
-        lines.push(`    [${tag}] ${s.step}. ${s.type}${s.error ? '  err=' + String(s.error).slice(0, 120) : ''}`);
-      }
-    }
-  }
-  return lines.join('\n');
-}
-
-function snapshotFingerprint(data) {
-  const conv = data.conversation;
-  const camp = data.campaign;
-  const parts = [conv?.status, camp?.status, camp?.progress?.completedSteps];
-  if (Array.isArray(camp?.steps)) {
-    for (const s of camp.steps) parts.push(s.status);
-  }
-  return parts.join('|');
-}
-
-async function cmdGet(positional, flags) {
-  const [convId] = positional;
-  if (!convId) throw new Error('usage: agent-x get <id> [--watch]');
-  const fetchOnce = () => request('GET', `/api/agent/conversations/${encodeURIComponent(convId)}`);
-
-  if (!flags.watch) {
-    const data = await fetchOnce();
-    console.log(renderConversationSnapshot(data));
-    return;
-  }
-
-  // --watch: poll every 5s, reprint only when fingerprint changes, exit on
-  // terminal state (campaign done/cancelled/error, or conversation
-  // complete/cancelled with no campaign).
-  let lastFp = null;
-  const isTty = process.stdout.isTTY;
-  while (true) {
-    let data;
-    try {
-      data = await fetchOnce();
-    } catch (err) {
-      process.stderr.write(`\n[watch] fetch failed: ${err instanceof Error ? err.message : err}\n`);
-      await new Promise(r => setTimeout(r, 5000));
-      continue;
-    }
-    const fp = snapshotFingerprint(data);
-    if (fp !== lastFp) {
-      if (isTty) process.stdout.write('\x1b[2J\x1b[H');
-      console.log(renderConversationSnapshot(data));
-      console.log(`\n[watch] polling every 5s — Ctrl-C to exit`);
-      lastFp = fp;
-    }
-    const campStatus = data.campaign?.status;
-    const convStatus = data.conversation?.status;
-    if (
-      (campStatus && ['complete', 'cancelled', 'error'].includes(campStatus)) ||
-      (!data.campaign && ['complete', 'cancelled'].includes(convStatus))
-    ) {
-      console.log(`\n[watch] terminal state reached (${campStatus ?? convStatus}) — exiting`);
-      return;
-    }
-    await new Promise(r => setTimeout(r, 5000));
-  }
-}
-
-async function cmdPreview(positional) {
-  const [convId] = positional;
-  if (!convId) throw new Error('usage: agent-x preview <id>');
-  const data = await request('POST', `/api/agent/conversations/${encodeURIComponent(convId)}/preview`, {});
-  console.log(`status:         ${data.status}`);
-  console.log(`searchType:     ${data.searchType}`);
-  console.log(`estimatedTotal: ${data.estimatedTotal ?? 'n/a'}`);
-  console.log(`previewCount:   ${data.previewCount ?? 0}`);
-  if (Array.isArray(data.preview) && data.preview.length) {
-    console.log('\nfirst 3 preview rows:');
-    for (const row of data.preview.slice(0, 3)) {
-      console.log('  - ' + JSON.stringify(row).slice(0, 240));
-    }
-  }
-}
-
-async function cmdLaunch(positional, flags) {
-  const [convId] = positional;
-  if (!convId) throw new Error('usage: agent-x launch <id> [--limit <n>]');
-  const body = {};
-  if (flags.limit) {
-    const n = Number(flags.limit);
-    if (!Number.isFinite(n) || n <= 0) throw new Error('--limit must be a positive number');
-    body.confirmedLimit = Math.floor(n);
-  }
-  const data = await request('POST', `/api/agent/conversations/${encodeURIComponent(convId)}/launch`, body);
-  console.log(`status:     ${data.status}`);
-  console.log(`campaignId: ${data.campaignId}`);
-  console.log(`workbook:   ${data.workbookId ?? '(none)'}`);
-  console.log(`totalSteps: ${data.totalSteps}`);
-  if (data.message) console.log(`message:    ${data.message}`);
-}
-
-async function cmdList() {
-  const data = await request('GET', '/api/agent/conversations');
-  const rows = Array.isArray(data.conversations) ? data.conversations : [];
-  if (!rows.length) { console.log('(no conversations)'); return; }
-  for (const r of rows) {
-    console.log(`${r.id}  ${r.status.padEnd(20)}  ${r.updatedAt}  ${r.title}`);
-  }
-}
-
-async function cmdDelete(positional) {
-  const [convId] = positional;
-  if (!convId) throw new Error('usage: agent-x delete <id>');
-  const data = await request('DELETE', `/api/agent/conversations/${encodeURIComponent(convId)}`);
-  console.log(`deleted: ${convId}  cancelledCampaign=${!!data.cancelledCampaign}`);
-}
-
-async function cmdRetry(positional) {
-  const [id] = positional;
-  if (!id) throw new Error('usage: agent-x retry <conv_id | camp_id>');
-  // Accept either a conversation id or a campaign id. Conversation ids begin
-  // with `conv_`; everything else is treated as a campaign id directly.
-  let campaignId = id;
-  if (id.startsWith('conv_')) {
-    const data = await request('GET', `/api/agent/conversations/${encodeURIComponent(id)}`);
-    if (!data.conversation?.campaignId) {
-      throw new Error(`conversation ${id} has no linked campaign — nothing to retry`);
-    }
-    campaignId = data.conversation.campaignId;
-  }
-  const res = await request('POST', `/api/campaigns/${encodeURIComponent(campaignId)}`, { action: 'retry' });
-  console.log(`retried: ${campaignId}`);
-  if (res.message) console.log(`message: ${res.message}`);
-  if (res.resetSteps !== undefined) console.log(`reset:   ${res.resetSteps} step${res.resetSteps === 1 ? '' : 's'}`);
 }
 
 function cmdSetKey(positional) {
@@ -600,45 +364,38 @@ async function cmdDocs(flags) {
 }
 
 function usage() {
-  console.log(`agent-x — terminal client for DataFlow Agent X (GTM Campaign Builder)
+  console.log(`agent-x — terminal client for DataFlow
+
+This CLI is execution-only. The planner brain is whoever is calling it
+(Claude Code, you, a script). For the rules + plan schema + step recipes,
+run \`agent-x docs\`.
 
 Commands:
-  new   "<prompt>"        [--model <id>]   start a new conversation
-  turn  <id> "<message>"  [--model <id>]   append a follow-up turn
-  get   <id>              [--watch]        show conversation + campaign status
-                                             --watch: poll every 5s, exit on terminal state
-  preview <id>                             run search-count preview
-  launch  <id>            [--limit <n>]    launch the approved plan as a campaign
-  list                                     list recent conversations
-  delete <id>                              delete a conversation
-  retry  <conv_id|camp_id>                 resume an errored campaign from where it failed
-  set-key <token>                          save DATAFLOW_API_KEY to ~/.config/agent-x/env
-  set-base-url <url>                       save DATAFLOW_BASE_URL to ~/.config/agent-x/env
-  api <METHOD> <path> [opts]               passthrough to any /api/* endpoint
-                                             opts: --data <json>, --data-file <path>,
-                                                   --query k=v (repeatable),
-                                                   --output <path> (write body to file)
-  view <tableId> [opts]                    pretty-print rows from a sheet
-                                             opts: --limit N (default 20),
-                                                   --cols a,b,c (substring match),
-                                                   --filter <json>, --wide, --json,
-                                                   --meta (show cell status when not "complete"),
-                                                   --inspect <columnName> (per-column status + errors)
-  docs [--api] [--url]                     fetch and print AGENT-X-GUIDE.md
-                                             --api: only the endpoint reference
-                                             --url: just print the URL
+  api <METHOD> <path> [opts]   passthrough to any /api/* endpoint
+                                 opts: --data <json>, --data-file <path>,
+                                       --query k=v (repeatable),
+                                       --output <path> (write body to file)
+  view <tableId> [opts]        pretty-print rows from a sheet
+                                 opts: --limit N (default 20),
+                                       --cols a,b,c (substring match),
+                                       --filter <json>, --wide, --json,
+                                       --meta, --inspect <columnName>
+  docs [--api] [--url]         fetch and print AGENT-X-GUIDE.md
+                                 --api: just the endpoint reference
+                                 --url: just print the URL
+  set-key <token>              save DATAFLOW_API_KEY to ~/.config/agent-x/env
+  set-base-url <url>           save DATAFLOW_BASE_URL to ~/.config/agent-x/env
 
-Config (override precedence): env vars > ~/.config/agent-x/env > defaults
+Config (precedence): env vars > ~/.config/agent-x/env > defaults
   DATAFLOW_BASE_URL  (default: https://dataflow-pi.vercel.app)
   DATAFLOW_API_KEY   (bearer token for /api/* endpoints)
 
-Examples (driving the workbook API directly):
-  agent-x api GET /api/projects
-  agent-x api POST /api/tables --data '{"projectId":"p_...","name":"Companies"}'
-  agent-x api GET /api/rows --query tableId=t_xxx --query 'filterLogic=AND'
-  agent-x view <tableId> --limit 5 --cols name,domain
-  agent-x docs | less                      # full guide (CLI + API)
-  agent-x docs --api                       # just the API reference`);
+Examples:
+  agent-x docs                                            # read the planner rules + API spec
+  agent-x api GET  /api/projects
+  agent-x api POST /api/campaigns --data-file plan.json   # submit a campaign you built
+  agent-x api GET  /api/campaigns/<id>                    # poll for progress
+  agent-x view <tableId> --limit 5 --cols name,domain`);
 }
 
 async function main() {
@@ -649,14 +406,6 @@ async function main() {
   if (cmd === 'api') return cmdApi(rest);
   const { positional, flags } = parseFlags(rest);
   switch (cmd) {
-    case 'new':          return cmdNew(positional, flags);
-    case 'turn':         return cmdTurn(positional, flags);
-    case 'get':          return cmdGet(positional, flags);
-    case 'preview':      return cmdPreview(positional);
-    case 'launch':       return cmdLaunch(positional, flags);
-    case 'list':         return cmdList();
-    case 'delete':       return cmdDelete(positional);
-    case 'retry':        return cmdRetry(positional);
     case 'set-key':      return cmdSetKey(positional);
     case 'set-base-url': return cmdSetBaseUrl(positional);
     case 'docs':         return cmdDocs(flags);
