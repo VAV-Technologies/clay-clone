@@ -198,6 +198,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       console.error('[agent/turn] planner failed:', errMsg);
+      const isContentFilter = /content management policy|content filter|responsibleaipolicyviolation|content_filter/i.test(errMsg);
+      if (isContentFilter) {
+        return NextResponse.json(
+          { error: 'Your message was rejected by the upstream content filter. Try rephrasing with a longer, more descriptive prompt.' },
+          { status: 400 },
+        );
+      }
       return NextResponse.json({ error: `Planner failed: ${errMsg}` }, { status: 500 });
     }
 

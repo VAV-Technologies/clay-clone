@@ -1448,6 +1448,8 @@ DELETE /api/agent/conversations/{id}
 ```
 Cascades message deletes; if a campaign is still running, marks it `cancelled` first (no rows deleted). Returns `{ success: true, cancelledCampaign: boolean }`.
 
+> **Cleanup ordering matters.** Deleting a conversation with a running campaign **cancels that campaign mid-flight** — pending steps will not execute, but any rows already inserted persist in the workbook. If you want to preserve the campaign (e.g. mid-run or recently completed), don't delete the conversation; or wait for `status === "complete"` first. The workbook itself is never deleted by this endpoint.
+
 ---
 
 ## Data Types

@@ -28,8 +28,13 @@ export async function POST(request: NextRequest) {
       completedAt: undefined,
     }));
 
-    // Auto-prepend create_workbook if first step isn't one
-    if (steps[0].type !== 'create_workbook') {
+    // Auto-prepend create_workbook ONLY when the campaign is building
+    // fresh data and the caller forgot the first step. Skip when the plan
+    // already opens with create_workbook OR with use_existing_workbook —
+    // the latter binds an existing workbook, so prepending would leave an
+    // orphan empty workbook in the projects list.
+    const firstType = steps[0].type;
+    if (firstType !== 'create_workbook' && firstType !== 'use_existing_workbook') {
       steps.unshift({
         type: 'create_workbook',
         params: { name },

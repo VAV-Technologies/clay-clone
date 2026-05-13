@@ -121,6 +121,13 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       console.error('[agent/conversations] planner failed:', errMsg);
+      // Azure content-filter rejection: surface as a friendly 400 instead of
+      // a generic 500 so the UI can show "rephrase" guidance.
+      const isContentFilter = /content management policy|content filter|responsibleaipolicyviolation|content_filter/i.test(errMsg);
+      const status = isContentFilter ? 400 : 500;
+      const userFacing = isContentFilter
+        ? 'Your prompt was rejected by the upstream content filter. Try rephrasing — a longer, more descriptive prompt usually works (e.g. "build a list of CFOs in Vietnam" instead of "do something useful").'
+        : `Planner failed: ${errMsg}`;
       // Still return the conversation so the user can retry from the chat page.
       await db
         .update(schema.agentConversations)
@@ -129,10 +136,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           conversationId,
-          error: `Planner failed: ${errMsg}`,
+          error: userFacing,
           messages: [{ id: userMsgId, role: 'user', content: prompt, createdAt: now.toISOString() }],
         },
-        { status: 500 },
+        { status },
       );
     }
 
