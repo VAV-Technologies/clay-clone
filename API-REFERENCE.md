@@ -552,7 +552,8 @@ One atomic call that mirrors what happens when a user clicks "Run" in the Enrich
 
 **Optional fields (with defaults):**
 - `model` — default `"gpt-5-mini"`. Any model from §"Cost Optimization" table.
-- `outputColumns` — default `[]`. Use a list of keys (e.g. `["headline","source_url"]`) for structured output. Each key auto-creates a sibling text column populated from the model's JSON.
+- `outputColumns` — default `[]`. Use a list of keys (e.g. `["headline","source_url"]`) for structured output. The model returns a JSON object with those keys; each key can later be extracted into a sibling text column via `POST /api/enrichment/extract-datapoint`.
+- `outputFormat` — `"text"` or `"json"`. **Smart default: `"json"` when `outputColumns` is non-empty, else `"text"`.** In `"text"` mode the model returns a freeform plain-text answer per row and the cell value is the literal string (no JSON, no `enrichmentData`). In `"json"` mode the cell value summarizes datapoint count and `cell.enrichmentData` carries the parsed JSON keys (plus auto-added `reasoning`, `confidence`, `steps_taken`). Pick `"text"` for summaries, intro lines, one-shot freeform answers; pick `"json"` (with `outputColumns`) when you want multi-field structured extraction.
 - `temperature` — default `0.7`. Use `0.1-0.3` for factual lookups.
 - `webSearchEnabled` — default `false`. Set `true` when the prompt needs live web data (see §6.4).
 - `webSearchProvider` — default `"spider"` (only Spider.Cloud is honored at runtime).
@@ -605,6 +606,24 @@ curl -X POST https://dataflow-pi.vercel.app/api/enrichment/setup-and-run \
 
 After this returns, opening the table in the UI shows the new column with a working run-button dropdown and a clickable cell that opens the inspector modal — same as if a user had configured it in the EnrichmentPanel.
 
+**Worked example — plain-text freeform answer (no `outputColumns`):**
+```bash
+curl -X POST https://dataflow-pi.vercel.app/api/enrichment/setup-and-run \
+  -H "Authorization: Bearer $DATAFLOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tableId": "TABLE_ID",
+    "columnName": "Pitch Hook",
+    "prompt": "Write a one-sentence M&A elevator pitch for {{Company Name}} based on {{Industry}}. Plain text, no quotes.",
+    "model": "gpt-5-mini",
+    "inputColumns": ["COMPANY_COL_ID", "INDUSTRY_COL_ID"],
+    "outputFormat": "text",
+    "temperature": 0.4,
+    "rowIds": ["ROW_ID"]
+  }'
+```
+Each cell's `value` is the literal sentence. `cell.enrichmentData` is `undefined` (nothing to extract). The inspector modal still opens with the cell text + token/cost metadata.
+
 ### 6.2. Anti-patterns (DO NOT)
 
 These are common mistakes when an agent skips `setup-and-run` and tries to assemble the flow manually. Each one produces broken UI state:
@@ -612,7 +631,8 @@ These are common mistakes when an agent skips `setup-and-run` and tries to assem
 - **DO NOT call `POST /api/enrichment/run` against a `text` column.** The cell will populate but the UI inspector won't open and the column header won't show the run-button dropdown — the column-to-config link is missing. Use `setup-and-run` instead.
 - **DO NOT call `POST /api/columns` with `type: "enrichment"` and forget `enrichmentConfigId`.** Same outcome — orphaned column. There's a fallback in the EnrichmentPanel that searches by name, but it's brittle and will not find a config you skipped creating.
 - **DO NOT call Azure OpenAI / OpenAI / any LLM directly from your client and write the result to a plain cell.** Cost won't be tracked, no `metadata` will be persisted, and the result won't be re-runnable. Always go through `setup-and-run` (or `/run` for an existing config) so the unified prompt builder, tool-calling loop, and metadata layer apply.
-- **DO NOT skip `outputColumns` for multi-datapoint results.** Without it, the model returns one blob and the "Extract to column" affordance has nothing structured to extract. If the user wants headline + URL + summary, declare them as `outputColumns: ["headline","url","summary"]` and the runner auto-creates sibling columns populated per-cell.
+- **DO NOT skip `outputColumns` for multi-datapoint results.** Without it (and with `outputFormat: "json"`), the model returns one blob and the "Extract to column" affordance has nothing structured to extract. If the user wants headline + URL + summary, declare them as `outputColumns: ["headline","url","summary"]`. (For a single freeform answer, use `outputFormat: "text"` instead — no Data Guide needed.)
+- **DO NOT pass `outputColumns` with `outputFormat: "text"`.** The two are contradictory. Text mode ignores `outputColumns`; the UI hides the Data Guide editor when text is selected.
 - **DO NOT use `POST /api/formula/...` for AI work.** Formulas are for deterministic transformations (split, combine, regex). For anything that needs reasoning or live data, use `setup-and-run`.
 - **DO NOT toggle `webSearchEnabled: true` on `POST /api/enrichment/batch`** — batch returns 400 with that combination. Web search is real-time only. For >1000 rows that need web search, run `setup-and-run` in chunks.
 - **DO NOT enable web search for tasks the model already knows from training** (extract domain from email, classify text, transform formats). Spider charges credits per call — wasted spend.
@@ -644,6 +664,8 @@ POST /api/enrichment
   "webSearchProvider": "spider"
 }
 ```
+
+`outputFormat` accepts `"json"` or `"text"`. Smart default: `"json"` when `outputColumns` is non-empty, else `"text"`. See §6.1 for the full text-vs-json semantics + worked examples.
 
 **Web search fields (optional, default OFF):**
 - `webSearchEnabled` (boolean, default `false`) — when `true`, the model gets `search_web` + `scrape_url` tools backed by Spider.Cloud and is **forced** to call a tool on the first round (`tool_choice: "required"`). Use this when the prompt asks for current data, recent news, websites, or anything past the model's training cutoff. See "AI Enrichment with Web Search" below.

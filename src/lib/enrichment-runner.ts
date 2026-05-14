@@ -115,7 +115,8 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
 
   const processRow = async (row: typeof rows[0]): Promise<RowResult> => {
     try {
-      const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns);
+      const outputFormat = (config.outputFormat as 'json' | 'text') ?? 'json';
+      const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns, outputFormat);
 
       const webSearchEnabled = !!config.webSearchEnabled;
       const aiTimeout = webSearchEnabled ? AI_TIMEOUT_MS_WITH_TOOLS : AI_TIMEOUT_MS_NO_TOOLS;
@@ -136,7 +137,7 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
       const rowCost = modelCost + webSearchCost;
       totalCost += rowCost;
 
-      const parsedResult = parseAIResponse(aiResult.text);
+      const parsedResult = parseAIResponse(aiResult.text, outputFormat);
 
       const updatedData: Record<string, CellValue> = {
         ...(row.data as Record<string, CellValue>),
@@ -209,13 +210,16 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
   };
 }
 
-// Substitutes {{Column Name}} placeholders with cell values, then appends the
-// JSON-output instruction (with reasoning/confidence/steps_taken metadata fields).
+// Substitutes {{Column Name}} placeholders with cell values, then appends an
+// output-format instruction. 'json' mode adds a structured-output schema (with
+// reasoning/confidence/steps_taken metadata); 'text' mode adds only a brief
+// "plain text only" instruction so the model can answer freely.
 export function buildPrompt(
   template: string,
   row: typeof schema.rows.$inferSelect,
   columnMap: Map<string, typeof schema.columns.$inferSelect>,
-  outputColumns: string[] = []
+  outputColumns: string[] = [],
+  outputFormat: 'json' | 'text' = 'json'
 ): string {
   let prompt = template;
 
@@ -232,6 +236,11 @@ export function buildPrompt(
 
     return match;
   });
+
+  if (outputFormat === 'text') {
+    prompt += `\n\n---\nRespond in plain text only. Do not wrap your answer in JSON, markdown code blocks, or quotes. If you have nothing to say, return an empty response.`;
+    return prompt;
+  }
 
   if (outputColumns.length > 0) {
     const jsonTemplate = outputColumns.reduce((acc, col) => {
@@ -259,10 +268,15 @@ interface ParsedAIResponse {
   structuredData: Record<string, string | number | null> | undefined;
 }
 
-// Best-effort JSON extraction from the model's output. Tries direct parse,
-// then markdown code blocks, then balanced-brace inline, then plain-text fallback.
-export function parseAIResponse(response: string): ParsedAIResponse {
+// In 'text' mode, returns the response as-is (no JSON parsing).
+// In 'json' mode, best-effort JSON extraction: tries direct parse, then
+// markdown code blocks, then balanced-brace inline, then plain-text fallback.
+export function parseAIResponse(response: string, outputFormat: 'json' | 'text' = 'json'): ParsedAIResponse {
   const cleanedResponse = response.trim();
+
+  if (outputFormat === 'text') {
+    return { displayValue: cleanedResponse, structuredData: undefined };
+  }
 
   const toStructuredData = (parsed: Record<string, unknown>): Record<string, string | number | null> => {
     const result: Record<string, string | number | null> = {};

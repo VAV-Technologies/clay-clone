@@ -348,6 +348,8 @@ Standard column lists (use these unless the user asks for more):
 { "sheet": "People", "outputColumn": "Pitch Hook", "prompt": "Write a one-line opener referencing {{Company Name}}'s {{Industry}}.", "model": "gpt-5-mini", "onlyEmpty": true, "webSearchEnabled": false }
 ```
 
+**`outputFormat` — `"text"` vs `"json"`.** Set `outputFormat: "text"` when the prompt asks for a single freeform answer per row (intros, summaries, one-shot extraction). Set `outputFormat: "json"` with `outputColumns: ["k1","k2",...]` when you want a structured object with extractable keys. If you omit it, the server picks: `"json"` when `outputColumns` is non-empty, else `"text"`. Don't pass both modes together — text mode ignores `outputColumns`.
+
 ## Workflow in one line
 
 `agent-x docs` → read these rules → draft plan in chat → get approval → flatten stages → `agent-x api POST /api/campaigns --data-file plan.json` → poll `agent-x api GET /api/campaigns/<id>` until terminal → done.

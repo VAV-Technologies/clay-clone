@@ -299,7 +299,8 @@ export function BatchEnrichmentPanel({ isOpen, onClose }: BatchEnrichmentPanelPr
             return col?.id || v;
           }),
           outputColumns,
-          outputFormat: 'text',
+          // outputFormat omitted — server smart-defaults to 'json' since outputColumns is set
+          // (batch enrichment is almost always for structured extraction at scale)
           temperature: 0.7,
         }),
       });

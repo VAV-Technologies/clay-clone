@@ -65,12 +65,16 @@ export async function POST(request: NextRequest) {
       webSearchProvider = 'spider',
       costLimitEnabled = false,
       maxCostPerRow = null,
-      outputFormat = 'text',
       rowIds,
       onlyEmpty = false,
       includeErrors = false,
       forceRerun = false,
     } = body;
+
+    // Smart default: structured output when outputColumns is set, plain text otherwise.
+    // Callers can override by passing outputFormat explicitly.
+    const outputFormat: 'json' | 'text' =
+      body.outputFormat ?? (outputColumns.length > 0 ? 'json' : 'text');
 
     if (!tableId || !columnName || !prompt || !Array.isArray(inputColumns) || inputColumns.length === 0) {
       return NextResponse.json(

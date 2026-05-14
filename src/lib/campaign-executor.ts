@@ -191,7 +191,8 @@ async function createEnrichmentConfig(opts: {
       prompt: opts.prompt,
       inputColumns: opts.inputColumns,
       outputColumns: opts.outputColumns || [],
-      outputFormat: 'text',
+      // Smart default: structured output when outputColumns is set, plain text otherwise.
+      outputFormat: (opts.outputColumns?.length ?? 0) > 0 ? 'json' : 'text',
       temperature: opts.temperature ?? 0.3,
       webSearchEnabled: !!opts.webSearchEnabled,
     }),

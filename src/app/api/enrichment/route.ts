@@ -24,7 +24,6 @@ export async function POST(request: NextRequest) {
       prompt,
       inputColumns,
       outputColumns,
-      outputFormat = 'text',
       temperature = 0.7,
       costLimitEnabled = false,
       maxCostPerRow = null,
@@ -38,6 +37,10 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Smart default: structured output when outputColumns is set, plain text otherwise.
+    const outputFormat: 'json' | 'text' =
+      body.outputFormat ?? ((outputColumns?.length ?? 0) > 0 ? 'json' : 'text');
 
     const config = {
       id: generateId(),

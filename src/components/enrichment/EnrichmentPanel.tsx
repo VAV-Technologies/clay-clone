@@ -57,6 +57,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
   const [maxCostPerRow, setMaxCostPerRow] = useState(0.01); // $0.01 default
   const [runOnEmpty, setRunOnEmpty] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  // 'text' = freeform plain-text answer per row. 'json' = structured JSON with reasoning/confidence/steps_taken; optional outputColumns keys auto-fill sibling fields.
+  const [outputFormat, setOutputFormat] = useState<'text' | 'json'>('text');
 
   // Run condition
   const [condColumnId, setCondColumnId] = useState('');
@@ -119,6 +121,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             setWebSearchEnabled(!!config.webSearchEnabled);
             setExistingConfigId(config.id);
             setOutputColumns(config.outputColumns || []);
+            setOutputFormat((config.outputFormat as 'text' | 'json') || 'text');
             setIsConfigLoaded(true);
           })
           .catch(err => {
@@ -152,6 +155,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
               setWebSearchEnabled(!!matchingConfig.webSearchEnabled);
               setExistingConfigId(matchingConfig.id);
               setOutputColumns(matchingConfig.outputColumns || []);
+              setOutputFormat((matchingConfig.outputFormat as 'text' | 'json') || 'text');
 
               // Link the column to this config for future use
               try {
@@ -209,6 +213,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
       setExistingConfigId(null);
       setOutputColumns([]);
       setNewOutputColumn('');
+      setOutputFormat('text');
       setIsConfigLoading(false);
       setIsConfigLoaded(true); // New enrichments don't need config loading
     }
@@ -370,7 +375,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           temperature,
           costLimitEnabled,
           maxCostPerRow: costLimitEnabled ? maxCostPerRow : null,
-          outputColumns,
+          outputColumns: outputFormat === 'text' ? [] : outputColumns,
+          outputFormat,
           webSearchEnabled,
           webSearchProvider: 'spider',
         }),
@@ -390,8 +396,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           const col = columns.find(c => c.name.toLowerCase() === v.toLowerCase());
           return col?.id || v;
         }),
-        outputColumns,
-        outputFormat: 'text',
+        outputColumns: outputFormat === 'text' ? [] : outputColumns,
+        outputFormat,
         temperature,
         costLimitEnabled,
         maxCostPerRow: costLimitEnabled ? maxCostPerRow : null,
@@ -422,7 +428,8 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           temperature,
           costLimitEnabled,
           maxCostPerRow: costLimitEnabled ? maxCostPerRow : null,
-          outputColumns,
+          outputColumns: outputFormat === 'text' ? [] : outputColumns,
+          outputFormat,
           webSearchEnabled,
           webSearchProvider: 'spider',
         }),
@@ -826,7 +833,44 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
           </div>
         </div>
 
-        {/* Data Guide - Output Column Definitions */}
+        {/* Output Format toggle */}
+        <div className="space-y-2 pb-4 border-b border-white/10">
+          <label className="text-sm font-medium text-white/70">Output format</label>
+          <div className="flex bg-white/5 border border-white/10 p-0.5">
+            <button
+              type="button"
+              onClick={() => setOutputFormat('text')}
+              className={cn(
+                'flex-1 px-3 py-1.5 text-xs font-medium transition-colors',
+                outputFormat === 'text'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'text-white/50 hover:text-white/80 border border-transparent'
+              )}
+            >
+              Plain text
+            </button>
+            <button
+              type="button"
+              onClick={() => setOutputFormat('json')}
+              className={cn(
+                'flex-1 px-3 py-1.5 text-xs font-medium transition-colors',
+                outputFormat === 'json'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'text-white/50 hover:text-white/80 border border-transparent'
+              )}
+            >
+              Structured JSON
+            </button>
+          </div>
+          <p className="text-xs text-white/40">
+            {outputFormat === 'text'
+              ? 'Plain text — the model returns a freeform answer per row. Best for summaries, intros, single-value extraction.'
+              : 'JSON — the model returns a structured object. Use the Data Guide below to define keys that auto-extract into sibling columns.'}
+          </p>
+        </div>
+
+        {/* Data Guide - Output Column Definitions (JSON mode only) */}
+        {outputFormat === 'json' && (
         <div className="space-y-3 pb-4 border-b border-white/10">
           <div className="flex items-center gap-2">
             <Database className="w-4 h-4 text-emerald-400" />
@@ -886,6 +930,7 @@ export function EnrichmentPanel({ isOpen, onClose, editColumnId }: EnrichmentPan
             </div>
           )}
         </div>
+        )}
 
         {/* Preview */}
         {prompt && rows.length > 0 && (

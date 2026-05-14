@@ -422,10 +422,11 @@ export default function APIDocsPage() {
 
             <WorkflowStep step={4} title="(Optional) AI enrich for deeper research" endpoint="POST /api/enrichment/run"
               description="Use AI to research each company further — competitors, tech stack, recent news, funding, etc."
-              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/enrichment \\\n  -d '{"name":"Company Deep Dive","model":"gpt-5-mini","prompt":"Research {{Company Name}} ({{Domain}}). Return: 1) Main product/service 2) Key competitors 3) Recent funding or news 4) Target customer segment","inputColumns":["NAME_COL","DOMAIN_COL"],"outputFormat":"json","temperature":0.3}'`}
+              curl={`curl -X POST -H "${H}" -H "Content-Type: application/json" \\\n  ${B}/api/enrichment \\\n  -d '{"name":"Company Deep Dive","model":"gpt-5-mini","prompt":"Research {{Company Name}} ({{Domain}}). Return: 1) Main product/service 2) Key competitors 3) Recent funding or news 4) Target customer segment","inputColumns":["NAME_COL","DOMAIN_COL"],"outputColumns":["product","competitors","funding","segment"],"outputFormat":"json","temperature":0.3}'`}
               notes={[
-                'Use outputColumns to auto-create separate columns for each data point',
-                'Or use POST /api/enrichment/extract-datapoint after to split the enrichment data',
+                'outputFormat: "json" + outputColumns auto-shapes the response schema and lets you extract each key into a sibling column.',
+                'For freeform prompts (one-line intros, summaries), set outputFormat: "text" — the model returns plain text and the cell value is the literal answer.',
+                'Or use POST /api/enrichment/extract-datapoint after a JSON run to split each datapoint into its own column.',
               ]} />
           </div>
 
@@ -815,10 +816,19 @@ Any Sheet:
 
         {/* AI Enrichment */}
         <Section title="AI Enrichment">
+          <div className="mb-4 p-3 bg-emerald-500/5 border border-emerald-500/20 text-xs text-white/70 space-y-2">
+            <p className="font-medium text-emerald-300">Output format — text vs JSON</p>
+            <p>Every enrichment config carries an <code className="text-emerald-200">outputFormat</code> field. Two modes:</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li><code className="text-emerald-200">&quot;text&quot;</code> — the model returns a freeform plain-text answer per row. Cell value is the literal text. Best for summaries, intro lines, single-value extraction, or any prompt where there&apos;s nothing to extract into multiple sibling columns.</li>
+              <li><code className="text-emerald-200">&quot;json&quot;</code> — the model returns a structured JSON object with the keys you list in <code className="text-emerald-200">outputColumns</code>. Cell shows the count of datapoints; <code className="text-emerald-200">cell.enrichmentData</code> holds the keyed object; downstream <code className="text-emerald-200">/api/enrichment/extract-datapoint</code> can split each key into a sibling column.</li>
+            </ul>
+            <p>If you don&apos;t pass <code className="text-emerald-200">outputFormat</code>, the server picks: <code className="text-emerald-200">&quot;json&quot;</code> when <code className="text-emerald-200">outputColumns</code> is non-empty, else <code className="text-emerald-200">&quot;text&quot;</code>.</p>
+          </div>
           <Endpoint method="GET" path="/api/enrichment" description="List all enrichment configs"
             curl={`curl -H "${H}" ${B}/api/enrichment`} />
-          <Endpoint method="POST" path="/api/enrichment" description="Create enrichment config"
-            body={`{"name":"Research","model":"gpt-5-mini","prompt":"Research {{Company}}","inputColumns":["col-id"],"outputFormat":"json","temperature":0.7}`} />
+          <Endpoint method="POST" path="/api/enrichment" description="Create enrichment config (omit outputFormat to use smart default)"
+            body={`{"name":"Research","model":"gpt-5-mini","prompt":"Research {{Company}}","inputColumns":["col-id"],"outputColumns":["industry","funding"],"outputFormat":"json","temperature":0.7}`} />
           <Endpoint method="GET" path="/api/enrichment/{id}" description="Get enrichment config" />
           <Endpoint method="PATCH" path="/api/enrichment/{id}" description="Update config"
             body={`{"prompt":"Updated prompt","temperature":0.5}`} />
