@@ -6,14 +6,16 @@ import {
   callAI as callUnifiedAI,
   getModelPricing,
   getProviderRateLimits,
-  type AIResult,
 } from '@/lib/ai-provider';
+import { buildPrompt, parseAIResponse } from '@/lib/enrichment-runner';
+import { WEB_SEARCH_TOOLS, dispatchToolCall, WEB_SEARCH_SYSTEM_HINT } from '@/lib/enrichment-tools';
 
 // Vercel function config - max duration for hobby is 10s, pro is 60s
 export const maxDuration = 60; // Will use max available for your plan
 
 const BATCH_SIZE = 250; // Increased for better throughput with GPT-5 models
-const AI_TIMEOUT_MS = 25000; // 25 second timeout per AI call
+const AI_TIMEOUT_MS_NO_TOOLS = 25000;   // 25s when no web-search tools wired
+const AI_TIMEOUT_MS_WITH_TOOLS = 90000; // 90s when tools enabled (search+scrape rounds)
 const STALE_JOB_MINUTES = 30; // Auto-complete jobs stuck for 30+ minutes (increased from 10)
 const MAX_EXECUTION_MS = 55000; // Stop processing 5s before timeout
 
@@ -233,20 +235,29 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
   // Process rows with limited concurrency to avoid rate limits
   const processRow = async (row: typeof rows[0]) => {
       try {
-        const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || []);
+        const outputFormat = (config.outputFormat as 'json' | 'text') ?? 'json';
+        const webSearchEnabled = !!config.webSearchEnabled;
+        const aiTimeout = webSearchEnabled ? AI_TIMEOUT_MS_WITH_TOOLS : AI_TIMEOUT_MS_NO_TOOLS;
+
+        const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns || [], outputFormat);
         const aiResult = await withTimeout(
           callUnifiedAI(prompt, modelId, {
             temperature: config.temperature ?? 0.7,
             maxOutputTokens: 8192,
+            tools: webSearchEnabled ? WEB_SEARCH_TOOLS : undefined,
+            toolDispatcher: webSearchEnabled ? dispatchToolCall : undefined,
+            systemHint: webSearchEnabled ? WEB_SEARCH_SYSTEM_HINT : undefined,
           }),
-          AI_TIMEOUT_MS,
-          'AI request timed out after 30 seconds'
+          aiTimeout,
+          `AI request timed out after ${aiTimeout / 1000} seconds`
         );
 
-        const rowCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
+        const modelCost = (aiResult.inputTokens * pricing.input + aiResult.outputTokens * pricing.output) / 1_000_000;
+        const webSearchCost = aiResult.toolCost ?? 0;
+        const rowCost = modelCost + webSearchCost;
         batchCost += rowCost;
 
-        const parsedResult = parseAIResponse(aiResult.text);
+        const parsedResult = parseAIResponse(aiResult.text, outputFormat);
 
         const updatedData: Record<string, CellValue> = {
           ...(row.data as Record<string, CellValue>),
@@ -261,6 +272,8 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
               timeTakenMs: aiResult.timeTakenMs,
               totalCost: rowCost,
               forcedToFinishEarly: false,
+              webSearchCalls: aiResult.toolCallCount ?? 0,
+              webSearchCost,
             },
           },
         };
@@ -340,109 +353,7 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
   return batchRowIds.length;
 }
 
-function buildPrompt(
-  template: string,
-  row: typeof schema.rows.$inferSelect,
-  columnMap: Map<string, typeof schema.columns.$inferSelect>,
-  outputColumns: string[] = []
-): string {
-  let prompt = template;
-
-  const variablePattern = /\{\{([^}]+)\}\}/g;
-  prompt = prompt.replace(variablePattern, (match, columnName) => {
-    const column = Array.from(columnMap.values()).find(
-      (col) => col.name.toLowerCase() === columnName.toLowerCase().trim()
-    );
-    if (column) {
-      const cellValue = row.data[column.id];
-      return cellValue?.value?.toString() ?? '';
-    }
-    return match;
-  });
-
-  if (outputColumns.length > 0) {
-    const jsonTemplate = outputColumns.reduce((acc, col) => {
-      acc[col] = `<${col} value>`;
-      return acc;
-    }, {} as Record<string, string>);
-
-    // Add metadata fields to the template
-    const jsonTemplateWithMetadata = {
-      ...jsonTemplate,
-      reasoning: '<brief explanation of your answer, 1-2 sentences>',
-      confidence: '<"high", "medium", or "low">',
-      steps_taken: '<brief list of what you did>',
-    };
-
-    prompt += `
-
----
-IMPORTANT: You must respond with ONLY a valid JSON object using exactly these keys:
-${JSON.stringify(jsonTemplateWithMetadata, null, 2)}
-
-Replace each placeholder with the actual value. Do not include any other text, markdown, or explanation. Only output the JSON object.`;
-  } else {
-    // No output columns - still request metadata fields
-    prompt += `
-
----
-Respond with JSON including these fields:
-- Your actual response data
-- "reasoning": brief explanation (1-2 sentences)
-- "confidence": "high", "medium", or "low"
-- "steps_taken": brief list of what you did`;
-  }
-
-  return prompt;
-}
-
-function parseAIResponse(response: string): { displayValue: string; structuredData: Record<string, string | number | null> | undefined } {
-  const cleanedResponse = response.trim();
-
-  const toStructuredData = (parsed: Record<string, unknown>): Record<string, string | number | null> => {
-    const result: Record<string, string | number | null> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (value === null || value === undefined) {
-        result[key] = null;
-      } else if (typeof value === 'string' || typeof value === 'number') {
-        result[key] = value;
-      } else if (Array.isArray(value)) {
-        result[key] = value.map(v => String(v ?? '')).join(', ');
-      } else if (typeof value === 'object') {
-        result[key] = JSON.stringify(value);
-      } else {
-        result[key] = String(value);
-      }
-    }
-    return result;
-  };
-
-  try {
-    const parsed = JSON.parse(cleanedResponse);
-    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-      const structuredData = toStructuredData(parsed);
-      const dataCount = Object.keys(structuredData).length;
-      return {
-        displayValue: dataCount === 1 ? String(Object.values(structuredData)[0] ?? '') : `${dataCount} datapoints`,
-        structuredData,
-      };
-    }
-  } catch {}
-
-  const jsonBlockMatch = cleanedResponse.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (jsonBlockMatch) {
-    try {
-      const parsed = JSON.parse(jsonBlockMatch[1].trim());
-      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        const structuredData = toStructuredData(parsed);
-        const dataCount = Object.keys(structuredData).length;
-        return {
-          displayValue: dataCount === 1 ? String(Object.values(structuredData)[0] ?? '') : `${dataCount} datapoints`,
-          structuredData,
-        };
-      }
-    } catch {}
-  }
-
-  return { displayValue: cleanedResponse, structuredData: { result: cleanedResponse } };
-}
+// buildPrompt + parseAIResponse used to be duplicated here. They are now
+// imported from '@/lib/enrichment-runner' so this cron path and the
+// setup-and-run / sync /run paths share one implementation — same JSON-vs-text
+// branching, same parser, same metadata fields.
