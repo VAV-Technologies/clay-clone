@@ -13,7 +13,7 @@ import { callAI as callUnifiedAI, getModelPricing, getProviderRateLimits } from 
 import { WEB_SEARCH_TOOLS, dispatchToolCall, WEB_SEARCH_SYSTEM_HINT } from '@/lib/enrichment-tools';
 
 const AI_TIMEOUT_MS_NO_TOOLS = 30000;
-const AI_TIMEOUT_MS_WITH_TOOLS = 90000;
+const AI_TIMEOUT_MS_WITH_TOOLS = 150000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> {
   return Promise.race([

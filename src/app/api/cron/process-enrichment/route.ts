@@ -14,8 +14,8 @@ import { WEB_SEARCH_TOOLS, dispatchToolCall, WEB_SEARCH_SYSTEM_HINT } from '@/li
 export const maxDuration = 60; // Will use max available for your plan
 
 const BATCH_SIZE = 250; // Increased for better throughput with GPT-5 models
-const AI_TIMEOUT_MS_NO_TOOLS = 25000;   // 25s when no web-search tools wired
-const AI_TIMEOUT_MS_WITH_TOOLS = 90000; // 90s when tools enabled (search+scrape rounds)
+const AI_TIMEOUT_MS_NO_TOOLS = 25000;    // 25s when no web-search tools wired
+const AI_TIMEOUT_MS_WITH_TOOLS = 150000; // 150s when tools enabled — slow Spider scrapes on Indonesian SME sites used to timeout the 90s budget on ~10% of rows
 const STALE_JOB_MINUTES = 30; // Auto-complete jobs stuck for 30+ minutes (increased from 10)
 const MAX_EXECUTION_MS = 55000; // Stop processing 5s before timeout
 
