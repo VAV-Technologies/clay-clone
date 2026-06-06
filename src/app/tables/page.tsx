@@ -346,7 +346,7 @@ function TablesContent() {
   };
 
   return (
-    <div className="min-h-screen relative">
+    <div className="h-screen overflow-y-auto relative">
       <AnimatedBackground />
       <AppNav />
 
