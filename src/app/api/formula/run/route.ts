@@ -91,6 +91,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Guard against pathologically large inline runs saturating the single
+    // container (QA findings C2-014/015). Each eval is already bounded by the
+    // formula evaluator's vm timeout; this caps total work per request.
+    const MAX_FORMULA_ROWS = 50000;
+    if (rows.length > MAX_FORMULA_ROWS) {
+      return NextResponse.json(
+        { error: `Too many rows (${rows.length.toLocaleString()}). Max ${MAX_FORMULA_ROWS.toLocaleString()} per formula run; split into smaller selections.` },
+        { status: 400 }
+      );
+    }
+
     // Generate job ID for progress tracking
     const jobId = generateId();
 
