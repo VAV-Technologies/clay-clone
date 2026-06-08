@@ -464,7 +464,7 @@ export function AddDataModal({ isOpen, onClose, tableId, workbookId, onComplete 
         for (const outCol of outputCols) {
           const colId = colIdMap[outCol.key];
           if (colId) {
-            data[colId] = { value: (item as Record<string, string>)[outCol.key] || '' };
+            data[colId] = { value: (item as unknown as Record<string, string>)[outCol.key] || '' };
           }
         }
         return data;

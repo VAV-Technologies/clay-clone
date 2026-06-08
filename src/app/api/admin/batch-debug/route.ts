@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       jobErrorCount: job.errorCount,
       jobSuccessCount: job.successCount,
       jobProcessedCount: job.processedCount,
-      jobRowCount: job.rowCount,
+      jobRowCount: job.totalRows,
       jobUpdatedAt: job.updatedAt?.toISOString(),
       tableId: job.tableId,
       targetColumnId: job.targetColumnId,

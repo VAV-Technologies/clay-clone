@@ -424,7 +424,7 @@ async function previewSearch(
   domains: string[],
   filters: ClaySearchFilters,
   onProgress?: (msg: string) => void
-): Promise<{ taskId: string; people: ClayPerson[] }> {
+): Promise<{ taskId: string; people: ClayPerson[]; estimatedTotal: number }> {
   const workspaceId = getWorkspaceId();
   const previewFilters = { ...filters, limit: Math.min(filters.limit ?? 50, 50) };
 
@@ -782,7 +782,7 @@ const COMPANY_FIELD_NAME_MAP: Record<string, string> = {
 async function companyPreviewSearch(
   filters: ClayCompanySearchFilters,
   onProgress?: (msg: string) => void
-): Promise<{ taskId: string; companies: ClayCompany[] }> {
+): Promise<{ taskId: string; companies: ClayCompany[]; estimatedTotal: number }> {
   const workspaceId = getWorkspaceId();
   const previewFilters = { ...filters, limit: Math.min(filters.limit ?? 50, 50) };
 

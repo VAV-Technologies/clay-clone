@@ -1,4 +1,4 @@
 {
-  "maxErrors": 14,
+  "maxErrors": 0,
   "note": "Ratchet for `tsc --noEmit`. CI fails if the count EXCEEDS this. When you reduce errors, lower this number so it can't climb back. Goal: 0, then flip next.config.js typescript.ignoreBuildErrors to false."
 }

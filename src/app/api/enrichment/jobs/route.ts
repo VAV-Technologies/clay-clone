@@ -159,7 +159,7 @@ export async function DELETE(request: NextRequest) {
               if (data[job.targetColumnId] && (data[job.targetColumnId].status === 'processing' || data[job.targetColumnId].status === 'pending')) {
                 delete data[job.targetColumnId].status;
                 await db.update(schema.rows)
-                  .set({ data: JSON.stringify(data) })
+                  .set({ data })
                   .where(eq(schema.rows.id, rowId));
                 cellsReset++;
               }
@@ -213,7 +213,7 @@ export async function DELETE(request: NextRequest) {
               if (data[job.targetColumnId]) {
                 delete data[job.targetColumnId].status;
                 await db.update(schema.rows)
-                  .set({ data: JSON.stringify(data) })
+                  .set({ data })
                   .where(eq(schema.rows.id, rowId));
               }
             }

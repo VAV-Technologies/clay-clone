@@ -13,7 +13,9 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   typescript: {
-    ignoreBuildErrors: true,
+    // tsc --noEmit is clean (0 errors) and the CI ratchet holds it there, so the
+    // build now type-checks for real — type regressions can't reach the team.
+    ignoreBuildErrors: false,
   },
   experimental: {
     serverActions: {

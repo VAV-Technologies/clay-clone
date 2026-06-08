@@ -17,6 +17,9 @@ export async function GET(
     if (!column) {
       return NextResponse.json({ error: 'Column not found' }, { status: 404 });
     }
+    if (!column.tableId) {
+      return NextResponse.json({ error: 'Column has no table' }, { status: 400 });
+    }
 
     // Get all rows for this column's table
     const rows = await db.select().from(schema.rows).where(eq(schema.rows.tableId, column.tableId));

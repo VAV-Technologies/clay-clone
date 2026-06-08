@@ -438,7 +438,7 @@ async function markJobCellsAsError(
     const data = row.data as Record<string, CellValue> | null;
     if (!data) return false;
     const cellData = data[job.targetColumnId];
-    return cellData && cellData.status === 'request sent';
+    return cellData && (cellData.status === 'batch_submitted' || cellData.status === 'batch_processing');
   });
 
   // Collect all updates in memory first
