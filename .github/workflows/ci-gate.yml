@@ -1,0 +1,65 @@
+name: CI Gate
+
+# Pre-merge / pre-deploy safety net for the internal-team rollout: typecheck
+# ratchet + lint + the regression test suite. Runs on every PR and push to
+# master. Keeps NEW type errors and failing tests from reaching the team.
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-and-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      # BLOCK: typecheck must not regress beyond tests/typecheck-budget.json.
+      - name: Typecheck (ratchet)
+        run: npm run typecheck:baseline
+
+      # WARN for now (lint backlog predates the QA initiative); flip to blocking
+      # once the warnings are triaged.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      # BLOCK: unit + in-process integration tests (Vitest). Free + hermetic.
+      - name: Tests
+        run: npm test
+
+  # Reminder gate: NEW/renamed API routes need an ACA image rebuild or they 404
+  # in prod (Vercel ships only the frontend). Fails the PR unless acknowledged.
+  api-change-guard:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Flag new/renamed API routes without ACA-rebuild ack
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          changed=$(git diff --name-status "$base"...HEAD -- 'src/app/api/**/route.ts' | grep -E '^(A|R)' || true)
+          if [ -n "$changed" ]; then
+            echo "New/renamed API routes detected:"; echo "$changed"
+            if echo "${{ github.event.pull_request.body }}" | grep -qi 'ACA-REBUILD: yes'; then
+              echo "ACA rebuild acknowledged in PR body."
+            else
+              echo "::error::New/renamed API route(s) require an ACA image rebuild (acr build + containerapp update --revision-suffix <unique>). Add 'ACA-REBUILD: yes' to the PR body once planned."
+              exit 1
+            fi
+          else
+            echo "No new/renamed API routes."
+          fi
