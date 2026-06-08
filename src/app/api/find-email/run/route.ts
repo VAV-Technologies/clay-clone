@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
+import { getColumnIdSet, invalidColumnIds, COLUMN_SCOPE_MESSAGE } from '@/lib/api-validation';
 
 export const maxDuration = 300;
 
@@ -68,16 +69,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // Column-scope guard (QA finding C-017): result/domain/name columns must
+    // belong to this table, else find-email writes an orphan cross-sheet cell
+    // AND still calls the paid provider.
+    const validIds = await getColumnIdSet(tableId);
+    const referenced = [
+      resultColumnId,
+      domainColumnId,
+      ...(inputMode === 'full_name' ? [fullNameColumnId] : [firstNameColumnId, lastNameColumnId]),
+    ].filter(Boolean) as string[];
+    const badCols = invalidColumnIds(referenced, validIds);
+    if (badCols.length > 0) {
+      return NextResponse.json({ error: COLUMN_SCOPE_MESSAGE, invalidColumnIds: badCols, tableId }, { status: 400 });
+    }
+
     const apiKey = process.env.NINJER_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: 'NINJER_API_KEY not configured' }, { status: 500 });
     }
 
-    // Fetch rows
-    const rows = await db
+    // Fetch rows, scoped to this table (don't process rows from other sheets
+    // even if their ids are passed in).
+    const rows = (await db
       .select()
       .from(schema.rows)
-      .where(inArray(schema.rows.id, rowIds));
+      .where(inArray(schema.rows.id, rowIds)))
+      .filter((r) => r.tableId === tableId);
 
     const results: Array<{
       rowId: string;
