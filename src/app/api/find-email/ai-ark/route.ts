@@ -4,6 +4,8 @@ import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
 import { searchPersonByNameAndDomain, submitEmailFinder } from '@/lib/aiarc-api';
+import { getColumnIdSet, invalidColumnIds, COLUMN_SCOPE_MESSAGE } from '@/lib/api-validation';
+import { claimCellForProcessing } from '@/lib/cell-claim';
 
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
@@ -55,6 +57,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // Column-scope guard (QA finding C-017 family): result/domain/name columns
+    // must belong to this table before any provider work.
+    const validIds = await getColumnIdSet(tableId);
+    const referenced = [
+      resultColumnId,
+      domainColumnId,
+      ...(inputMode === 'full_name' ? [fullNameColumnId] : [firstNameColumnId, lastNameColumnId]),
+    ].filter(Boolean) as string[];
+    const badCols = invalidColumnIds(referenced, validIds);
+    if (badCols.length > 0) {
+      return NextResponse.json({ error: COLUMN_SCOPE_MESSAGE, invalidColumnIds: badCols, tableId }, { status: 400 });
+    }
+
     if (!process.env.AI_ARC_API_KEY) {
       return NextResponse.json({ error: 'AI_ARC_API_KEY not configured' }, { status: 500 });
     }
@@ -72,10 +87,11 @@ export async function POST(request: NextRequest) {
       console.warn(`[ai-ark] Origin "${origin}" is not HTTPS — AI Ark webhooks will not reach localhost.`);
     }
 
-    const rows = await db
+    const rows = (await db
       .select()
       .from(schema.rows)
-      .where(inArray(schema.rows.id, rowIds));
+      .where(inArray(schema.rows.id, rowIds)))
+      .filter((r) => r.tableId === tableId);
 
     const results: Array<{
       rowId: string;
@@ -124,6 +140,13 @@ export async function POST(request: NextRequest) {
       }
 
       domain = cleanDomain(domain);
+
+      // Concurrency claim: skip if another submit is already processing this
+      // cell (prevents double AI Ark submission/charge — QA finding C1-005).
+      if (!(await claimCellForProcessing(row.id, resultColumnId))) {
+        results.push({ rowId: row.id, success: false, email: null, status: 'skipped', error: 'already processing' });
+        continue;
+      }
 
       try {
         console.log(`[ai-ark] Row ${i + 1}/${rows.length}: searching ${fullName} @ ${domain}`);

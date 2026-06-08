@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
-import { eq } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { executeStep } from '@/lib/campaign-executor';
 import type { CampaignStep, CampaignContext } from '@/lib/db/schema';
 
@@ -44,37 +44,53 @@ export async function GET() {
         continue;
       }
 
-      // If step is already complete, advance
+      // If step is already complete, advance — guarded by a compare-and-set on
+      // currentStepIndex so two concurrent ticks can't both advance (skipping a
+      // step). Only the tick that still sees the old index wins (QA finding D-004).
       if (currentStep.status === 'complete') {
         const nextIndex = stepIndex + 1;
-        if (nextIndex >= steps.length) {
-          await db.update(schema.campaigns).set({
-            status: 'complete',
-            currentStepIndex: nextIndex,
-            updatedAt: new Date(),
-            completedAt: new Date(),
-          }).where(eq(schema.campaigns.id, campaign.id));
-          results.push({ id: campaign.id, action: 'completed' });
-        } else {
-          await db.update(schema.campaigns).set({
-            currentStepIndex: nextIndex,
-            updatedAt: new Date(),
-          }).where(eq(schema.campaigns.id, campaign.id));
-          results.push({ id: campaign.id, action: `advanced to step ${nextIndex + 1}` });
-        }
+        const isLast = nextIndex >= steps.length;
+        const advanced = await db.update(schema.campaigns).set({
+          currentStepIndex: nextIndex,
+          status: isLast ? 'complete' : 'running',
+          completedAt: isLast ? new Date() : null,
+          updatedAt: new Date(),
+        }).where(and(
+          eq(schema.campaigns.id, campaign.id),
+          eq(schema.campaigns.currentStepIndex, stepIndex)
+        )).returning({ id: schema.campaigns.id });
+        results.push({
+          id: campaign.id,
+          action: advanced.length === 0
+            ? 'advance lost race, skipping'
+            : (isLast ? 'completed' : `advanced to step ${nextIndex + 1}`),
+        });
         continue;
       }
 
-      // Execute the pending step
+      // Atomically claim this pending step before executing: flip its JSON
+      // status pending->running ONLY if it is still pending. If a concurrent
+      // tick already claimed it, this matches 0 rows and we skip — preventing
+      // double-execution of the same step (QA finding D-004). Using a conditional
+      // json_set/json_extract (not an updatedAt CAS) avoids same-second races.
+      const stepPath = `$[${stepIndex}].status`;
+      const claimed = (await db.all(sql`
+        UPDATE campaigns
+        SET steps = json_set(steps, ${stepPath}, 'running'),
+            updated_at = ${Math.floor(Date.now() / 1000)}
+        WHERE id = ${campaign.id}
+          AND json_extract(steps, ${stepPath}) = 'pending'
+        RETURNING id
+      `)) as unknown[];
+      if (claimed.length === 0) {
+        results.push({ id: campaign.id, action: `step ${stepIndex + 1} claimed by another tick, skipping` });
+        continue;
+      }
+
+      // Execute the pending step (we now exclusively own it)
       try {
         currentStep.status = 'running';
         currentStep.startedAt = new Date().toISOString();
-
-        // Save running state before executing (so we don't re-execute on timeout)
-        await db.update(schema.campaigns).set({
-          steps,
-          updatedAt: new Date(),
-        }).where(eq(schema.campaigns.id, campaign.id));
 
         console.log(`[campaign:${campaign.id}] Executing step ${stepIndex + 1}/${steps.length}: ${currentStep.type}`);
 

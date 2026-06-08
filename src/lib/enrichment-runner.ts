@@ -11,6 +11,7 @@ import { eq, inArray } from 'drizzle-orm';
 import type { CellValue, EnrichmentConfig } from '@/lib/db/schema';
 import { callAI as callUnifiedAI, getModelPricing, getProviderRateLimits } from '@/lib/ai-provider';
 import { WEB_SEARCH_TOOLS, dispatchToolCall, WEB_SEARCH_SYSTEM_HINT } from '@/lib/enrichment-tools';
+import { claimCellForProcessing } from '@/lib/cell-claim';
 
 const AI_TIMEOUT_MS_NO_TOOLS = 30000;
 const AI_TIMEOUT_MS_WITH_TOOLS = 150000;
@@ -136,6 +137,11 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
   const cumulativeCeiling = costCapEnabled ? perRowCap * rows.length : Infinity;
 
   const processRow = async (row: typeof rows[0]): Promise<RowResult> => {
+    // Concurrency claim: if another run is already processing this cell, skip it
+    // rather than double-invoking the paid model (QA finding C1-001).
+    if (!(await claimCellForProcessing(row.id, targetColumnId))) {
+      return { rowId: row.id, success: false, error: 'Cell already being processed by another run' };
+    }
     try {
       const outputFormat = (config.outputFormat as 'json' | 'text') ?? 'json';
       const prompt = buildPrompt(config.prompt, row, columnMap, definedOutputColumns, outputFormat);

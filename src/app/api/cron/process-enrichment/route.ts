@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
-import { eq, or, inArray } from 'drizzle-orm';
+import { eq, or, and, inArray, sql } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
 import {
   callAI as callUnifiedAI,
@@ -150,10 +150,21 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
     return 0;
   }
 
-  // Mark as running
-  await db.update(schema.enrichmentJobs)
-    .set({ status: 'running', updatedAt: new Date() })
-    .where(eq(schema.enrichmentJobs.id, jobId));
+  // Atomically reserve this batch: advance currentIndex past it (and mark
+  // running) ONLY if no concurrent tick already advanced it. If we lose the CAS,
+  // another invocation owns this batch, so we bail out — preventing two ticks
+  // from processing the same rows, double-charging, or double-advancing (bug #2).
+  const batchEnd = Math.min(currentIndex + BATCH_SIZE, rowIds.length);
+  const reserved = await db.update(schema.enrichmentJobs)
+    .set({ status: 'running', currentIndex: batchEnd, updatedAt: new Date() })
+    .where(and(
+      eq(schema.enrichmentJobs.id, jobId),
+      eq(schema.enrichmentJobs.currentIndex, currentIndex)
+    ))
+    .returning({ id: schema.enrichmentJobs.id });
+  if (reserved.length === 0) {
+    return 0; // batch already reserved by another concurrent tick
+  }
 
   // Get config
   const [config] = await db
@@ -191,8 +202,8 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
   }
   const hasOutputColumns = Object.keys(outputColumnIds).length > 0;
 
-  // Get batch of row IDs
-  const batchRowIds = rowIds.slice(currentIndex, currentIndex + BATCH_SIZE);
+  // Get batch of row IDs (range we just reserved)
+  const batchRowIds = rowIds.slice(currentIndex, batchEnd);
 
   // Get actual rows
   const rows = await db
@@ -334,19 +345,18 @@ async function processJobBatch(job: typeof schema.enrichmentJobs.$inferSelect): 
     }
   }
 
-  // Update job progress
-  const newIndex = currentIndex + batchRowIds.length;
-  const isComplete = newIndex >= rowIds.length;
-
+  // currentIndex was already advanced at reservation. Increment counters
+  // atomically (concurrent ticks process disjoint batches, so a read-modify-write
+  // would clobber), and only the tick that finished the FINAL batch marks the job
+  // complete (so a slower non-final batch can't revert complete -> running).
+  const isComplete = batchEnd >= rowIds.length;
   await db.update(schema.enrichmentJobs)
     .set({
-      currentIndex: newIndex,
-      processedCount: job.processedCount + batchRowIds.length,
-      errorCount: job.errorCount + batchErrors,
-      totalCost: job.totalCost + batchCost,
-      status: isComplete ? 'complete' : 'running',
+      processedCount: sql`${schema.enrichmentJobs.processedCount} + ${batchRowIds.length}`,
+      errorCount: sql`${schema.enrichmentJobs.errorCount} + ${batchErrors}`,
+      totalCost: sql`${schema.enrichmentJobs.totalCost} + ${batchCost}`,
       updatedAt: new Date(),
-      completedAt: isComplete ? new Date() : null,
+      ...(isComplete ? { status: 'complete' as const, completedAt: new Date() } : {}),
     })
     .where(eq(schema.enrichmentJobs.id, jobId));
 
