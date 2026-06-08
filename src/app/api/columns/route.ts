@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
+import { tableExists } from '@/lib/api-validation';
+
+const COLUMN_TYPES = ['text', 'number', 'email', 'url', 'date', 'enrichment', 'formula'];
 
 // GET /api/columns?tableId= - Get columns for a table
 export async function GET(request: NextRequest) {
@@ -34,6 +37,15 @@ export async function POST(request: NextRequest) {
 
     if (!tableId || !name) {
       return NextResponse.json({ error: 'tableId and name are required' }, { status: 400 });
+    }
+    if (!COLUMN_TYPES.includes(type)) {
+      return NextResponse.json(
+        { error: `Invalid column type '${type}'. Allowed: ${COLUMN_TYPES.join(', ')}` },
+        { status: 400 }
+      );
+    }
+    if (!(await tableExists(tableId))) {
+      return NextResponse.json({ error: 'Table not found', tableId }, { status: 404 });
     }
 
     // Get the highest order number

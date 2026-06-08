@@ -3,6 +3,7 @@ import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { evaluateFormulaSafe } from '@/lib/formula/evaluator-server';
+import { tableExists } from '@/lib/api-validation';
 import type { CellValue } from '@/lib/db/schema';
 
 function generateId() {
@@ -29,6 +30,9 @@ export async function POST(request: NextRequest) {
         { error: 'tableId, formula, and outputColumnName are required' },
         { status: 400 }
       );
+    }
+    if (!(await tableExists(tableId))) {
+      return NextResponse.json({ error: 'Table not found', tableId }, { status: 404 });
     }
 
     // Get columns for variable substitution

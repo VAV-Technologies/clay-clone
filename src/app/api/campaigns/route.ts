@@ -18,6 +18,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'name and steps[] are required' }, { status: 400 });
     }
 
+    // Reject unknown step types up front (QA finding D-006). Otherwise a bogus
+    // type is accepted, a workbook is created, and it only fails on a cron tick.
+    const KNOWN_STEP_TYPES = new Set([
+      'create_workbook', 'use_existing_workbook', 'use_existing_sheet', 'import_csv',
+      'search_companies', 'search_people', 'create_sheet', 'import_rows', 'filter_rows',
+      'find_emails', 'find_emails_waterfall', 'find_domains', 'qualify_titles', 'lookup',
+      'enrich', 'cleanup', 'clean_company_name', 'clean_person_name', 'materialize_send_ready',
+    ]);
+    const badStep = rawSteps.find((s) => !KNOWN_STEP_TYPES.has(s?.type));
+    if (badStep) {
+      return NextResponse.json({ error: `Unknown campaign step type: ${badStep?.type}` }, { status: 400 });
+    }
+
     // Initialize all steps as pending
     const steps: CampaignStep[] = rawSteps.map(s => ({
       ...s,

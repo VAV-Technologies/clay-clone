@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 import { generateId } from '@/lib/utils';
+import { projectExists } from '@/lib/api-validation';
 
 export const maxDuration = 60;
 
@@ -35,6 +36,9 @@ export async function POST(request: NextRequest) {
 
     if (!projectId || !name) {
       return NextResponse.json({ error: 'projectId and name are required' }, { status: 400 });
+    }
+    if (!(await projectExists(projectId))) {
+      return NextResponse.json({ error: 'Project not found', projectId }, { status: 404 });
     }
 
     const now = new Date();

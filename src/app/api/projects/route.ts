@@ -71,6 +71,12 @@ export async function POST(request: NextRequest) {
     if (!name || !type) {
       return NextResponse.json({ error: 'Name and type are required' }, { status: 400 });
     }
+    if (!['folder', 'workbook', 'table'].includes(type)) {
+      return NextResponse.json(
+        { error: `Invalid type '${type}'. Allowed: folder, workbook, table` },
+        { status: 400 }
+      );
+    }
 
     const resolvedParentId: string | null = parentId || null;
     if (resolvedParentId !== null) {

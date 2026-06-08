@@ -35,6 +35,7 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
     const {
+      name,
       model,
       prompt,
       temperature,
@@ -49,6 +50,7 @@ export async function PATCH(
 
     // Build update object with only provided fields
     const updateData: Record<string, unknown> = {};
+    if (name !== undefined) updateData.name = name;
     if (model !== undefined) updateData.model = model;
     if (prompt !== undefined) updateData.prompt = prompt;
     if (temperature !== undefined) updateData.temperature = temperature;
