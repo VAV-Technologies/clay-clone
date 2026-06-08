@@ -14,7 +14,7 @@ Typecheck budget: **18 → 14** errors (trending down).
 | Cluster | Findings | Status | Fix / evidence |
 |---|---|---|---|
 | COST-CAP-DEAD | B-008 | **verified** | `enrichment-runner` per-row estimate gate + cumulative ceiling. Re-verify: row skipped at `$0.00328 > $0.00001` cap, no spend. |
-| JOB-CLAIM-RACE | C1-001, C1-005, D-004, (#2 cron) | **pending** | Atomic claims for cron `process-enrichment` / `process-campaigns` (status CAS) + best-effort cell claim for sync `/enrichment/run` + ai-ark submit. Delicate — next phase. |
+| JOB-CLAIM-RACE | C1-001, C1-005, D-004, (#2 cron) | **verified** | Cell-claim json_set CAS (sync enrichment-run + ai-ark), campaign step json_set CAS + currentStepIndex CAS, enrichment cron reserve-first. Re-verify: in-flight cell refused + concurrent runs -> exactly one processed. Prior note: Atomic claims for cron `process-enrichment` / `process-campaigns` (status CAS) + best-effort cell claim for sync `/enrichment/run` + ai-ark submit. Delicate — next phase. |
 
 ## P1
 
@@ -50,7 +50,7 @@ Typecheck budget: **18 → 14** errors (trending down).
 
 ## Readiness snapshot
 
-- **P0:** 1/2 verified (COST-CAP done; JOB-CLAIM pending).
+- **P0:** 2/2 verified (COST-CAP + JOB-CLAIM-RACE).
 - **P1:** ~8/9 clusters verified (EVENT-LOOP/async pending).
 - Regression suite: unit green (17/17); integration/E2E specs + CI gate pending (tasks 5/6).
 - **Not yet ready to roll out** — remaining blockers: JOB-CLAIM-RACE (P0), EVENT-LOOP-BLOCKING/async (P1). Then re-verify, regression specs, CI gate, typecheck→0.
