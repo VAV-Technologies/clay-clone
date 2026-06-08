@@ -121,8 +121,10 @@ if (TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
   // ensureAgentTables() defensively so a cold start can't insert before DDL.
   void ensureAgentTables().catch((err) => console.error('[boot] ensureAgentTables failed:', err));
 } else {
-  // Development: Use local SQLite (structurally compatible; cast to the libsql type).
-  const sqlite = new Database('dataflow.db');
+  // Development / tests: local SQLite (structurally compatible; cast to the
+  // libsql type). DATAFLOW_DB_PATH lets the test suite point at an isolated
+  // ':memory:' DB so integration tests are hermetic.
+  const sqlite = new Database(process.env.DATAFLOW_DB_PATH || 'dataflow.db');
   db = drizzleSqlite(sqlite, { schema }) as unknown as LibSQLDatabase<typeof schema>;
 
   // Run migrations for local development
@@ -162,6 +164,19 @@ function runLocalMigrations(sqlite: Database.Database) {
     }
   } catch {
     // Column already exists or table doesn't exist
+  }
+
+  // Migration: Add action_kind / action_config to columns (lookup / find-email /
+  // find-domains action columns). These existed in schema.ts + on Turso but were
+  // missing from the local DDL — schema drift (#10) that broke local column creation.
+  try {
+    const ci = sqlite.prepare("PRAGMA table_info(columns)").all() as { name: string }[];
+    if (ci.length > 0) {
+      if (!ci.some(c => c.name === 'action_kind')) sqlite.exec(`ALTER TABLE columns ADD COLUMN action_kind TEXT`);
+      if (!ci.some(c => c.name === 'action_config')) sqlite.exec(`ALTER TABLE columns ADD COLUMN action_config TEXT`);
+    }
+  } catch {
+    // table doesn't exist yet — the CREATE TABLE below includes these columns
   }
 
   // Migration: Add web_search_* columns to enrichment_configs
@@ -209,6 +224,8 @@ function runLocalMigrations(sqlite: Database.Database) {
       "order" INTEGER NOT NULL,
       enrichment_config_id TEXT,
       formula_config_id TEXT,
+      action_kind TEXT,
+      action_config TEXT,
       FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE
     );
 

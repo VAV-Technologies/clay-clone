@@ -17,5 +17,8 @@ export default defineConfig({
     include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
     testTimeout: 30000,
     hookTimeout: 30000,
+    // Integration tests run the real route handlers against an isolated in-memory
+    // SQLite DB (TURSO_* is unset under vitest, so @/lib/db uses better-sqlite3).
+    env: { DATAFLOW_DB_PATH: ':memory:' },
   },
 });
