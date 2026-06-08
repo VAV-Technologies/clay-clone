@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
+import { collectAzureFileIdsForTable, deleteTableDependents, purgeAzureFiles } from '@/lib/db/cascade';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,17 +15,17 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Delete all enrichment jobs for this table
-    await db.delete(schema.enrichmentJobs).where(eq(schema.enrichmentJobs.tableId, tableId));
+    const azureFileIds = await collectAzureFileIdsForTable(db, tableId);
 
-    // Delete all rows
-    await db.delete(schema.rows).where(eq(schema.rows.tableId, tableId));
+    await db.transaction(async (tx) => {
+      // Non-cascading dependents: batch jobs, enrichment jobs, columns, orphaned configs.
+      await deleteTableDependents(tx, tableId);
+      // Rows and the table itself.
+      await tx.delete(schema.rows).where(eq(schema.rows.tableId, tableId));
+      await tx.delete(schema.tables).where(eq(schema.tables.id, tableId));
+    });
 
-    // Delete all columns
-    await db.delete(schema.columns).where(eq(schema.columns.tableId, tableId));
-
-    // Delete the table itself
-    await db.delete(schema.tables).where(eq(schema.tables.id, tableId));
+    await purgeAzureFiles(azureFileIds);
 
     return NextResponse.json({ success: true, message: `Table ${tableId} completely deleted` });
   } catch (error) {

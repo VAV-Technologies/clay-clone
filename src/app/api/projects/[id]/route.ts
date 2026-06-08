@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { MAX_FOLDER_DEPTH, getDepth, getSubtreeDepth, isDescendantOf } from '@/lib/db/folderTree';
+import { collectAzureFileIdsForTable, deleteTableDependents, purgeAzureFiles } from '@/lib/db/cascade';
 
 export const maxDuration = 60;
 
@@ -106,8 +107,11 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    // Delete all child projects recursively
-    await deleteProjectRecursive(id);
+    // Delete the whole subtree. Azure file ids are accumulated across every
+    // table touched and purged once at the end (best-effort, post-commit).
+    const azureFileIds: string[] = [];
+    await deleteProjectRecursive(id, azureFileIds);
+    await purgeAzureFiles(azureFileIds);
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -116,7 +120,12 @@ export async function DELETE(
   }
 }
 
-async function deleteProjectRecursive(projectId: string) {
+// Deletes a project and everything under it. Uses ONE transaction PER PROJECT
+// node (not one for the whole subtree): Turso is single-writer and a folder can
+// hold most of the dataset, so a subtree-wide tx would hold the write lock for
+// the entire cascade and risk the 60s maxDuration. Each node's delete is
+// internally consistent and the operation is delete-only / safely re-runnable.
+async function deleteProjectRecursive(projectId: string, azureFileIds: string[]) {
   // Find all children
   const children = await db
     .select()
@@ -125,12 +134,34 @@ async function deleteProjectRecursive(projectId: string) {
 
   // Delete children first
   for (const child of children) {
-    await deleteProjectRecursive(child.id);
+    await deleteProjectRecursive(child.id, azureFileIds);
   }
 
-  // Delete tables associated with this project
-  await db.delete(schema.tables).where(eq(schema.tables.projectId, projectId));
+  // Tables directly under this project.
+  const projectTables = await db
+    .select({ id: schema.tables.id })
+    .from(schema.tables)
+    .where(eq(schema.tables.projectId, projectId));
+  const tableIds = projectTables.map((t) => t.id);
 
-  // Delete the project itself
-  await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
+  // Collect Azure file ids before anything is deleted.
+  for (const tid of tableIds) {
+    azureFileIds.push(...(await collectAzureFileIdsForTable(db, tid)));
+  }
+
+  await db.transaction(async (tx) => {
+    // Per-table non-cascading dependents (jobs, columns, orphaned configs).
+    for (const tid of tableIds) {
+      await deleteTableDependents(tx, tid);
+    }
+    // Rows for all of this project's tables.
+    if (tableIds.length) {
+      await tx.delete(schema.rows).where(inArray(schema.rows.tableId, tableIds));
+    }
+    // Campaigns are keyed to a workbook (project) id with no FK — clean them too.
+    await tx.delete(schema.campaigns).where(eq(schema.campaigns.workbookId, projectId));
+    // Tables, then the project itself.
+    await tx.delete(schema.tables).where(eq(schema.tables.projectId, projectId));
+    await tx.delete(schema.projects).where(eq(schema.projects.id, projectId));
+  });
 }

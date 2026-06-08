@@ -1,5 +1,5 @@
 import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
-import { drizzle as drizzleLibsql } from 'drizzle-orm/libsql';
+import { drizzle as drizzleLibsql, type LibSQLDatabase } from 'drizzle-orm/libsql';
 import { createClient, Client } from '@libsql/client';
 import Database from 'better-sqlite3';
 import * as schema from './schema';
@@ -8,7 +8,12 @@ import * as schema from './schema';
 const TURSO_DATABASE_URL = process.env.TURSO_DATABASE_URL;
 const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
 
-let db: ReturnType<typeof drizzleSqlite> | ReturnType<typeof drizzleLibsql>;
+// Typed as the libsql database (production). The local better-sqlite3 instance
+// used in development is structurally compatible and assigned via a cast — both
+// implement the same Drizzle SQLite query surface. Keeping a single type (rather
+// than a union of the two drivers) lets `db.transaction`/`db.select` resolve
+// cleanly for callers and shared helpers (e.g. src/lib/db/cascade.ts).
+let db: LibSQLDatabase<typeof schema>;
 let libsqlClient: Client | null = null;
 
 // Memoized promise that ensures the agent_conversations / agent_messages
@@ -116,9 +121,9 @@ if (TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
   // ensureAgentTables() defensively so a cold start can't insert before DDL.
   void ensureAgentTables().catch((err) => console.error('[boot] ensureAgentTables failed:', err));
 } else {
-  // Development: Use local SQLite
+  // Development: Use local SQLite (structurally compatible; cast to the libsql type).
   const sqlite = new Database('dataflow.db');
-  db = drizzleSqlite(sqlite, { schema });
+  db = drizzleSqlite(sqlite, { schema }) as unknown as LibSQLDatabase<typeof schema>;
 
   // Run migrations for local development
   runLocalMigrations(sqlite);

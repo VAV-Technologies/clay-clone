@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, or } from 'drizzle-orm';
+import { collectAzureFileIdsForColumn, deleteUnreferencedConfigs, purgeAzureFiles } from '@/lib/db/cascade';
 
 // PATCH /api/columns/[id] - Update column
 export async function PATCH(
@@ -62,29 +63,42 @@ export async function DELETE(
       return NextResponse.json({ error: 'Column not found' }, { status: 404 });
     }
 
-    // If this is an enrichment column, cancel any running jobs
-    if (existing.type === 'enrichment') {
-      await db
-        .update(schema.enrichmentJobs)
-        .set({
-          status: 'cancelled',
-          updatedAt: new Date(),
-        })
-        .where(
-          eq(schema.enrichmentJobs.targetColumnId, id)
-        );
-    }
+    // Azure file ids live on batch_enrichment_jobs rows — grab them before deleting those rows.
+    const azureFileIds = await collectAzureFileIdsForColumn(db, id);
 
-    // Delete the column
-    await db.delete(schema.columns).where(eq(schema.columns.id, id));
+    await db.transaction(async (tx) => {
+      // If this is an enrichment column, cancel any running real-time jobs
+      // (kept as an audit trail; not a bloat source while the table lives).
+      if (existing.type === 'enrichment') {
+        await tx
+          .update(schema.enrichmentJobs)
+          .set({ status: 'cancelled', updatedAt: new Date() })
+          .where(eq(schema.enrichmentJobs.targetColumnId, id));
+      }
 
-    // Update table's updatedAt
-    if (existing.tableId) {
-      await db
-        .update(schema.tables)
-        .set({ updatedAt: new Date() })
-        .where(eq(schema.tables.id, existing.tableId));
-    }
+      // Batch jobs targeting this column have no FK — delete them (orphan + Azure-file source).
+      await tx
+        .delete(schema.batchEnrichmentJobs)
+        .where(eq(schema.batchEnrichmentJobs.targetColumnId, id));
+
+      // Delete the column, then drop any config it leaves unreferenced.
+      await tx.delete(schema.columns).where(eq(schema.columns.id, id));
+      await deleteUnreferencedConfigs(tx, {
+        enrichmentIds: existing.enrichmentConfigId ? [existing.enrichmentConfigId] : [],
+        formulaIds: existing.formulaConfigId ? [existing.formulaConfigId] : [],
+      });
+
+      // Update table's updatedAt
+      if (existing.tableId) {
+        await tx
+          .update(schema.tables)
+          .set({ updatedAt: new Date() })
+          .where(eq(schema.tables.id, existing.tableId));
+      }
+    });
+
+    // Best-effort external cleanup (never blocks/faults the delete).
+    await purgeAzureFiles(azureFileIds);
 
     return NextResponse.json({ success: true });
   } catch (error) {

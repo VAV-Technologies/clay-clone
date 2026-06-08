@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
+import { collectAzureFileIdsForTable, deleteTableDependents, purgeAzureFiles } from '@/lib/db/cascade';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -83,13 +84,14 @@ export async function DELETE(
   try {
     const { id } = await params;
 
+    // Azure file ids live on batch_enrichment_jobs rows — grab them before the tx deletes those rows.
+    const azureFileIds = await collectAzureFileIdsForTable(db, id);
+
     // Use a transaction to ensure all deletes succeed or fail together
     await db.transaction(async (tx) => {
-      // Delete enrichment jobs for this table
-      await tx.delete(schema.enrichmentJobs).where(eq(schema.enrichmentJobs.tableId, id));
-
-      // Delete columns
-      await tx.delete(schema.columns).where(eq(schema.columns.tableId, id));
+      // Non-cascading dependents: batch jobs, enrichment jobs, columns, and
+      // now-orphaned enrichment/formula configs.
+      await deleteTableDependents(tx, id);
 
       // Delete rows
       await tx.delete(schema.rows).where(eq(schema.rows.tableId, id));
@@ -97,6 +99,9 @@ export async function DELETE(
       // Delete table
       await tx.delete(schema.tables).where(eq(schema.tables.id, id));
     });
+
+    // Best-effort external cleanup (never blocks/faults the delete).
+    await purgeAzureFiles(azureFileIds);
 
     return NextResponse.json({ success: true });
   } catch (error) {
