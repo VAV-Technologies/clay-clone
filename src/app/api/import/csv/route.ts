@@ -79,11 +79,13 @@ export async function POST(request: NextRequest) {
             id: generateId(),
             tableId,
             name: csvColName,
-            type: inferColumnType(firstRow[csvColName]) as 'text' | 'number' | 'email' | 'url' | 'date' | 'enrichment' | 'formula',
+            type: inferColumnType(firstNonEmptyValue(data, csvColName)) as 'text' | 'number' | 'email' | 'url' | 'date' | 'enrichment' | 'formula',
             width: 150,
             order: maxOrder,
             enrichmentConfigId: null,
             formulaConfigId: null,
+            actionKind: null,
+            actionConfig: null,
           };
           newColumns.push(newCol);
           csvToColumnId.set(csvColName, newCol.id);
@@ -105,11 +107,13 @@ export async function POST(request: NextRequest) {
             id: generateId(),
             tableId,
             name: mappingEntry.newColumnName,
-            type: inferColumnType(firstRow[csvColName]) as 'text' | 'number' | 'email' | 'url' | 'date' | 'enrichment' | 'formula',
+            type: inferColumnType(firstNonEmptyValue(data, csvColName)) as 'text' | 'number' | 'email' | 'url' | 'date' | 'enrichment' | 'formula',
             width: 150,
             order: maxOrder,
             enrichmentConfigId: null,
             formulaConfigId: null,
+            actionKind: null,
+            actionConfig: null,
           };
           newColumns.push(newCol);
           existingColumnByName.set(mappingEntry.newColumnName.toLowerCase(), newCol);
@@ -151,7 +155,10 @@ export async function POST(request: NextRequest) {
       // Use LibSQL batch API - sends all statements in a single HTTP request
       const statements: InStatement[] = rows.map((row) => ({
         sql: 'INSERT INTO rows (id, table_id, data, created_at) VALUES (?, ?, ?, ?)',
-        args: [row.id, row.tableId, JSON.stringify(row.data), row.createdAt.getTime()],
+        // created_at is a Drizzle `timestamp` column (stored in SECONDS). The
+        // raw insert previously wrote getTime() (ms), which read back as the
+        // year 58404 and broke time sort/audit. Store seconds. QA finding A-026.
+        args: [row.id, row.tableId, JSON.stringify(row.data), Math.floor(row.createdAt.getTime() / 1000)],
       }));
 
       // Split into batches of 500 statements to stay within Turso limits
@@ -185,6 +192,16 @@ export async function POST(request: NextRequest) {
     console.error('Error importing CSV:', error);
     return NextResponse.json({ error: 'Failed to import CSV' }, { status: 500 });
   }
+}
+
+// Returns the first non-empty value for a CSV column across all rows, so type
+// inference isn't fooled by an empty leading cell (QA finding A-024 / #9).
+function firstNonEmptyValue(data: CsvRow[], csvColName: string): string {
+  for (const r of data) {
+    const v = r[csvColName];
+    if (v != null && String(v).trim() !== '') return String(v);
+  }
+  return '';
 }
 
 function inferColumnType(value: string): string {
