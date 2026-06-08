@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
+import { getColumnIdSet, invalidColumnIds, COLUMN_SCOPE_MESSAGE } from '@/lib/api-validation';
 
 // PATCH /api/rows/[id] - Update row
 export async function PATCH(
@@ -19,6 +20,18 @@ export async function PATCH(
 
     if (!existing) {
       return NextResponse.json({ error: 'Row not found' }, { status: 404 });
+    }
+
+    // Reject cell keys that don't belong to this row's table (column-scope guard
+    // on the single-row write path — same protection as the bulk endpoints).
+    if (data && existing.tableId) {
+      const bad = invalidColumnIds(Object.keys(data), await getColumnIdSet(existing.tableId));
+      if (bad.length > 0) {
+        return NextResponse.json(
+          { error: COLUMN_SCOPE_MESSAGE, invalidColumnIds: bad, tableId: existing.tableId },
+          { status: 400 }
+        );
+      }
     }
 
     // Merge existing data with new data
