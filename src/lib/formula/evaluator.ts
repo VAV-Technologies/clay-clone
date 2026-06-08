@@ -98,10 +98,24 @@ export function evaluateFormula(
         args.find(arg => arg !== null && arg !== undefined && arg !== ''),
     };
 
-    // Evaluate using Function constructor (safer than eval)
-    // This creates a new function with controlled scope
-    const contextKeys = Object.keys(evalContext);
-    const contextValues = Object.values(evalContext);
+    // Evaluate using Function constructor (safer than eval).
+    // Only valid, non-reserved JS identifiers can be Function parameter names.
+    // formulajs's namespace includes a reserved `default` export, which would
+    // otherwise make `new Function('default', …)` throw "Unexpected token
+    // 'default'" on EVERY evaluation in a pure-ESM runtime. Filter the eval
+    // context down to safe identifier names so the evaluator is portable.
+    const RESERVED_WORDS = new Set([
+      'default', 'arguments', 'eval', 'let', 'const', 'var', 'function', 'return',
+      'this', 'new', 'class', 'delete', 'typeof', 'instanceof', 'in', 'of', 'do',
+      'if', 'else', 'switch', 'case', 'for', 'while', 'with', 'try', 'catch',
+      'finally', 'throw', 'void', 'yield', 'await', 'super', 'import', 'export',
+      'extends', 'enum', 'null', 'true', 'false', 'break', 'continue', 'debugger',
+    ]);
+    const safeEntries = Object.entries(evalContext).filter(
+      ([k]) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) && !RESERVED_WORDS.has(k)
+    );
+    const contextKeys = safeEntries.map(([k]) => k);
+    const contextValues = safeEntries.map(([, v]) => v);
 
     // Wrap the formula to return its result
     const functionBody = `"use strict"; return (${processedFormula});`;
