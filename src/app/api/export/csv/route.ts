@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
+import { tableExists } from '@/lib/api-validation';
 
 // GET /api/export/csv?tableId=xxx - Export CSV via query param (for API access)
 export async function GET(request: NextRequest) {
@@ -25,6 +26,9 @@ export async function POST(request: NextRequest) {
 
     if (!tableId) {
       return NextResponse.json({ error: 'tableId is required' }, { status: 400 });
+    }
+    if (!(await tableExists(tableId))) {
+      return NextResponse.json({ error: 'Table not found', tableId }, { status: 404 });
     }
 
     // Get columns
@@ -56,11 +60,7 @@ export async function POST(request: NextRequest) {
     // Build CSV content
     const headers = columns.map((col) => escapeCSV(col.name));
     const csvRows = rows.map((row) => {
-      return columns.map((col) => {
-        const cellValue = row.data[col.id];
-        const value = cellValue?.value;
-        return escapeCSV(value?.toString() ?? '');
-      });
+      return columns.map((col) => escapeCSV(exportCellValue(col, row.data[col.id])));
     });
 
     // Add BOM for Excel compatibility
@@ -78,6 +78,24 @@ export async function POST(request: NextRequest) {
     console.error('Error exporting CSV:', error);
     return NextResponse.json({ error: 'Failed to export CSV' }, { status: 500 });
   }
+}
+
+// Enrichment columns store an internal display token (e.g. 'matched',
+// 'N datapoints') in cell.value while the real data lives in enrichmentData.
+// Export the meaningful data so it isn't lost (QA finding C4-011): a single
+// datapoint exports as its scalar; multiple datapoints export as JSON.
+function exportCellValue(
+  col: { type: string },
+  cell: { value?: string | number | null; enrichmentData?: Record<string, unknown> } | undefined
+): string {
+  if (!cell) return '';
+  if (col.type === 'enrichment' && cell.enrichmentData && typeof cell.enrichmentData === 'object') {
+    const entries = Object.entries(cell.enrichmentData).filter(([k]) => k !== '__no_match');
+    if (entries.length === 0) return cell.value?.toString() ?? '';
+    if (entries.length === 1) return entries[0][1]?.toString() ?? '';
+    return JSON.stringify(Object.fromEntries(entries));
+  }
+  return cell.value?.toString() ?? '';
 }
 
 function escapeCSV(value: string): string {
