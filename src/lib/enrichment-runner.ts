@@ -70,6 +70,21 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
 
   const columnMap = new Map(columns.map((col) => [col.id, col]));
 
+  // Guard: the target column must belong to this table. Otherwise we'd merge an
+  // orphaned phantom cell into row.data under a foreign/garbage id AND still
+  // charge for the AI call. QA finding C1-006.
+  if (!columnMap.has(targetColumnId)) {
+    return {
+      results: [],
+      totalCost: 0,
+      processedCount: 0,
+      successCount: 0,
+      errorCount: 0,
+      newColumns: newColumnsCreated,
+      message: `targetColumnId ${targetColumnId} does not belong to table ${tableId}`,
+    };
+  }
+
   // Get rows to enrich
   let rows;
   if (rowIds && Array.isArray(rowIds) && rowIds.length > 0) {
@@ -113,6 +128,13 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
   let totalCost = 0;
   const results: RowResult[] = [];
 
+  // Cost-cap enforcement. These config fields existed but were never read, so a
+  // run could spend without bound (QA finding B-008, P0). We gate per-row on a
+  // worst-case pre-call estimate and stop the whole job at a cumulative ceiling.
+  const costCapEnabled = !!config.costLimitEnabled && config.maxCostPerRow != null;
+  const perRowCap = (config.maxCostPerRow as number | null) ?? Infinity;
+  const cumulativeCeiling = costCapEnabled ? perRowCap * rows.length : Infinity;
+
   const processRow = async (row: typeof rows[0]): Promise<RowResult> => {
     try {
       const outputFormat = (config.outputFormat as 'json' | 'text') ?? 'json';
@@ -120,6 +142,28 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
 
       const webSearchEnabled = !!config.webSearchEnabled;
       const aiTimeout = webSearchEnabled ? AI_TIMEOUT_MS_WITH_TOOLS : AI_TIMEOUT_MS_NO_TOOLS;
+
+      // Pre-call cost gate: never spend on a row whose worst-case estimate
+      // exceeds the per-row cap (conservative — guarantees actual <= cap). B-008.
+      if (costCapEnabled) {
+        const estInputTokens = Math.ceil(prompt.length / 4);
+        const estOutputTokens = 8192; // worst case (maxOutputTokens)
+        let estCost = (estInputTokens * pricing.input + estOutputTokens * pricing.output) / 1_000_000;
+        if (webSearchEnabled) estCost += 0.01; // bounded web-search tool-call buffer
+        if (estCost > perRowCap) {
+          const skippedData: Record<string, CellValue> = {
+            ...(row.data as Record<string, CellValue>),
+            [targetColumnId]: {
+              value: null,
+              status: 'error' as const,
+              error: `Skipped: estimated cost $${estCost.toFixed(5)} exceeds per-row cap $${perRowCap}`,
+            },
+          };
+          await db.update(schema.rows).set({ data: skippedData }).where(eq(schema.rows.id, row.id));
+          return { rowId: row.id, success: false, data: skippedData, error: 'cost cap exceeded' };
+        }
+      }
+
       const aiResult = await withTimeout(
         callUnifiedAI(prompt, modelId, {
           temperature: config.temperature ?? 0.7,
@@ -191,6 +235,13 @@ export async function runEnrichmentJob(input: EnrichmentRunInput): Promise<Enric
 
   const { concurrentRequests, delayBetweenChunks } = rateLimits;
   for (let i = 0; i < rows.length; i += concurrentRequests) {
+    // Stop the whole job once cumulative spend hits the ceiling; mark the rest skipped.
+    if (costCapEnabled && totalCost >= cumulativeCeiling) {
+      for (const row of rows.slice(i)) {
+        results.push({ rowId: row.id, success: false, error: 'Cost cap reached for this job' });
+      }
+      break;
+    }
     const chunk = rows.slice(i, i + concurrentRequests);
     const chunkResults = await Promise.all(chunk.map(processRow));
     results.push(...chunkResults);

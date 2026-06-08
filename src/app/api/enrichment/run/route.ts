@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 import { runEnrichmentJob } from '@/lib/enrichment-runner';
+import { getColumnIdSet, COLUMN_SCOPE_MESSAGE } from '@/lib/api-validation';
 
 // Vercel function config - extend timeout for AI calls (web search can run up to 90s/row)
 export const maxDuration = 120;
@@ -37,6 +38,16 @@ export async function POST(request: NextRequest) {
 
     if (!config) {
       return NextResponse.json({ error: 'Enrichment config not found' }, { status: 404 });
+    }
+
+    // Column-scope guard on the enrichment write path (QA finding C1-006):
+    // reject a targetColumnId that isn't a column of this table before spending.
+    const validColumnIds = await getColumnIdSet(tableId);
+    if (!validColumnIds.has(targetColumnId)) {
+      return NextResponse.json(
+        { error: COLUMN_SCOPE_MESSAGE, invalidColumnIds: [targetColumnId], tableId },
+        { status: 400 }
+      );
     }
 
     const result = await runEnrichmentJob({
