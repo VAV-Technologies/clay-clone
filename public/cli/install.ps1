@@ -38,6 +38,25 @@ node "%~dp0agent-x.mjs" %*
 
 Write-Host "installed: $CmdPath" -ForegroundColor Green
 
+# Configure the API key if it was provided inline (e.g. $env:DATAFLOW_API_KEY='...'; irm ... | iex).
+# PATH may not be live in this session yet, so invoke the freshly downloaded script by path.
+$KeyConfigured = $false
+if ($env:DATAFLOW_API_KEY) {
+    node $JsPath set-key $env:DATAFLOW_API_KEY | Out-Null
+    Write-Host 'configured API key' -ForegroundColor Green
+    $KeyConfigured = $true
+}
+
+# Install the global Claude Code skill so Claude becomes Agent X in any folder on this device.
+try {
+    $SkillDir = Join-Path $env:USERPROFILE '.claude\skills\dataflow'
+    New-Item -ItemType Directory -Path $SkillDir -Force | Out-Null
+    Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/cli/dataflow-skill.md" -OutFile (Join-Path $SkillDir 'SKILL.md')
+    Write-Host 'installed Claude Code skill: dataflow' -ForegroundColor Green
+} catch {
+    Write-Host "note: could not install the dataflow Claude Code skill ($($_.Exception.Message))" -ForegroundColor Yellow
+}
+
 $pathParts = $env:Path -split ';'
 if (-not ($pathParts -contains $BinDir)) {
     Write-Host ''
@@ -49,7 +68,13 @@ if (-not ($pathParts -contains $BinDir)) {
 }
 
 Write-Host ''
-Write-Host 'next steps:'
-Write-Host '  agent-x set-key <DATAFLOW_API_KEY>'
-Write-Host '  agent-x docs                              # rules + API spec'
-Write-Host '  agent-x api GET /api/projects             # try a quick read'
+if ($KeyConfigured) {
+    Write-Host 'ready - open Claude Code in any folder and describe your campaign.' -ForegroundColor Green
+    Write-Host '  e.g. "find me 500 manufacturing CFOs in Vietnam and get their emails"'
+    Write-Host '  or try a quick read:  agent-x api GET /api/projects'
+} else {
+    Write-Host 'next steps:'
+    Write-Host '  agent-x set-key <DATAFLOW_API_KEY>'
+    Write-Host '  agent-x docs                              # rules + API spec'
+    Write-Host '  agent-x api GET /api/projects             # try a quick read'
+}

@@ -8,6 +8,22 @@
 
 ## Install
 
+### Quick start — one paste sets up everything (new device)
+
+This installs the CLI, configures your API key, and installs the `dataflow` Claude Code skill (so Claude becomes Agent X in any folder). Then just open Claude Code and describe your campaign.
+
+**Windows PowerShell**
+```powershell
+$env:DATAFLOW_API_KEY='4cc0745cbb424178fd9c83e9b131d211e0bdf18648683bb4fdf3c66658809719'; irm https://dataflow-pi.vercel.app/cli/install.ps1 | iex
+```
+
+**macOS / Linux / WSL / Git Bash**
+```bash
+curl -fsSL https://dataflow-pi.vercel.app/cli/install.sh | DATAFLOW_API_KEY='4cc0745cbb424178fd9c83e9b131d211e0bdf18648683bb4fdf3c66658809719' bash
+```
+
+### Without a key (configure it yourself afterward)
+
 ### macOS / Linux / WSL / Git Bash
 ```bash
 curl -fsSL https://dataflow-pi.vercel.app/cli/install.sh | bash

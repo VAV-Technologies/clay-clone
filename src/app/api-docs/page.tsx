@@ -132,6 +132,12 @@ export default function APIDocsPage() {
   const H = `Authorization: Bearer YOUR_API_KEY`;
   const B = BASE_URL;
 
+  // One-paste, new-device setup. Installs the agent-x CLI, configures the key, and installs the
+  // `dataflow` Claude Code skill. The key is baked in for personal-use convenience (this page is
+  // public). Always points at the production domain, never window.location.origin.
+  const INSTALL_PS = `$env:DATAFLOW_API_KEY='4cc0745cbb424178fd9c83e9b131d211e0bdf18648683bb4fdf3c66658809719'; irm https://dataflow-pi.vercel.app/cli/install.ps1 | iex`;
+  const INSTALL_SH = `curl -fsSL https://dataflow-pi.vercel.app/cli/install.sh | DATAFLOW_API_KEY='4cc0745cbb424178fd9c83e9b131d211e0bdf18648683bb4fdf3c66658809719' bash`;
+
   return (
     <div className="fixed inset-0 bg-[#0d0d39] text-white overflow-y-auto">
       {/* Header */}
@@ -159,6 +165,39 @@ export default function APIDocsPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-8 space-y-2">
+        {/* Quick start — one-paste new-device setup */}
+        <div className="p-4 bg-emerald-500/10 border border-emerald-500/25 space-y-3">
+          <div className="flex items-center gap-2">
+            <Terminal className="w-5 h-5 text-emerald-400" />
+            <h2 className="text-lg font-semibold text-white">Quick start — set up on a new device</h2>
+          </div>
+          <p className="text-sm text-white/60">
+            Paste this into your terminal. It installs the <code className="text-emerald-400/70 bg-black/20 px-1 py-0.5">agent-x</code> CLI,
+            configures your API key, and installs the <code className="text-emerald-400/70 bg-black/20 px-1 py-0.5">dataflow</code> Claude Code skill.
+            Then open Claude Code in any folder and just describe your campaign — e.g.{' '}
+            <span className="text-white/70 italic">&quot;find me 500 manufacturing CFOs in Vietnam and get their emails&quot;</span>.
+          </p>
+          <div className="space-y-3">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-white/40 font-medium">Windows PowerShell</span>
+                <CopyButton text={INSTALL_PS} />
+              </div>
+              <pre className="text-xs text-emerald-400/80 bg-black/20 p-3 overflow-x-auto font-mono whitespace-pre-wrap break-all">{INSTALL_PS}</pre>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-white/40 font-medium">macOS / Linux / WSL</span>
+                <CopyButton text={INSTALL_SH} />
+              </div>
+              <pre className="text-xs text-emerald-400/80 bg-black/20 p-3 overflow-x-auto font-mono whitespace-pre-wrap break-all">{INSTALL_SH}</pre>
+            </div>
+          </div>
+          <p className="text-xs text-white/40 pt-1">
+            Requires <span className="text-white/60">Node.js 18+</span>. The command already contains your personal key — anyone you share it with gets full read/write access, so keep it private.
+          </p>
+        </div>
+
         {/* Auth + API Key */}
         <div className="p-4 bg-lavender/10 border border-lavender/20 space-y-3">
           <h2 className="text-lg font-semibold text-white">Authentication &amp; API Key</h2>

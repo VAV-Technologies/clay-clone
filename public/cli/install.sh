@@ -37,6 +37,27 @@ fi
 chmod +x "$BIN_PATH"
 
 echo "installed: $BIN_PATH"
+
+# Configure the API key if it was provided inline
+# (e.g. curl -fsSL .../install.sh | DATAFLOW_API_KEY='...' bash).
+key_configured=0
+if [ -n "${DATAFLOW_API_KEY:-}" ]; then
+  "$BIN_PATH" set-key "$DATAFLOW_API_KEY" >/dev/null
+  echo "configured API key"
+  key_configured=1
+fi
+
+# Install the global Claude Code skill so Claude becomes Agent X in any folder on this device.
+SKILL_DIR="$HOME/.claude/skills/dataflow"
+if mkdir -p "$SKILL_DIR" 2>/dev/null && {
+     { command -v curl >/dev/null 2>&1 && curl -fsSL "$BASE_URL/cli/dataflow-skill.md" -o "$SKILL_DIR/SKILL.md"; } ||
+     { command -v wget >/dev/null 2>&1 && wget -qO "$SKILL_DIR/SKILL.md" "$BASE_URL/cli/dataflow-skill.md"; }
+   }; then
+  echo "installed Claude Code skill: dataflow"
+else
+  echo "note: could not install the dataflow Claude Code skill (skipped)"
+fi
+
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *)
@@ -48,7 +69,13 @@ case ":$PATH:" in
 esac
 
 echo
-echo "next steps:"
-echo "  agent-x set-key <DATAFLOW_API_KEY>"
-echo "  agent-x docs                              # rules + API spec"
-echo "  agent-x api GET /api/projects             # try a quick read"
+if [ "$key_configured" -eq 1 ]; then
+  echo "ready - open Claude Code in any folder and describe your campaign."
+  echo "  e.g. \"find me 500 manufacturing CFOs in Vietnam and get their emails\""
+  echo "  or try a quick read:  agent-x api GET /api/projects"
+else
+  echo "next steps:"
+  echo "  agent-x set-key <DATAFLOW_API_KEY>"
+  echo "  agent-x docs                              # rules + API spec"
+  echo "  agent-x api GET /api/projects             # try a quick read"
+fi
