@@ -29,6 +29,28 @@ export async function PATCH(
     if (order !== undefined) updates.order = order;
     if (enrichmentConfigId !== undefined) updates.enrichmentConfigId = enrichmentConfigId;
 
+    // Re-sequence sibling columns on an explicit reorder so two columns never
+    // share the same order value (QA finding A-009: PATCH used to write the new
+    // order without shifting siblings, producing ties / nondeterministic display).
+    if (order !== undefined && existing.tableId) {
+      const cols = await db
+        .select()
+        .from(schema.columns)
+        .where(eq(schema.columns.tableId, existing.tableId))
+        .orderBy(schema.columns.order);
+      const others = cols.filter((c) => c.id !== id);
+      const target = Math.max(0, Math.min(Math.trunc(Number(order)), others.length));
+      const sequence = [...others.slice(0, target), existing, ...others.slice(target)];
+      for (let i = 0; i < sequence.length; i++) {
+        const col = sequence[i];
+        if (col.id === id) {
+          updates.order = i;
+        } else if (col.order !== i) {
+          await db.update(schema.columns).set({ order: i }).where(eq(schema.columns.id, col.id));
+        }
+      }
+    }
+
     await db.update(schema.columns).set(updates).where(eq(schema.columns.id, id));
 
     // Update table's updatedAt

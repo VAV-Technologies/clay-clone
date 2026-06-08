@@ -11,14 +11,14 @@ name: Deploy to Azure Container Apps
 #      automatically. Until then this is manual (Actions tab -> Run workflow).
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [master]
-  #   paths:
-  #     - 'src/app/api/**'
-  #     - 'src/lib/**'
-  #     - 'Dockerfile'
-  #     - 'package.json'
-  #     - 'next.config.js'
+  push:
+    branches: [master]
+    paths:
+      - 'src/app/api/**'
+      - 'src/lib/**'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'next.config.js'
 
 concurrency:
   group: deploy-aca
