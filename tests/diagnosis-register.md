@@ -25,7 +25,7 @@ Typecheck budget: **18 → 14** errors (trending down).
 | CSV-IMPORT-TIMESTAMP | A-026 | **verified** | ms→seconds. Re-verify: createdAt year 2026. |
 | EXPORT-ENRICHMENT-VALUE | C4-011 | **verified** | exports real enrichmentData. Re-verify: 'Alpha' present. |
 | PAGINATION | C2-007/008 | **verified** | clamp negative/NaN limit+offset. Re-verify green. |
-| EVENT-LOOP-BLOCKING (eval) | B-009/010, C2-014/015, C4-017 | **verified** | Formula eval timeout (vm 1s, shared context) + 50k inline-row cap remove the event-loop takedown; C4-017 export-hang fixed via 404 (batch1). Verified: infinite-loop formula returns an error in ~1s, no hang (unit test). Deploying now. |
+| EVENT-LOOP-BLOCKING (eval) | B-009/010, C2-014/015, C4-017 | **verified** | Formula eval timeout (vm 1s, shared context) + 50k inline-row cap remove the event-loop takedown; C4-017 export-hang fixed via 404 (batch1). Verified LIVE (revision qaevaltimeout): runaway formula -> 'Script execution timed out after 1000ms', backend stays responsive; also a unit test. |
 | BATCH/WEB-SEARCH async | B-017, B-018, B-022 | **deferred** | Synchronous batch-submit + web-search exceed the 120s Vercel->ACA router. Proper fix = async enqueue processed by cron. Deferred: unverifiable here (Azure Batch returned 503/unreachable; web-search is inherently >120s through the proxy), and it is feature-availability, NOT safety/data — the eval timeout already removed the takedown risk. Track for when Azure Batch is configured. |
 
 ## P2 / P3
@@ -52,6 +52,7 @@ Typecheck budget: **18 → 14** errors (trending down).
 ## Readiness snapshot
 
 - **P0:** 2/2 verified (COST-CAP + JOB-CLAIM-RACE).
-- **P1:** ~8/9 clusters verified (EVENT-LOOP/async pending).
-- Regression suite: unit green (17/17); integration/E2E specs + CI gate pending (tasks 5/6).
-- **Not yet ready to roll out** — remaining blockers: JOB-CLAIM-RACE (P0), EVENT-LOOP-BLOCKING/async (P1). Then re-verify, regression specs, CI gate, typecheck→0.
+- **P1:** all functional/integrity/concurrency clusters verified in prod; EVENT-LOOP eval-timeout verified LIVE; BATCH/WEB-SEARCH async deferred (feature-availability, documented).
+- Regression suite: unit green (18/18); CI gate LIVE + green on master (typecheck ratchet 14 + lint + tests); deploy-aca automation pending Azure SP creds.
+- Typecheck budget 18 -> 14 (ratcheting toward 0).
+- **No open P0/P1 safety blockers.** Remaining polish: P2/P3 validation/error-quality batch, batch/web-search async (deferred), in-process integration specs, typecheck -> 0, Ninjer credential (deferred per user).
