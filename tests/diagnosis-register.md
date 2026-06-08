@@ -53,7 +53,7 @@ Typecheck budget: **18 → 14** errors (trending down).
 
 - **P0:** 2/2 verified (COST-CAP + JOB-CLAIM-RACE).
 - **P1:** all functional/integrity/concurrency clusters verified in prod; EVENT-LOOP eval-timeout verified LIVE; BATCH/WEB-SEARCH async deferred (feature-availability, documented).
-- Regression suite: unit green (18/18); CI gate LIVE + green on master (typecheck ratchet 0 + lint + tests); deploy-aca ACTIVE - backend pushes auto-build + roll the ACA revision + post-deploy smoke (verified end-to-end on run 27138242956).
+- Regression suite: 23 green (18 unit + 5 hermetic in-process integration) in CI; CI gate LIVE + green on master (typecheck ratchet 0 + lint + tests); deploy-aca ACTIVE - backend pushes auto-build + roll the ACA revision + post-deploy smoke (verified end-to-end). Building the integration suite also surfaced + fixed schema drift #10 (local DDL missing columns.action_kind/action_config).
 - Typecheck budget 18 -> 0; next.config typescript.ignoreBuildErrors flipped to false (the build now type-checks for real and the CI ratchet holds it at 0).
 - **No open P0/P1 safety blockers; P2/P3 validation batch verified 7/7.** All re-verify suites green on the live revision: batch-1 19/19, JOB-CLAIM 3/3, eval-timeout 3/3, validation 7/7 (= 32/32).
-- Remaining (non-disruptive, optional): batch/web-search async (deferred, needs Azure Batch to verify), in-process integration specs (route fixes are prod-verified via scripts/qa/*; hermetic CI integration tests are the next enhancement), Ninjer credential (deferred per user).
+- Remaining (deferred, not autonomously verifiable): batch/web-search async (needs Azure Batch configured to verify end-to-end; the event-loop takedown risk is already removed), Ninjer credential (account/key fix on the owner's side; find-email is otherwise correctly wired + scoped).
