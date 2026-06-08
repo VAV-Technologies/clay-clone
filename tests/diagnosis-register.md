@@ -37,7 +37,7 @@ Typecheck budget: **18 → 14** errors (trending down).
 | CSV-TYPE-INFER | A-024 (#9) | **verified** | first non-empty value. |
 | FORMULA-EVAL-DEFAULT-KEY | Zpre-001 | **verified** | eval-context identifier filter; 17/17 unit tests. (test-only; prod formulas always ran) |
 | schema-drift (actionKind/actionConfig) | Zpre-004 | **implemented** | cleared 3 tsc errors via import/csv insert. |
-| VALIDATION/ERROR-QUALITY | A-004/007/009/010, B-007/014, C-004(part), C2-012, D-003/006/024 | **pending** | enum validation, FK→404, column-reorder reseq, enrichment PATCH name, campaign step allowlist, JSON error bodies. Next phase. |
+| VALIDATION/ERROR-QUALITY | A-004/007/009/010, B-007/014, C-004(part), C2-012, D-003/006/024 | **verified (7/7; A-009 reorder + empty-error-bodies deferred)** | enum validation, FK→404, column-reorder reseq, enrichment PATCH name, campaign step allowlist, JSON error bodies. Next phase. |
 | IN-JS-SCALE | C2-004/005 | **deferred** | whole-table load + JS filter. Acceptable for team-size sheets; DB pushdown is a tracked perf follow-up. |
 | clay estimatedTotal / batch dead-branch | Zpre-002/003 | **pending** | part of tsc burn-down (14 → 0). |
 
@@ -55,4 +55,5 @@ Typecheck budget: **18 → 14** errors (trending down).
 - **P1:** all functional/integrity/concurrency clusters verified in prod; EVENT-LOOP eval-timeout verified LIVE; BATCH/WEB-SEARCH async deferred (feature-availability, documented).
 - Regression suite: unit green (18/18); CI gate LIVE + green on master (typecheck ratchet 14 + lint + tests); deploy-aca automation pending Azure SP creds.
 - Typecheck budget 18 -> 14 (ratcheting toward 0).
-- **No open P0/P1 safety blockers.** Remaining polish: P2/P3 validation/error-quality batch, batch/web-search async (deferred), in-process integration specs, typecheck -> 0, Ninjer credential (deferred per user).
+- **No open P0/P1 safety blockers; P2/P3 validation batch verified 7/7.** All re-verify suites green on the live revision: batch-1 19/19, JOB-CLAIM 3/3, eval-timeout 3/3, validation 7/7 (= 32/32).
+- Remaining polish (non-disruptive): tsc 14 -> 0 (ratchet holds the line), batch/web-search async (deferred), in-process integration specs (behaviors are prod-verified), column-reorder reseq (A-009), Ninjer credential (deferred per user), deploy-aca activation (needs AZURE_CREDENTIALS).
