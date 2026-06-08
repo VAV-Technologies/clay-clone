@@ -116,7 +116,7 @@ export default function AgentDocsPage() {
             />
             <ConfigRow
               label="AI Ark people filters"
-              value="Account: companyDomain, companyName, industries(±), accountLocation, employeeSize, technology, revenue. Contact: fullName, linkedinUrl, contactLocation, seniority, departments, titleKeywords/Mode, skills, certifications, schoolNames, languages. Results: limit, limitPerCompany."
+              value="Account: companyDomain, companyName, industries(±), accountLocation, employeeSize, technology, revenue. Contact: fullName, linkedinUrl, contactLocation, seniority(±), departments(±), titleKeywords(±)/Mode (SMART|WORD|STRICT), experienceDuration (currentJob/currentCompany/total tenure), skills, certifications, schoolNames, languages. Results: limit, limitPerCompany."
             />
             <ConfigRow
               label="AI Ark company filters"

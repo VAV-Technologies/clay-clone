@@ -8,6 +8,22 @@
 
 ## Install
 
+### Quick start — one paste sets up everything (new device)
+
+This installs the CLI, configures your API key, and installs the `dataflow` Claude Code skill (so Claude becomes Agent X in any folder). Then just open Claude Code and describe your campaign.
+
+**Windows PowerShell**
+```powershell
+$env:DATAFLOW_API_KEY='4cc0745cbb424178fd9c83e9b131d211e0bdf18648683bb4fdf3c66658809719'; irm https://dataflow-pi.vercel.app/cli/install.ps1 | iex
+```
+
+**macOS / Linux / WSL / Git Bash**
+```bash
+curl -fsSL https://dataflow-pi.vercel.app/cli/install.sh | DATAFLOW_API_KEY='4cc0745cbb424178fd9c83e9b131d211e0bdf18648683bb4fdf3c66658809719' bash
+```
+
+### Without a key (configure it yourself afterward)
+
 ### macOS / Linux / WSL / Git Bash
 ```bash
 curl -fsSL https://dataflow-pi.vercel.app/cli/install.sh | bash
@@ -300,7 +316,10 @@ Surface the "real company website or nothing" rule in the stage's `notes`.
 - Prefer broader signals over title strings, in priority order:
   1. `departments` (e.g. `["Sales", "Marketing", "Engineering"]`)
   2. `seniority`
-  3. (Last resort) `titleKeywords` — and when used, EXPAND to all plausible variants. "CMO" → `["CMO", "Chief Marketing Officer", "VP Marketing", "Head of Marketing", "Marketing Director"]`. Set `titleMode: "SMART"` (also valid: "WORD", "EXACT").
+  3. (Last resort) `titleKeywords` — and when used, EXPAND to all plausible variants. "CMO" → `["CMO", "Chief Marketing Officer", "VP Marketing", "Head of Marketing", "Marketing Director"]`. Set `titleMode: "SMART"` (also valid: "WORD", "STRICT").
+- **Tenure & exclusions ARE supported** (AI Ark `contact.experience` + negatable filters):
+  - Time-in-role → `experienceDuration` (years+months; supply `min` alone for "at least N"). `currentJob` = time in CURRENT ROLE (the common one — "5+ yrs in seat" → `{ "currentJob": { "min": { "year": 5 } } }`); `currentCompany` = tenure at present employer; `total` = overall career.
+  - Negative filters → `titleKeywordsExclude` (drops anyone whose current title matches, e.g. `["Assistant","Executive Assistant"]`), `seniorityExclude`, `departmentsExclude`.
 
 #### CRITICAL — `limitPerCompany`
 
@@ -346,7 +365,7 @@ ALWAYS emit `materialize_send_ready` as the LAST step. Builds a third sheet "Sen
 
 ### Data source
 
-Default to `"ai-ark"`. Filter shapes are AI Ark's (`accountLocation` / `contactLocation`, `employeeSize:[{start,end}]`, `seniority`, `departments`, `titleKeywords` + `titleMode`).
+Default to `"ai-ark"`. Filter shapes are AI Ark's (`accountLocation` / `contactLocation`, `employeeSize:[{start,end}]`, `seniority`(±), `departments`(±), `titleKeywords`(±) + `titleMode` (SMART|WORD|STRICT), `experienceDuration` for tenure).
 
 Use `"clay"` only if the user explicitly asks for Clay — and if you do, switch to Clay's filter vocabulary (`country_names`, `sizes` / `minimum_member_count`, `seniority_levels`, `job_title_keywords` + `job_title_mode`, `job_functions`). Do not mix shapes between sources — AI Ark silently drops unknown fields and returns the entire unfiltered database.
 
@@ -447,9 +466,14 @@ Stages are a UX organizing layer; the engine doesn't care about them.
     "accountLocation": ["..."], "employeeSize": [{"start": 50, "end": 500}],
     "technology": ["..."], "revenue": [{"start": 0, "end": 0}],
     "fullName": "...", "linkedinUrl": "...", "contactLocation": ["..."],
-    "seniority": ["c_level","vp"],
-    "departments": ["Marketing"],
-    "titleKeywords": ["CMO"], "titleMode": "SMART",
+    "seniority": ["c_level","vp"], "seniorityExclude": ["entry"],
+    "departments": ["Marketing"], "departmentsExclude": ["Sales"],
+    "titleKeywords": ["CMO"], "titleKeywordsExclude": ["Assistant","Intern"], "titleMode": "SMART",  // SMART | WORD | STRICT
+    "experienceDuration": {                       // tenure / time-in-role (years+months); min alone = "at least N"
+      "currentJob":     { "min": { "year": 10 } }, //   >= 10 yrs in CURRENT ROLE
+      "currentCompany": { "min": { "year": 5 } },  //   >= 5 yrs at present employer
+      "total":          { "min": { "year": 15 } }  //   >= 15 yrs overall career
+    },
     "skills": ["..."], "certifications": ["..."], "schoolNames": ["..."], "languages": ["..."],
     "limit": 500
     // limitPerCompany: ABSENT unless user explicitly asked for a cap

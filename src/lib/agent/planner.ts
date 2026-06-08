@@ -375,9 +375,17 @@ Step "params" follow the campaign-executor's expected shape:
       linkedinUrl?: string,
       contactLocation?: string[],        // person's country/region/city
       seniority?: string[],              // ["c_level","vp","director","head","senior","manager","lead","owner","founder","entry"]
+      seniorityExclude?: string[],       // drop these seniority bands
       departments?: string[],            // ["Sales","Marketing","Engineering",...]
+      departmentsExclude?: string[],     // drop these departments
       titleKeywords?: string[],
-      titleMode?: "SMART" | "WORD" | "EXACT",
+      titleKeywordsExclude?: string[],   // drop people whose CURRENT title matches these (e.g. ["Assistant","Intern"])
+      titleMode?: "SMART" | "WORD" | "STRICT",
+      experienceDuration?: {             // tenure filter (years+months); supply min alone for "at least N"
+        currentJob?: { min?: { year, month }, max?: { year, month } },   // time in CURRENT ROLE (most common)
+        currentCompany?: { min?, max? },  // tenure at present employer
+        total?: { min?, max? }            // overall career experience
+      },
       skills?: string[],                 // SMART
       certifications?: string[],         // SMART
       schoolNames?: string[],

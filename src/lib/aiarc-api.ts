@@ -32,19 +32,42 @@ const RETRY_BACKOFF = [1000, 2000, 4000];
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
+// A tenure bound expressed in years + months (each part optional, defaults to 0).
+export interface AiArcDurationBound {
+  year?: number;
+  month?: number;
+}
+// A min/max tenure range. Supply `min` alone for "at least N", `max` alone for
+// "at most N", or both. Maps to AI Ark's contact.experience.current.duration.<metric>.
+export interface AiArcDurationRange {
+  min?: AiArcDurationBound;
+  max?: AiArcDurationBound;
+}
+
 export interface AiArcPeopleFilters {
   // Contact-level (person)
   fullName?: string;
   linkedinUrl?: string;
   contactLocation?: string[];
   seniority?: string[];
+  seniorityExclude?: string[];
   departments?: string[];
+  departmentsExclude?: string[];
   skills?: string[];
   certifications?: string[];
   schoolNames?: string[];
   languages?: string[];
   titleKeywords?: string[];
-  titleMode?: 'SMART' | 'WORD' | 'EXACT';
+  titleKeywordsExclude?: string[];
+  titleMode?: 'SMART' | 'WORD' | 'STRICT';
+  // Tenure / time-in-role filters. Each metric maps under
+  // contact.experience.current.duration. `currentJob` = time in current role
+  // (the usual one); `currentCompany` = tenure at employer; `total` = career.
+  experienceDuration?: {
+    currentJob?: AiArcDurationRange;
+    currentCompany?: AiArcDurationRange;
+    total?: AiArcDurationRange;
+  };
 
   // Account-level (company context)
   companyDomain?: string[];
@@ -309,7 +332,7 @@ function applyLimitPerCompany(people: AiArcPerson[], cap: number): AiArcPerson[]
 
 // ─── Filter Builders ────────────────────────────────────────────────────────
 
-function buildPeopleBody(
+export function buildPeopleBody(
   filters: AiArcPeopleFilters,
   page: number,
   size: number
@@ -364,11 +387,17 @@ function buildPeopleBody(
   if (filters.contactLocation?.length) {
     contact.location = { any: { include: filters.contactLocation } };
   }
-  if (filters.seniority?.length) {
-    contact.seniority = { any: { include: filters.seniority } };
+  if (filters.seniority?.length || filters.seniorityExclude?.length) {
+    const any: Record<string, unknown> = {};
+    if (filters.seniority?.length) any.include = filters.seniority;
+    if (filters.seniorityExclude?.length) any.exclude = filters.seniorityExclude;
+    contact.seniority = { any };
   }
-  if (filters.departments?.length) {
-    contact.departmentAndFunction = { any: { include: filters.departments } };
+  if (filters.departments?.length || filters.departmentsExclude?.length) {
+    const any: Record<string, unknown> = {};
+    if (filters.departments?.length) any.include = filters.departments;
+    if (filters.departmentsExclude?.length) any.exclude = filters.departmentsExclude;
+    contact.departmentAndFunction = { any };
   }
   if (filters.skills?.length) {
     contact.skill = { any: { include: { mode: 'SMART', content: filters.skills } } };
@@ -382,13 +411,44 @@ function buildPeopleBody(
   if (filters.languages?.length) {
     contact.language = { any: { include: { mode: 'SMART', content: filters.languages } } };
   }
-  if (filters.titleKeywords?.length) {
-    const mode = filters.titleMode || 'WORD';
-    contact.experience = {
-      current: {
-        title: { any: { include: { mode, content: filters.titleKeywords } } },
-      },
-    };
+  // Experience: title (include/exclude) and duration (tenure) both live under
+  // contact.experience.current — build it up incrementally so they coexist.
+  {
+    const current: Record<string, unknown> = {};
+
+    if (filters.titleKeywords?.length || filters.titleKeywordsExclude?.length) {
+      // AI Ark accepts SMART | WORD | STRICT. Map the legacy 'EXACT' value to
+      // 'STRICT' so plans authored against the old enum keep working.
+      const rawMode = (filters.titleMode as string) || 'WORD';
+      const mode = rawMode === 'EXACT' ? 'STRICT' : rawMode;
+      const titleAny: Record<string, unknown> = {};
+      if (filters.titleKeywords?.length) {
+        titleAny.include = { mode, content: filters.titleKeywords };
+      }
+      if (filters.titleKeywordsExclude?.length) {
+        titleAny.exclude = { mode, content: filters.titleKeywordsExclude };
+      }
+      current.title = { any: titleAny };
+    }
+
+    if (filters.experienceDuration) {
+      const duration: Record<string, unknown> = {};
+      for (const metric of ['currentJob', 'currentCompany', 'total'] as const) {
+        const range = filters.experienceDuration[metric];
+        if (!range || (!range.min && !range.max)) continue;
+        // AI Ark accepts a lone min ("at least N") or lone max ("at most N") —
+        // verified live against /people — so emit only the bounds provided.
+        const bound: Record<string, unknown> = {};
+        if (range.min) bound.min = { year: range.min.year ?? 0, month: range.min.month ?? 0 };
+        if (range.max) bound.max = { year: range.max.year ?? 0, month: range.max.month ?? 0 };
+        duration[metric] = bound;
+      }
+      if (Object.keys(duration).length > 0) current.duration = duration;
+    }
+
+    if (Object.keys(current).length > 0) {
+      contact.experience = { current };
+    }
   }
 
   if (Object.keys(contact).length > 0) {

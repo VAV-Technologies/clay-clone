@@ -219,7 +219,7 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
 
   // People filters
   const [titleKeywords, setTitleKeywords] = useState('');
-  const [titleMode, setTitleMode] = useState<'SMART' | 'WORD' | 'EXACT'>('SMART');
+  const [titleMode, setTitleMode] = useState<'SMART' | 'WORD' | 'STRICT'>('SMART');
   const [seniority, setSeniority] = useState<string[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
   const [skills, setSkills] = useState('');
@@ -568,10 +568,10 @@ export function AddAiArcDataModal({ isOpen, onClose, tableId, workbookId, onComp
                   <TextFilterInput label="Title Keywords" value={titleKeywords} onChange={setTitleKeywords} placeholder="CEO, CTO, Engineer..." />
                   <div>
                     <label className="text-xs text-white/50 mb-1 block">Title Match Mode</label>
-                    <select value={titleMode} onChange={e => setTitleMode(e.target.value as 'SMART' | 'WORD' | 'EXACT')} className={selectClasses}>
+                    <select value={titleMode} onChange={e => setTitleMode(e.target.value as 'SMART' | 'WORD' | 'STRICT')} className={selectClasses}>
                       <option value="SMART">Smart (default)</option>
                       <option value="WORD">Word Match</option>
-                      <option value="EXACT">Exact Match</option>
+                      <option value="STRICT">Strict Match</option>
                     </select>
                   </div>
                   <div>
