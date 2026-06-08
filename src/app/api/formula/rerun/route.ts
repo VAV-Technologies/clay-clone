@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { evaluateFormula } from '@/lib/formula/evaluator';
+import { evaluateFormulaSafe } from '@/lib/formula/evaluator-server';
 import type { CellValue } from '@/lib/db/schema';
 
 function generateId() {
@@ -138,7 +138,7 @@ async function processFormulaBatch(
       await Promise.all(
         batch.map(async (row) => {
           try {
-            const result = evaluateFormula(formula, {
+            const result = evaluateFormulaSafe(formula, {
               row: row.data as Record<string, { value: string | number | null }>,
               columns: columns.map(c => ({ id: c.id, name: c.name })),
             });

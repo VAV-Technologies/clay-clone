@@ -1,6 +1,5 @@
 import * as formulajs from 'formulajs';
 import _ from 'lodash';
-import vm from 'node:vm';
 
 interface Column {
   id: string;
@@ -13,22 +12,17 @@ interface CellValue {
   error?: string;
 }
 
-interface EvaluatorContext {
+export interface EvaluatorContext {
   row: Record<string, CellValue>;
   columns: Column[];
 }
 
-interface EvaluationResult {
+export interface EvaluationResult {
   value: string | number | null;
   error?: string;
 }
 
-// Hard wall-clock budget for a single formula evaluation, enforced via vm so a
-// runaway/infinite-loop formula can't pin the Node event loop and take the whole
-// backend down (QA findings B-009 / C2-015).
-const FORMULA_TIMEOUT_MS = 1000;
-
-// Reserved words / non-identifiers can't be vm globals — formulajs exposes a
+// Reserved words / non-identifiers can't be eval globals — formulajs exposes a
 // reserved `default` export (FORMULA-EVAL-DEFAULT-KEY) — so filter them out.
 const RESERVED_WORDS = new Set([
   'default', 'arguments', 'eval', 'let', 'const', 'var', 'function', 'return',
@@ -38,10 +32,11 @@ const RESERVED_WORDS = new Set([
   'extends', 'enum', 'null', 'true', 'false', 'break', 'continue', 'debugger',
 ]);
 
-// Whitelisted globals available inside formulas. Built ONCE and shared across all
-// evaluations (the globals never change; only the formula string varies), which
-// also avoids rebuilding a ~450-entry vm context per row.
-const EVAL_GLOBALS: Record<string, unknown> = Object.fromEntries(
+// Whitelisted globals available inside formulas. Built once; filtered to valid,
+// non-reserved identifier names. Shared by the client-safe evaluator (below) and
+// the server-only vm evaluator (evaluator-server.ts). Pure data — no Node deps,
+// so this module stays safe to import from client components (FormulaPanel).
+export const EVAL_GLOBALS: Record<string, unknown> = Object.fromEntries(
   Object.entries({
     _,
     ...formulajs,
@@ -57,112 +52,83 @@ const EVAL_GLOBALS: Record<string, unknown> = Object.fromEntries(
       args.find((arg) => arg !== null && arg !== undefined && arg !== ''),
   }).filter(([k]) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) && !RESERVED_WORDS.has(k))
 );
-const EVAL_CONTEXT = vm.createContext(EVAL_GLOBALS);
+
+/** Replaces {{Column Name}} placeholders with JSON-encoded cell values. */
+export function substituteFormula(formula: string, context: EvaluatorContext): string {
+  let processed = formula;
+  for (const col of context.columns) {
+    const placeholder = `{{${col.name}}}`;
+    const value = context.row[col.id]?.value ?? null;
+    const escaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    processed = processed.replace(new RegExp(escaped, 'g'), JSON.stringify(value));
+  }
+  return processed;
+}
+
+/** Normalizes a raw evaluation result into the EvaluationResult shape. */
+export function normalizeFormulaResult(result: unknown): EvaluationResult {
+  if (result === undefined) return { value: null };
+  if (typeof result === 'boolean') return { value: result ? 'true' : 'false' };
+  if (typeof result === 'object' && result !== null) return { value: JSON.stringify(result) };
+  return { value: result as string | number | null };
+}
 
 /**
- * Safely evaluates a JavaScript formula with column value substitution.
+ * Client-safe formula evaluation (used for live preview in FormulaPanel).
  *
- * Available in formulas:
- * - Standard JavaScript: Math, String, Array, Date, RegExp, Number, Object, JSON
- * - Lodash: _ (e.g., _.capitalize, _.trim, _.get)
- * - Excel/Google Sheets functions via FormulaJS
- * - Column references: {{Column Name}} syntax
+ * Uses the Function constructor — there is NO hard timeout here, so a runaway
+ * formula would hang only the caller's own context. On the SERVER, formula runs
+ * go through evaluateFormulaSafe (evaluator-server.ts) which adds a vm timeout
+ * so a bad formula can't pin the backend event loop (B-009).
+ *
+ * Available in formulas: Math, String, Array, Date, RegExp, Number, Object,
+ * JSON, lodash (`_`), FormulaJS functions, and {{Column Name}} references.
  */
-export function evaluateFormula(
-  formula: string,
-  context: EvaluatorContext
-): EvaluationResult {
+export function evaluateFormula(formula: string, context: EvaluatorContext): EvaluationResult {
   try {
     if (!formula || !formula.trim()) {
       return { value: null, error: 'Empty formula' };
     }
-
-    // Replace {{Column Name}} with actual values
-    let processedFormula = formula;
-
-    for (const col of context.columns) {
-      const placeholder = `{{${col.name}}}`;
-      const cellData = context.row[col.id];
-      const value = cellData?.value ?? null;
-
-      // Escape special regex characters in column name
-      const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-      // Replace with JSON-stringified value to handle strings, numbers, null properly
-      processedFormula = processedFormula.replace(
-        new RegExp(escapedPlaceholder, 'g'),
-        JSON.stringify(value)
-      );
-    }
-
-    // Evaluate inside the shared vm context with a hard timeout. The timeout
-    // interrupts long-running synchronous code via V8's watchdog, so a runaway
-    // formula returns an error instead of hanging the event loop (B-009 / C2-015).
-    const result = vm.runInContext(`"use strict";\n(${processedFormula})`, EVAL_CONTEXT, {
-      timeout: FORMULA_TIMEOUT_MS,
-      displayErrors: false,
-    });
-
-    // Normalize the result
-    if (result === undefined) {
-      return { value: null };
-    }
-
-    if (typeof result === 'boolean') {
-      // Convert booleans to string representation
-      return { value: result ? 'true' : 'false' };
-    }
-
-    if (typeof result === 'object' && result !== null) {
-      // Convert objects/arrays to string representation
-      return { value: JSON.stringify(result) };
-    }
-
-    return { value: result as string | number | null };
+    const processedFormula = substituteFormula(formula, context);
+    const keys = Object.keys(EVAL_GLOBALS);
+    const values = Object.values(EVAL_GLOBALS);
+    const fn = new Function(...keys, `"use strict"; return (${processedFormula});`);
+    return normalizeFormulaResult(fn(...values));
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return { value: null, error: errorMessage };
+    return { value: null, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
 /**
- * Validates a formula without executing it on real data.
- * Uses sample values to test the formula structure.
+ * Validates a formula without executing it on real data, using sample values.
  */
 export function validateFormula(
   formula: string,
   columns: Column[]
 ): { valid: boolean; error?: string } {
-  // Create mock row data with sample values
   const mockRow: Record<string, CellValue> = {};
   for (const col of columns) {
     mockRow[col.id] = { value: 'sample_value' };
   }
-
   const result = evaluateFormula(formula, { row: mockRow, columns });
-
   if (result.error) {
     return { valid: false, error: result.error };
   }
-
   return { valid: true };
 }
 
 /**
- * Extracts column references from a formula.
- * Returns array of column names referenced in {{Column Name}} syntax.
+ * Extracts column references from a formula ({{Column Name}} syntax).
  */
 export function extractColumnReferences(formula: string): string[] {
   const regex = /\{\{([^}]+)\}\}/g;
   const matches: string[] = [];
   let match;
-
   while ((match = regex.exec(formula)) !== null) {
     if (!matches.includes(match[1])) {
       matches.push(match[1]);
     }
   }
-
   return matches;
 }
 

@@ -4,6 +4,7 @@ import {
   extractColumnReferences,
   validateFormula,
 } from '@/lib/formula/evaluator';
+import { evaluateFormulaSafe } from '@/lib/formula/evaluator-server';
 
 const cols = [
   { id: 'c1', name: 'First Name' },
@@ -45,11 +46,12 @@ describe('evaluateFormula', () => {
     expect(evaluateFormula('UPPER({{First Name}})', ctx({ c1: { value: 'jane' } })).value).toBe('JANE');
   });
 
-  // B-009 / C2-015: a runaway formula must be aborted by the eval timeout, not
-  // hang the event loop. If this test ever times out instead of asserting, the
-  // vm timeout has regressed.
-  it('aborts an infinite-loop formula via the eval timeout instead of hanging', () => {
-    const r = evaluateFormula('((function(){ while (true) {} })())', ctx({ c1: { value: 'x' } }));
+  // B-009 / C2-015: the SERVER evaluator (evaluateFormulaSafe) must evaluate
+  // normally AND abort a runaway formula via its vm timeout, not hang the event
+  // loop. If this ever times out instead of asserting, the vm timeout regressed.
+  it('evaluateFormulaSafe evaluates normally and aborts an infinite loop', () => {
+    expect(evaluateFormulaSafe('{{First Name}} + "!"', ctx({ c1: { value: 'Jane' } })).value).toBe('Jane!');
+    const r = evaluateFormulaSafe('((function(){ while (true) {} })())', ctx({ c1: { value: 'x' } }));
     expect(r.value).toBeNull();
     expect(r.error).toBeTruthy();
   }, 8000);
