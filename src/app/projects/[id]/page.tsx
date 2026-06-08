@@ -215,7 +215,14 @@ function ProjectContent() {
       } else {
         setChildren((prev) => [...prev, target]);
         const data = await response.json().catch(() => ({}));
-        toast.error('Error', data.error || 'Failed to delete');
+        if (data.error === 'folderNotEmpty') {
+          toast.error(
+            'Folder not empty',
+            `"${target.name}" still contains ${data.childCount} item${data.childCount === 1 ? '' : 's'}. Delete everything inside it first.`
+          );
+        } else {
+          toast.error('Error', data.error || 'Failed to delete');
+        }
       }
     } catch (error) {
       setChildren((prev) => [...prev, target]);
@@ -310,8 +317,21 @@ function ProjectContent() {
   };
 
   const openDelete = (row: ChildRow) => {
-    setDeleteTarget(row);
     setOpenMenuId(null);
+    // A folder must be emptied before it can be deleted — warn instead of
+    // opening the confirm dialog while it still holds items.
+    if (row.type === 'folder') {
+      const node = findInTree(allProjects, row.id);
+      const childCount = node?.children?.length ?? 0;
+      if (childCount > 0) {
+        toast.error(
+          'Folder not empty',
+          `"${row.name}" still contains ${childCount} item${childCount === 1 ? '' : 's'}. Delete everything inside it first, then delete the folder.`
+        );
+        return;
+      }
+    }
+    setDeleteTarget(row);
   };
 
   const handleOpen = (row: ChildRow) => {

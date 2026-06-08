@@ -107,8 +107,33 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    // Delete the whole subtree. Azure file ids are accumulated across every
-    // table touched and purged once at the end (best-effort, post-commit).
+    const [project] = await db
+      .select({ id: schema.projects.id, type: schema.projects.type })
+      .from(schema.projects)
+      .where(eq(schema.projects.id, id));
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+
+    // A folder must be emptied before it can be deleted — we never silently
+    // nuke its contents. Block while it still holds sub-folders or workbooks
+    // so the user deletes those first.
+    if (project.type === 'folder') {
+      const childProjects = await db
+        .select({ id: schema.projects.id })
+        .from(schema.projects)
+        .where(eq(schema.projects.parentId, id));
+      if (childProjects.length > 0) {
+        return NextResponse.json(
+          { error: 'folderNotEmpty', childCount: childProjects.length },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Empty folder or a workbook/table: safe to delete. The recursive helper
+    // cascades a workbook's sheets and their dependents; for an empty folder it
+    // just removes the folder row.
     const azureFileIds: string[] = [];
     await deleteProjectRecursive(id, azureFileIds);
     await purgeAzureFiles(azureFileIds);

@@ -258,11 +258,34 @@ function TablesContent() {
   };
 
   const handleDelete = async (project: Project) => {
+    // A folder must be emptied before it can be deleted — warn instead of
+    // nuking its contents while it still holds items.
+    if (project.type === 'folder') {
+      const node = projects.find((p) => p.id === project.id);
+      const childCount = node?.children?.length ?? 0;
+      if (childCount > 0) {
+        toast.error(
+          'Folder not empty',
+          `"${project.name}" still contains ${childCount} item${childCount === 1 ? '' : 's'}. Delete everything inside it first, then delete the folder.`
+        );
+        return;
+      }
+    }
     try {
       const response = await fetch(`/api/projects/${project.id}`, { method: 'DELETE' });
       if (response.ok) {
         deleteProject(project.id);
         toast.success(`${project.name} deleted`);
+      } else {
+        const data = await response.json().catch(() => ({}));
+        if (data.error === 'folderNotEmpty') {
+          toast.error(
+            'Folder not empty',
+            `"${project.name}" still contains ${data.childCount} item${data.childCount === 1 ? '' : 's'}. Delete everything inside it first.`
+          );
+        } else {
+          toast.error('Failed to delete item');
+        }
       }
     } catch (error) {
       toast.error('Failed to delete item');
