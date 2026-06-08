@@ -1,8 +1,11 @@
 // GET    /api/agent/conversations/[id] — return the conversation, its full
 //        message thread, and (if launched) a snapshot of the linked campaign.
 // DELETE /api/agent/conversations/[id] — delete the conversation and its
-//        messages. If a campaign is linked and still running, cancel it
-//        first so cron stops advancing it.
+//        messages. If a campaign is linked, also delete that campaign row
+//        (unless another conversation still references it) — once the
+//        conversation is gone the campaign is unreachable, so keeping it is
+//        pure bloat. Deleting the campaign row does NOT touch the workbook it
+//        produced (workbook_id is an unenforced reference), so data is safe.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db, schema, ensureAgentTables } from '@/lib/db';
@@ -126,34 +129,51 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
-    // If a campaign is linked and still running, cancel it so the cron stops
-    // advancing it. We don't delete the campaign itself — keeping the row
-    // preserves audit history and the workbook it produced.
     let cancelledCampaign = false;
-    if (conversation.campaignId) {
-      const [campaign] = await db
-        .select()
-        .from(schema.campaigns)
-        .where(eq(schema.campaigns.id, conversation.campaignId))
-        .limit(1);
-      if (campaign && (campaign.status === 'running' || campaign.status === 'pending')) {
-        await db
-          .update(schema.campaigns)
-          .set({ status: 'cancelled', updatedAt: new Date() })
-          .where(eq(schema.campaigns.id, conversation.campaignId));
-        cancelledCampaign = true;
+    let deletedCampaign = false;
+
+    await db.transaction(async (tx) => {
+      // Messages first (FK), then the conversation itself.
+      await tx
+        .delete(schema.agentMessages)
+        .where(eq(schema.agentMessages.conversationId, conversation.id));
+      await tx
+        .delete(schema.agentConversations)
+        .where(eq(schema.agentConversations.id, conversation.id));
+
+      if (conversation.campaignId) {
+        // Did any OTHER conversation reference this campaign? (this one is now deleted)
+        const others = await tx
+          .select({ id: schema.agentConversations.id })
+          .from(schema.agentConversations)
+          .where(eq(schema.agentConversations.campaignId, conversation.campaignId));
+
+        if (others.length === 0) {
+          // Unreachable now — remove the campaign row. The workbook it produced
+          // is untouched (no FK/cascade on workbook_id).
+          await tx
+            .delete(schema.campaigns)
+            .where(eq(schema.campaigns.id, conversation.campaignId));
+          deletedCampaign = true;
+        } else {
+          // Still referenced elsewhere; just stop cron from advancing it if live.
+          const [campaign] = await tx
+            .select()
+            .from(schema.campaigns)
+            .where(eq(schema.campaigns.id, conversation.campaignId))
+            .limit(1);
+          if (campaign && (campaign.status === 'running' || campaign.status === 'pending')) {
+            await tx
+              .update(schema.campaigns)
+              .set({ status: 'cancelled', updatedAt: new Date() })
+              .where(eq(schema.campaigns.id, conversation.campaignId));
+            cancelledCampaign = true;
+          }
+        }
       }
-    }
+    });
 
-    // Cascade delete: messages first (FK constraint), then the conversation.
-    await db
-      .delete(schema.agentMessages)
-      .where(eq(schema.agentMessages.conversationId, conversation.id));
-    await db
-      .delete(schema.agentConversations)
-      .where(eq(schema.agentConversations.id, conversation.id));
-
-    return NextResponse.json({ success: true, cancelledCampaign });
+    return NextResponse.json({ success: true, cancelledCampaign, deletedCampaign });
   } catch (error) {
     console.error('[agent/conversations/:id] DELETE error:', error);
     const msg = error instanceof Error ? error.message : 'Failed to delete';
