@@ -130,6 +130,13 @@ function ProjectContent() {
     return getAncestorChain(allProjects, folder.id);
   }, [allProjects, folder]);
 
+  // "Back" goes to the parent folder (ancestors ends with the current folder),
+  // or the Tables library if this folder lives at the root.
+  const backHref = useMemo(() => {
+    const parent = ancestors.length >= 2 ? ancestors[ancestors.length - 2] : null;
+    return parent ? `/projects/${parent.id}` : '/tables';
+  }, [ancestors]);
+
   const folderCount = children.filter((c) => c.type === 'folder').length;
   const workbookCount = children.filter((c) => c.type === 'workbook').length;
 
@@ -342,7 +349,7 @@ function ProjectContent() {
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4 min-w-0 flex-1">
             <button
-              onClick={() => router.push('/')}
+              onClick={() => router.push(backHref)}
               className="flex items-center gap-2 text-white/70 hover:text-white transition-colors shrink-0"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -351,7 +358,7 @@ function ProjectContent() {
             <div className="w-px h-5 bg-white/20 shrink-0" />
             <nav className="flex items-center gap-1 text-sm text-white/50 min-w-0 overflow-hidden">
               <button
-                onClick={() => router.push('/')}
+                onClick={() => router.push('/tables')}
                 className="hover:text-white/80 transition-colors shrink-0"
               >
                 Root

@@ -34,6 +34,8 @@ function WorkbookContent() {
   const { currentTable, activeSheetId, sheets, columns, rows, getDisplayedRows, getVisibleColumns, fetchWorkbook } = useTableStore();
 
   const [workbookName, setWorkbookName] = useState('Loading...');
+  // Where "Back" goes: the containing folder, or the Tables library if at the root.
+  const [backHref, setBackHref] = useState('/tables');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isEnrichmentOpen, setIsEnrichmentOpen] = useState(false);
   const [editEnrichmentColumnId, setEditEnrichmentColumnId] = useState<string | null>(null);
@@ -50,10 +52,13 @@ function WorkbookContent() {
   useEffect(() => {
     fetchWorkbook(workbookId, sheetParam || undefined);
 
-    // Fetch workbook/project name
+    // Fetch workbook/project name + parent (for the Back button)
     fetch(`/api/projects/${workbookId}`)
       .then(r => r.json())
-      .then(d => setWorkbookName(d.name || 'Workbook'))
+      .then(d => {
+        setWorkbookName(d.name || 'Workbook');
+        setBackHref(d.parentId ? `/projects/${d.parentId}` : '/tables');
+      })
       .catch(() => setWorkbookName('Workbook'));
   }, [workbookId, sheetParam, fetchWorkbook]);
 
@@ -109,7 +114,7 @@ function WorkbookContent() {
           <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 bg-midnight-100/60 backdrop-blur-xl border border-white/10 shadow-2xl">
             <div className="flex items-center gap-4">
               <button
-                onClick={() => router.push('/')}
+                onClick={() => router.push(backHref)}
                 className="flex items-center gap-2 text-white/70 hover:text-white transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
