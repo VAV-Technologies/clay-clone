@@ -1,5 +1,6 @@
 import * as formulajs from 'formulajs';
 import _ from 'lodash';
+import vm from 'node:vm';
 
 interface Column {
   id: string;
@@ -21,6 +22,42 @@ interface EvaluationResult {
   value: string | number | null;
   error?: string;
 }
+
+// Hard wall-clock budget for a single formula evaluation, enforced via vm so a
+// runaway/infinite-loop formula can't pin the Node event loop and take the whole
+// backend down (QA findings B-009 / C2-015).
+const FORMULA_TIMEOUT_MS = 1000;
+
+// Reserved words / non-identifiers can't be vm globals — formulajs exposes a
+// reserved `default` export (FORMULA-EVAL-DEFAULT-KEY) — so filter them out.
+const RESERVED_WORDS = new Set([
+  'default', 'arguments', 'eval', 'let', 'const', 'var', 'function', 'return',
+  'this', 'new', 'class', 'delete', 'typeof', 'instanceof', 'in', 'of', 'do',
+  'if', 'else', 'switch', 'case', 'for', 'while', 'with', 'try', 'catch',
+  'finally', 'throw', 'void', 'yield', 'await', 'super', 'import', 'export',
+  'extends', 'enum', 'null', 'true', 'false', 'break', 'continue', 'debugger',
+]);
+
+// Whitelisted globals available inside formulas. Built ONCE and shared across all
+// evaluations (the globals never change; only the formula string varies), which
+// also avoids rebuilding a ~450-entry vm context per row.
+const EVAL_GLOBALS: Record<string, unknown> = Object.fromEntries(
+  Object.entries({
+    _,
+    ...formulajs,
+    Math, String, Array, Date, RegExp, Number, Object, JSON, Boolean,
+    parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent,
+    trim: (s: string) => s?.trim() ?? '',
+    lower: (s: string) => s?.toLowerCase() ?? '',
+    upper: (s: string) => s?.toUpperCase() ?? '',
+    capitalize: (s: string) => _.capitalize(s),
+    ifEmpty: (val: unknown, fallback: unknown) =>
+      (val === null || val === undefined || val === '') ? fallback : val,
+    coalesce: (...args: unknown[]) =>
+      args.find((arg) => arg !== null && arg !== undefined && arg !== ''),
+  }).filter(([k]) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) && !RESERVED_WORDS.has(k))
+);
+const EVAL_CONTEXT = vm.createContext(EVAL_GLOBALS);
 
 /**
  * Safely evaluates a JavaScript formula with column value substitution.
@@ -58,71 +95,13 @@ export function evaluateFormula(
       );
     }
 
-    // Create safe evaluation context with whitelisted globals
-    const evalContext: Record<string, unknown> = {
-      // Lodash
-      _,
-
-      // FormulaJS Excel functions (spread all functions)
-      ...formulajs,
-
-      // Standard JavaScript globals (safe subset)
-      Math,
-      String,
-      Array,
-      Date,
-      RegExp,
-      Number,
-      Object,
-      JSON,
-      Boolean,
-
-      // Utility functions
-      parseInt,
-      parseFloat,
-      isNaN,
-      isFinite,
-      encodeURIComponent,
-      decodeURIComponent,
-
-      // Common string utilities
-      trim: (s: string) => s?.trim() ?? '',
-      lower: (s: string) => s?.toLowerCase() ?? '',
-      upper: (s: string) => s?.toUpperCase() ?? '',
-      capitalize: (s: string) => _.capitalize(s),
-
-      // Null-safe helpers
-      ifEmpty: (val: unknown, fallback: unknown) =>
-        (val === null || val === undefined || val === '') ? fallback : val,
-      coalesce: (...args: unknown[]) =>
-        args.find(arg => arg !== null && arg !== undefined && arg !== ''),
-    };
-
-    // Evaluate using Function constructor (safer than eval).
-    // Only valid, non-reserved JS identifiers can be Function parameter names.
-    // formulajs's namespace includes a reserved `default` export, which would
-    // otherwise make `new Function('default', …)` throw "Unexpected token
-    // 'default'" on EVERY evaluation in a pure-ESM runtime. Filter the eval
-    // context down to safe identifier names so the evaluator is portable.
-    const RESERVED_WORDS = new Set([
-      'default', 'arguments', 'eval', 'let', 'const', 'var', 'function', 'return',
-      'this', 'new', 'class', 'delete', 'typeof', 'instanceof', 'in', 'of', 'do',
-      'if', 'else', 'switch', 'case', 'for', 'while', 'with', 'try', 'catch',
-      'finally', 'throw', 'void', 'yield', 'await', 'super', 'import', 'export',
-      'extends', 'enum', 'null', 'true', 'false', 'break', 'continue', 'debugger',
-    ]);
-    const safeEntries = Object.entries(evalContext).filter(
-      ([k]) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) && !RESERVED_WORDS.has(k)
-    );
-    const contextKeys = safeEntries.map(([k]) => k);
-    const contextValues = safeEntries.map(([, v]) => v);
-
-    // Wrap the formula to return its result
-    const functionBody = `"use strict"; return (${processedFormula});`;
-
-    // Create and execute the function
-    const fn = new Function(...contextKeys, functionBody);
-    const result = fn(...contextValues);
+    // Evaluate inside the shared vm context with a hard timeout. The timeout
+    // interrupts long-running synchronous code via V8's watchdog, so a runaway
+    // formula returns an error instead of hanging the event loop (B-009 / C2-015).
+    const result = vm.runInContext(`"use strict";\n(${processedFormula})`, EVAL_CONTEXT, {
+      timeout: FORMULA_TIMEOUT_MS,
+      displayErrors: false,
+    });
 
     // Normalize the result
     if (result === undefined) {

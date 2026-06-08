@@ -45,6 +45,15 @@ describe('evaluateFormula', () => {
     expect(evaluateFormula('UPPER({{First Name}})', ctx({ c1: { value: 'jane' } })).value).toBe('JANE');
   });
 
+  // B-009 / C2-015: a runaway formula must be aborted by the eval timeout, not
+  // hang the event loop. If this test ever times out instead of asserting, the
+  // vm timeout has regressed.
+  it('aborts an infinite-loop formula via the eval timeout instead of hanging', () => {
+    const r = evaluateFormula('((function(){ while (true) {} })())', ctx({ c1: { value: 'x' } }));
+    expect(r.value).toBeNull();
+    expect(r.error).toBeTruthy();
+  }, 8000);
+
   it('returns an error string for invalid syntax instead of throwing', () => {
     const r = evaluateFormula('{{First Name}} +++ ', ctx({ c1: { value: 'x' } }));
     expect(r.error).toBeTruthy();
