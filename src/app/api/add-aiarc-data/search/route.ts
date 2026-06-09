@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { searchPeople, searchCompanies } from '@/lib/aiarc-api';
 import type { AiArcPeopleFilters, AiArcCompanyFilters } from '@/lib/aiarc-api';
+import { getSecret } from '@/lib/secrets';
 
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
@@ -12,7 +13,7 @@ export async function POST(request: NextRequest) {
     const searchType = body.searchType || 'people';
     const limit = body.limit || 100;
 
-    if (!process.env.AI_ARC_API_KEY) {
+    if (!getSecret('AI_ARC_API_KEY')) {
       return NextResponse.json({ error: 'AI_ARC_API_KEY not configured' }, { status: 500 });
     }
 

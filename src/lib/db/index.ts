@@ -83,6 +83,30 @@ export function ensureAgentTables(): Promise<void> {
   return agentTablesReadyPromise;
 }
 
+// Memoized creation of the app_secrets table on Turso (provider API keys managed
+// via the Settings page). secrets.ts awaits this before reading/writing so a cold
+// start can't race the fire-and-forget migration below. Local SQLite creates the
+// table synchronously in runLocalMigrations().
+let secretsTableReadyPromise: Promise<void> | null = null;
+
+export function ensureSecretsTable(): Promise<void> {
+  if (!libsqlClient) return Promise.resolve(); // local SQLite already ran sync DDL
+  if (secretsTableReadyPromise) return secretsTableReadyPromise;
+  secretsTableReadyPromise = (async () => {
+    await libsqlClient!.execute(`
+      CREATE TABLE IF NOT EXISTS app_secrets (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+  })();
+  secretsTableReadyPromise.catch(() => {
+    secretsTableReadyPromise = null;
+  });
+  return secretsTableReadyPromise;
+}
+
 if (TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
   // Production: Use Turso
   libsqlClient = createClient({
@@ -120,6 +144,9 @@ if (TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
   // Kick agent-table migration in the background; agent endpoints also await
   // ensureAgentTables() defensively so a cold start can't insert before DDL.
   void ensureAgentTables().catch((err) => console.error('[boot] ensureAgentTables failed:', err));
+
+  // Kick app_secrets migration; secrets.ts awaits ensureSecretsTable() defensively.
+  void ensureSecretsTable().catch((err) => console.error('[boot] ensureSecretsTable failed:', err));
 } else {
   // Development / tests: local SQLite (structurally compatible; cast to the
   // libsql type). DATAFLOW_DB_PATH lets the test suite point at an isolated
@@ -352,6 +379,13 @@ function runLocalMigrations(sqlite: Database.Database) {
 
     CREATE INDEX IF NOT EXISTS idx_agent_messages_conv ON agent_messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_agent_conversations_updated ON agent_conversations(updated_at);
+
+    -- App-wide provider secrets (managed via the Settings page)
+    CREATE TABLE IF NOT EXISTS app_secrets (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
 }
 

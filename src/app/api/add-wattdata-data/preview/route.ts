@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { previewSearch } from '@/lib/wattdata-api';
 import type { WattdataSearchFilters } from '@/lib/wattdata-api';
+import { getSecret } from '@/lib/secrets';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -10,7 +11,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    if (!process.env.WATTDATA_API_KEY) {
+    if (!getSecret('WATTDATA_API_KEY')) {
       return NextResponse.json({ error: 'WATTDATA_API_KEY not configured' }, { status: 500 });
     }
 

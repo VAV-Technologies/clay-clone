@@ -22,6 +22,8 @@
 // token=... — that's for AI assistants (Claude, etc.), NOT what this client
 // uses. We talk to the REST API directly.
 
+import { getSecret } from './secrets';
+
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const AI_ARC_BASE = 'https://api.ai-ark.com/api/developer-portal/v1';
@@ -203,9 +205,9 @@ async function aiArcFetch(
   path: string,
   options: { method?: string; body?: unknown } = {}
 ): Promise<unknown> {
-  const apiKey = process.env.AI_ARC_API_KEY;
+  const apiKey = getSecret('AI_ARC_API_KEY');
   if (!apiKey) {
-    throw new Error('AI_ARC_API_KEY environment variable is required');
+    throw new Error('AI_ARC_API_KEY is not set. Add it in Settings (or env).');
   }
 
   const url = `${AI_ARC_BASE}${path}`;
@@ -885,7 +887,7 @@ export async function fetchCredits(): Promise<unknown> {
 // ─── Config Check ───────────────────────────────────────────────────────────
 
 export function isConfigured(): boolean {
-  return !!process.env.AI_ARC_API_KEY;
+  return !!getSecret('AI_ARC_API_KEY');
 }
 
 // ─── Email Finder ───────────────────────────────────────────────────────────

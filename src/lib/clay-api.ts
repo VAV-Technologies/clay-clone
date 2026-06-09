@@ -1,6 +1,8 @@
 // Clay People & Company Search API Client
 // Reimplemented from https://github.com/neomhr/autoclay in TypeScript
 
+import { getSecret, onSecretChange } from './secrets';
+
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const CLAY_API_BASE = 'https://api.clay.com/v3';
@@ -114,10 +116,10 @@ export interface ClaySearchResult {
 let cachedSession: { cookie: string; expiresAt: number } | null = null;
 
 async function login(): Promise<string> {
-  const email = process.env.CLAY_EMAIL;
-  const password = process.env.CLAY_PASSWORD;
+  const email = getSecret('CLAY_EMAIL');
+  const password = getSecret('CLAY_PASSWORD');
   if (!email || !password) {
-    throw new Error('CLAY_EMAIL and CLAY_PASSWORD environment variables are required');
+    throw new Error('CLAY_EMAIL and CLAY_PASSWORD are not set. Add them in Settings (or env).');
   }
 
   const response = await fetch(`${CLAY_API_BASE}/auth/login`, {
@@ -172,7 +174,7 @@ async function login(): Promise<string> {
   const redirect = body.redirect_to || '';
   if (redirect.includes('/workspaces/')) {
     const wsId = redirect.split('/workspaces/').pop()?.split('/')[0];
-    if (wsId && !process.env.CLAY_WORKSPACE_ID) {
+    if (wsId && !getSecret('CLAY_WORKSPACE_ID')) {
       console.log(`[clay-api] Auto-detected workspace ID: ${wsId}`);
     }
   }
@@ -193,9 +195,15 @@ async function getSession(): Promise<string> {
   return login();
 }
 
-function invalidateSession() {
+export function invalidateSession() {
   cachedSession = null;
 }
+
+// When Clay credentials change via the Settings page, drop the cached login
+// session so the next request re-authenticates with the new creds.
+onSecretChange((_key, provider) => {
+  if (provider === 'clay') invalidateSession();
+});
 
 // ─── HTTP Client ───────────────────────────────────────────────────────────
 
@@ -363,8 +371,8 @@ function parsePreviewPerson(raw: Record<string, unknown>): ClayPerson {
 }
 
 function getWorkspaceId(): string {
-  const wsId = process.env.CLAY_WORKSPACE_ID;
-  if (!wsId) throw new Error('CLAY_WORKSPACE_ID environment variable is required');
+  const wsId = getSecret('CLAY_WORKSPACE_ID');
+  if (!wsId) throw new Error('CLAY_WORKSPACE_ID is not set. Add it in Settings (or env).');
   return wsId;
 }
 

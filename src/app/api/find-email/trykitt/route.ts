@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
+import { getSecret } from '@/lib/secrets';
 
 export const maxDuration = 300;
 
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const apiKey = process.env.TRYKITT_API_KEY;
+    const apiKey = getSecret('TRYKITT_API_KEY');
     if (!apiKey) {
       return NextResponse.json({ error: 'TRYKITT_API_KEY not configured' }, { status: 500 });
     }

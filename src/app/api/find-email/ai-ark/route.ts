@@ -6,6 +6,7 @@ import type { CellValue } from '@/lib/db/schema';
 import { searchPersonByNameAndDomain, submitEmailFinder } from '@/lib/aiarc-api';
 import { getColumnIdSet, invalidColumnIds, COLUMN_SCOPE_MESSAGE } from '@/lib/api-validation';
 import { claimCellForProcessing } from '@/lib/cell-claim';
+import { getSecret } from '@/lib/secrets';
 
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: COLUMN_SCOPE_MESSAGE, invalidColumnIds: badCols, tableId }, { status: 400 });
     }
 
-    if (!process.env.AI_ARC_API_KEY) {
+    if (!getSecret('AI_ARC_API_KEY')) {
       return NextResponse.json({ error: 'AI_ARC_API_KEY not configured' }, { status: 500 });
     }
     if (!process.env.CRON_SECRET) {

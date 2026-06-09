@@ -2,6 +2,8 @@
 // Docs: https://spider.cloud/docs/overview
 // Pricing: $1 / 10,000 credits ⇒ $0.0001 / credit. Failed requests cost 0.
 
+import { getSecret } from './secrets';
+
 const SPIDER_BASE_URL = 'https://api.spider.cloud';
 const COST_PER_CREDIT_USD = 0.0001;
 
@@ -16,13 +18,13 @@ interface SpiderCosts {
 }
 
 function isSpiderConfigured(): boolean {
-  return !!process.env.SPIDER_API_KEY;
+  return !!getSecret('SPIDER_API_KEY');
 }
 
 function spiderHeaders(): Record<string, string> {
-  const key = process.env.SPIDER_API_KEY;
+  const key = getSecret('SPIDER_API_KEY');
   if (!key) {
-    throw new Error('SPIDER_API_KEY is not set. Add it to .env.local and Vercel env.');
+    throw new Error('SPIDER_API_KEY is not set. Add it in Settings (or .env.local).');
   }
   return {
     'Authorization': `Bearer ${key}`,

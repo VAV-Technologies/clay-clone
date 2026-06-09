@@ -7,7 +7,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Zap } from 'lucide-react';
+import { Zap, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function AppNav() {
@@ -61,6 +61,13 @@ export function AppNav() {
           >
             <Zap className="w-4 h-4" />
           </a>
+          <Link
+            href="/settings"
+            className="p-2 text-white/50 hover:text-lavender border border-white/10 hover:border-lavender/40 transition flex-shrink-0"
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </Link>
         </nav>
       </div>
     </header>

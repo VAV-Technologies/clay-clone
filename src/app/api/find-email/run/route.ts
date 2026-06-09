@@ -3,6 +3,7 @@ import { db, schema } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import type { CellValue } from '@/lib/db/schema';
 import { getColumnIdSet, invalidColumnIds, COLUMN_SCOPE_MESSAGE } from '@/lib/api-validation';
+import { getSecret } from '@/lib/secrets';
 
 export const maxDuration = 300;
 
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: COLUMN_SCOPE_MESSAGE, invalidColumnIds: badCols, tableId }, { status: 400 });
     }
 
-    const apiKey = process.env.NINJER_API_KEY;
+    const apiKey = getSecret('NINJER_API_KEY');
     if (!apiKey) {
       return NextResponse.json({ error: 'NINJER_API_KEY not configured' }, { status: 500 });
     }

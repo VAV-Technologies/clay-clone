@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { previewPeopleSearch, previewCompanySearch } from '@/lib/clay-api';
 import type { ClaySearchFilters, ClayCompanySearchFilters } from '@/lib/clay-api';
+import { getSecret } from '@/lib/secrets';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -11,10 +12,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const searchType = body.searchType || 'people';
 
-    if (!process.env.CLAY_EMAIL || !process.env.CLAY_PASSWORD) {
+    if (!getSecret('CLAY_EMAIL') || !getSecret('CLAY_PASSWORD')) {
       return NextResponse.json({ error: 'Clay credentials not configured' }, { status: 500 });
     }
-    if (!process.env.CLAY_WORKSPACE_ID) {
+    if (!getSecret('CLAY_WORKSPACE_ID')) {
       return NextResponse.json({ error: 'CLAY_WORKSPACE_ID not configured' }, { status: 500 });
     }
 

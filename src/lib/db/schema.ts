@@ -108,6 +108,18 @@ export const formulaConfigs = sqliteTable('formula_configs', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
+// App-wide provider secrets (API keys / credentials), managed via the Settings
+// page. `key` is the env var name (e.g. 'NINJER_API_KEY'); `value` is either an
+// AES-256-GCM blob ('v1:gcm:<iv>:<tag>:<ct>') or plaintext when no SECRETS_ENC_KEY
+// is set. Read through src/lib/secrets.ts, which falls back to process.env when a
+// key has no row here. `updatedAt` is a plain epoch-ms integer (informational) —
+// deliberately not mode:'timestamp' to avoid Date coercion across the two drivers.
+export const appSecrets = sqliteTable('app_secrets', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
 // Background enrichment jobs - processes even if browser is closed
 export const enrichmentJobs = sqliteTable('enrichment_jobs', {
   id: text('id').primaryKey(),
@@ -330,4 +342,6 @@ export type AgentConversation = typeof agentConversations.$inferSelect;
 export type NewAgentConversation = typeof agentConversations.$inferInsert;
 export type AgentMessage = typeof agentMessages.$inferSelect;
 export type NewAgentMessage = typeof agentMessages.$inferInsert;
+export type AppSecret = typeof appSecrets.$inferSelect;
+export type NewAppSecret = typeof appSecrets.$inferInsert;
 

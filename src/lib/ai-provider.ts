@@ -1,6 +1,7 @@
 // Unified AI Provider Interface — Azure OpenAI only
 
 import type { AzureToolBundle, ToolDispatcher } from './azure-openai';
+import { getSecret } from './secrets';
 
 export interface AIResult {
   text: string;
@@ -38,7 +39,7 @@ export const DEFAULT_PRICING = { input: 0.15, output: 0.60 };
 
 // Check if Azure is configured
 export function isAzureConfigured(): boolean {
-  return !!(process.env.AZURE_OPENAI_ENDPOINT && process.env.AZURE_OPENAI_API_KEY);
+  return !!(getSecret('AZURE_OPENAI_ENDPOINT') && getSecret('AZURE_OPENAI_API_KEY'));
 }
 
 // Get pricing for a model

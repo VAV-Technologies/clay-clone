@@ -1,6 +1,8 @@
 // Azure OpenAI Service client module
 // Mirrors the vertex-ai.ts pattern for consistency
 
+import { getSecret, onSecretChange } from './secrets';
+
 interface AzureConfig {
   endpoint: string;
   apiKey: string;
@@ -14,12 +16,12 @@ export function getAzureConfig(): AzureConfig {
     return azureConfig;
   }
 
-  const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-  const apiKey = process.env.AZURE_OPENAI_API_KEY;
+  const endpoint = getSecret('AZURE_OPENAI_ENDPOINT');
+  const apiKey = getSecret('AZURE_OPENAI_API_KEY');
   const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-02-15-preview';
 
   if (!endpoint || !apiKey) {
-    throw new Error('AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY environment variables are required');
+    throw new Error('AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY are not set. Add them in Settings (or env).');
   }
 
   // Ensure endpoint doesn't have trailing slash
@@ -28,6 +30,16 @@ export function getAzureConfig(): AzureConfig {
   azureConfig = { endpoint: cleanEndpoint, apiKey, apiVersion };
   return azureConfig;
 }
+
+// Drop the memoized Azure config when Azure keys/endpoints change via the
+// Settings page, so getAzureConfig() re-reads the new values on the next call.
+export function invalidateAzureConfig(): void {
+  azureConfig = null;
+}
+
+onSecretChange((_key, provider) => {
+  if (provider === 'azure') invalidateAzureConfig();
+});
 
 // Map model names to Azure deployment names
 // Users can override these via environment variables
@@ -75,8 +87,8 @@ function getApiVersionForModel(modelId: string, defaultVersion: string): string 
 function getModelEndpoint(modelId: string, defaultConfig: AzureConfig): { endpoint: string; apiKey: string } {
   // gpt-5-nano uses a separate Azure resource
   if (modelId === 'gpt-5-nano') {
-    const nanoEndpoint = process.env.AZURE_GPT5_NANO_ENDPOINT;
-    const nanoApiKey = process.env.AZURE_GPT5_NANO_API_KEY;
+    const nanoEndpoint = getSecret('AZURE_GPT5_NANO_ENDPOINT');
+    const nanoApiKey = getSecret('AZURE_GPT5_NANO_API_KEY');
     if (nanoEndpoint && nanoApiKey) {
       return {
         endpoint: nanoEndpoint.replace(/\/$/, '').trim(),
@@ -490,5 +502,5 @@ async function generateViaResponsesApi(args: {
 
 // Check if Azure OpenAI is configured
 export function isConfigured(): boolean {
-  return !!(process.env.AZURE_OPENAI_ENDPOINT && process.env.AZURE_OPENAI_API_KEY);
+  return !!(getSecret('AZURE_OPENAI_ENDPOINT') && getSecret('AZURE_OPENAI_API_KEY'));
 }

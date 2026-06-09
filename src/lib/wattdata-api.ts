@@ -2,6 +2,8 @@
 // Docs: https://wattdata.ai/docs/v2/api-integration
 // Endpoint: https://api.wattdata.xyz/v2/mcp (JSON-RPC 2.0 + SSE response format)
 
+import { getSecret } from './secrets';
+
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const WATTDATA_BASE = 'https://api.wattdata.xyz/v2/mcp';
@@ -83,9 +85,9 @@ async function wattdataFetch(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  const apiKey = process.env.WATTDATA_API_KEY;
+  const apiKey = getSecret('WATTDATA_API_KEY');
   if (!apiKey) {
-    throw new Error('WATTDATA_API_KEY environment variable is required');
+    throw new Error('WATTDATA_API_KEY is not set. Add it in Settings (or env).');
   }
 
   requestId += 1;
@@ -329,5 +331,5 @@ export async function fullSearch(
 // ─── Config check ───────────────────────────────────────────────────────────
 
 export function isConfigured(): boolean {
-  return !!process.env.WATTDATA_API_KEY;
+  return !!getSecret('WATTDATA_API_KEY');
 }
