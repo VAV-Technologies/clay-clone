@@ -918,7 +918,7 @@ Same response format as `GET /api/formula/run?jobId=`.
 
 ## 8. Find Email
 
-Three providers, all sharing the same request shape. Each writes the resolved email into a single **result column** (an `enrichment`-typed column) — `cell.value` is the address, and the full provider response (status, confidence, source, provider name, etc.) lives in `cell.enrichmentData`. The cell shows status badges; clicking it opens the data viewer the manual UI uses.
+Four providers, all sharing the same request shape. Each writes the resolved email into a single **result column** (an `enrichment`-typed column) — `cell.value` is the address, and the full provider response (status, confidence, source, provider name, etc.) lives in `cell.enrichmentData`. The cell shows status badges; clicking it opens the data viewer the manual UI uses.
 
 If you want a clean plain-text Email column for downstream consumption, create that text column separately and copy `cell.value` from each result-column cell. (`find_emails_waterfall` in the campaign engine does this automatically — see §11.)
 
@@ -927,6 +927,7 @@ If you want a clean plain-text Email column for downstream consumption, create t
 | Ninjer | `POST /api/find-email/run` | sync | Original provider, 90s/row worst case |
 | TryKitt | `POST /api/find-email/trykitt` | sync | Realtime mode |
 | AI Ark | `POST /api/find-email/ai-ark` | **async via webhook** | Returns immediately; emails arrive 1-2 min later |
+| BetterEnrich | `POST /api/find-email/betterenrich` | sync (submit + poll internally) | Runs its own work-email waterfall + verifies each hit; accepts an optional LinkedIn URL input |
 
 ### Common request body
 ```json
@@ -938,10 +939,11 @@ If you want a clean plain-text Email column for downstream consumption, create t
   "firstNameColumnId": "first-col-id",
   "lastNameColumnId": "last-col-id",
   "domainColumnId": "domain-col-id",
+  "linkedinColumnId": "linkedin-col-id",
   "resultColumnId": "result-enrichment-col-id"
 }
 ```
-`inputMode` is `"full_name"` or `"first_last"`. Provide `fullNameColumnId` for the first, or `firstNameColumnId` + `lastNameColumnId` for the second. `domainColumnId` is required either way. `resultColumnId` must be an `enrichment`-typed column — create one via `POST /api/columns` with `{ "tableId": "...", "name": "Email (AI)", "type": "enrichment", "actionKind": "find_email_<provider>", "actionConfig": { /* the input column ids */ } }` first.
+`inputMode` is `"full_name"` or `"first_last"`. Provide `fullNameColumnId` for the first, or `firstNameColumnId` + `lastNameColumnId` for the second. `domainColumnId` is required either way. `linkedinColumnId` is **optional** and only consumed by BetterEnrich (it boosts match rates); the other providers ignore it. `resultColumnId` must be an `enrichment`-typed column — create one via `POST /api/columns` with `{ "tableId": "...", "name": "Email (AI)", "type": "enrichment", "actionKind": "find_email_<provider>", "actionConfig": { /* the input column ids */ } }` first.
 
 ### Common response shape
 ```json
@@ -952,7 +954,7 @@ If you want a clean plain-text Email column for downstream consumption, create t
   "errorCount": 0
 }
 ```
-Status strings: `found`, `not_found`, `catch_all` (Ninjer), `skipped` (missing inputs), `error`. AI Ark adds `submitted` (cell stays in `processing` status) and writes the final `VALID`/`INVALID`/`CATCH_ALL` into `enrichmentData.status` once its webhook fires (see below).
+Status strings: `found`, `not_found`, `catch_all` (Ninjer), `skipped` (missing inputs), `error`. AI Ark adds `submitted` (cell stays in `processing` status) and writes the final `VALID`/`INVALID`/`CATCH_ALL` into `enrichmentData.status` once its webhook fires (see below). BetterEnrich returns `found`/`not_found`/`error`/`skipped` and adds `verification`, `verifier`, and `esp` to `enrichmentData`.
 
 ---
 
@@ -1062,6 +1064,58 @@ The `Email (AI)` cell is the result column the user clicks to inspect. Downstrea
 #### Cost
 
 Two AI Ark API calls per row (one search + one email-finder submit). The webhook callback itself is free. AI Ark credits — check `GET https://api.ai-ark.com/api/developer-portal/v1/payments/credits` (sent as `X-TOKEN: $AI_ARC_API_KEY`) for the live balance.
+
+### Provider 4: BetterEnrich
+
+```
+POST /api/find-email/betterenrich
+```
+
+Same request body as the others. **Synchronous to the caller, async internally:** the route submits each row to BetterEnrich's work-email *waterfall* (`POST app.betterenrich.com/api/v1/find-work-email` → `{ id }`) and then polls (`GET …/find-work-email?id=`) until the result lands, so a single call blocks until every row has a final email. 4 concurrent requests, ~90s poll cap per row.
+
+- **Optional LinkedIn input.** When `linkedinColumnId` is mapped, that row's LinkedIn URL is sent as `linkedinURL`, which raises match rates. The other providers ignore the field.
+- **Verified results.** `enrichmentData` carries `email`, `status` (`found`/`not_found`/`error`/`skipped`), `verification` (e.g. `valid`), `verifier` (e.g. `Catch-all Verifier`), `esp` (e.g. `Google Workspace`), and `provider: "betterenrich"`. A catch-all address is returned as a normal `found` email.
+- **Response shape** is the standard `{ results, processedCount, foundCount, errorCount }` (sync — `foundCount` is accurate on return, unlike AI Ark).
+
+**Configuration:** `BETTERENRICH_API_KEY` — set it on the **Settings** page (DB-backed, encrypted) or in `.env.local`. Internally it is sent as a raw `Authorization: <key>` header (no `Bearer` prefix).
+
+---
+
+## 8a. Waterfall (multi-provider) — run it directly
+
+A *waterfall* runs several providers in a chosen order so each provider only works the rows the previous ones couldn't resolve — true fall-through, so you never pay twice for a row that's already found. The Find Email panel does this client-side; you can drive the exact same thing directly via the API. (For fully automated campaigns there's also the `find_emails_waterfall` step — see §11. This section is the manual/API recipe.)
+
+**The model:** one **result column per provider** (each provider writes only its own column) **plus one final column** that holds the winning email — or the literal text `not found` — once the chain is exhausted for that row. So a 4-provider waterfall produces **5 columns**.
+
+**Recipe** (providers in your chosen order, e.g. `trykitt → betterenrich`):
+
+1. **Create one enrichment column per provider** (idempotent — reuse across runs). Use the provider's own `actionKind` so per-cell retry keeps working:
+   ```
+   POST /api/columns
+   { "tableId", "name": "Email (TryKitt)", "type": "enrichment",
+     "actionKind": "find_email_trykitt",
+     "actionConfig": { "inputMode", "fullNameColumnId", "domainColumnId", "linkedinColumnId" } }
+   ```
+   actionKinds: `find_email_ninjer` / `find_email_trykitt` / `find_email_aiark` / `find_email_betterenrich`.
+2. **Create the final result column LAST** (so it lands after the providers): `POST /api/columns` → `{ "tableId", "name": "Email (Waterfall)", "type": "text" }`.
+3. **Run provider 1 on ALL target rows** into its column: `POST /api/find-email/trykitt` with `resultColumnId` = TryKitt's column id.
+4. **Find the rows still missing an email** — `GET /api/rows?tableId=...` and keep the rows whose provider-1 cell `value` isn't a valid email (or filter `is_empty` on that column).
+5. **Run provider 2 on ONLY those rows** into *its* column: `POST /api/find-email/betterenrich` with `rowIds` = the still-empty set and `resultColumnId` = BetterEnrich's column id. Repeat steps 4–5 for any further providers.
+   - **AI Ark in the chain:** it's async, so after submitting, poll `GET /api/rows` until its column's cells are no longer `processing` before computing the next still-empty set.
+6. **Write the final column.** For each row the winner is the first valid email across the provider columns *in order*; if none, write `not found`. Persist in one call with the **bulk rows endpoint**:
+   ```
+   PATCH /api/rows
+   { "updates": [
+       { "id": "row-1", "data": { "<finalColId>": { "value": "ada@stripe.com" } } },
+       { "id": "row-2", "data": { "<finalColId>": { "value": "not found" } } }
+   ] }
+   ```
+
+**Notes**
+- **Order matters** — put your highest-quality / cheapest provider first. Every later column is sparse (only the prior misses), so total cost ≈ a single pass, not N passes.
+- **Rate limits are waited out.** Ninjer & TryKitt retry HTTP 429/503/timeout with capped backoff (honoring `Retry-After`) so rate-limited rows complete instead of being burned through to the next provider; genuine `not_found` still falls through.
+- **Catch-all counts as found** and stops the chain for that row.
+- A provider that fails entirely (e.g. missing key → 500) should be skipped, not fatal — keep going with the remaining providers (the panel does this automatically).
 
 ---
 
