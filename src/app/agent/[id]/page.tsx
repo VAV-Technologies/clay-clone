@@ -1166,7 +1166,7 @@ function humanizeStep(type: string): string {
     find_domains: 'Find missing domains → "Domain Finder (AI)" result column + Domain backfilled',
     qualify_titles: 'Qualify job titles',
     find_emails: 'Find emails → "Email (AI)" result column + clean Email column',
-    find_emails_waterfall: 'Find emails (AI Ark → Ninjer → TryKitt) → "Email (AI)" result column + clean Email column',
+    find_emails_waterfall: 'Find emails (AI Ark → Ninjer → TryKitt → BetterEnrich) → "Email (AI)" result column + clean Email column',
     clean_company_name: 'Clean company names → "Sending Company Name (AI)" + clean Sending Company Name',
     clean_person_name: 'Clean person names → "Sending Name (AI)" + clean Sending Name',
     materialize_send_ready: 'Build Send-Ready sheet',

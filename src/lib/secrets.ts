@@ -69,6 +69,12 @@ export const PROVIDERS: ProviderDef[] = [
     fields: [{ env: 'TRYKITT_API_KEY', label: 'API Key', secret: true }],
   },
   {
+    provider: 'betterenrich',
+    label: 'BetterEnrich',
+    note: 'Email finder (work-email waterfall).',
+    fields: [{ env: 'BETTERENRICH_API_KEY', label: 'API Key', secret: true }],
+  },
+  {
     provider: 'spider',
     label: 'Spider.Cloud',
     note: 'Web search + scrape for AI enrichment.',

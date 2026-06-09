@@ -1068,6 +1068,21 @@ export async function executeStep(
         }
       }
 
+      // Pass 4: BetterEnrich (runs its own work-email waterfall) for rows still without a valid email
+      const stillEmpty3 = await listInvalidEmailRowIds(sheet.tableId, emailColId);
+      log(`find_emails_waterfall: BetterEnrich on ${stillEmpty3.length} remaining`);
+      if (stillEmpty3.length > 0) {
+        try {
+          await internalFetch('/api/find-email/betterenrich', {
+            method: 'POST',
+            body: JSON.stringify({ ...baseBody, rowIds: stillEmpty3 }),
+          });
+          await copyResultColumnValuesToText(sheet.tableId, resultColumnId, emailColId);
+        } catch (err) {
+          log(`BetterEnrich warning (continuing): ${(err as Error).message}`);
+        }
+      }
+
       // Final cleanup — drop rows whose Email cell isn't a real email.
       const finalEmpty = await listInvalidEmailRowIds(sheet.tableId, emailColId);
       let dropped = 0;
@@ -1082,7 +1097,8 @@ export async function executeStep(
           attempted: allRowIds.length,
           aiArkPass: allRowIds.length - stillEmpty1.length,
           ninjerPass: stillEmpty1.length - stillEmpty2.length,
-          trykittPass: stillEmpty2.length - finalEmpty.length,
+          trykittPass: stillEmpty2.length - stillEmpty3.length,
+          betterenrichPass: stillEmpty3.length - finalEmpty.length,
           droppedEmpty: dropped,
           finalCount: allRowIds.length - dropped,
           resultColumn: 'Email (AI)',

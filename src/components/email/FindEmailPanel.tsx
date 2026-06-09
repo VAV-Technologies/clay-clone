@@ -16,12 +16,13 @@ interface FindEmailPanelProps {
 export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
   const { currentTable, columns, rows, selectedRows, updateCell, addColumn, fetchTable } = useTableStore();
 
-  const [provider, setProvider] = useState<'ninjer' | 'trykitt' | 'ai_ark'>('ninjer');
+  const [provider, setProvider] = useState<'ninjer' | 'trykitt' | 'ai_ark' | 'betterenrich'>('ninjer');
   const [inputMode, setInputMode] = useState<'full_name' | 'first_last'>('full_name');
   const [fullNameColumnId, setFullNameColumnId] = useState('');
   const [firstNameColumnId, setFirstNameColumnId] = useState('');
   const [lastNameColumnId, setLastNameColumnId] = useState('');
   const [domainColumnId, setDomainColumnId] = useState('');
+  const [linkedinColumnId, setLinkedinColumnId] = useState('');
 
   // Run condition
   const [condColumnId, setCondColumnId] = useState('');
@@ -65,6 +66,10 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     if (firstCol) setFirstNameColumnId(firstCol.id);
     if (lastCol) setLastNameColumnId(lastCol.id);
 
+    // Auto-detect LinkedIn URL (optional input, used by BetterEnrich)
+    const linkedinCol = nonEnrichmentCols.find(c => /linkedin|li.?url|profile.*url/i.test(c.name));
+    if (linkedinCol) setLinkedinColumnId(linkedinCol.id);
+
     // If first+last found but no full name, switch to first_last mode
     if (firstCol && lastCol && !fullNameCol) {
       setInputMode('first_last');
@@ -102,6 +107,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     const providerLabel =
       provider === 'trykitt' ? 'Email (TryKitt)'
         : provider === 'ai_ark' ? 'Email (AI Ark)'
+        : provider === 'betterenrich' ? 'Email (BetterEnrich)'
         : 'Email';
     const actionKind = `find_email_${provider === 'ai_ark' ? 'aiark' : provider}`;
 
@@ -122,6 +128,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
           firstNameColumnId: inputMode === 'first_last' ? firstNameColumnId : undefined,
           lastNameColumnId: inputMode === 'first_last' ? lastNameColumnId : undefined,
           domainColumnId,
+          linkedinColumnId: provider === 'betterenrich' ? (linkedinColumnId || undefined) : undefined,
         },
       }),
     });
@@ -156,7 +163,9 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
           ? '/api/find-email/trykitt'
           : provider === 'ai_ark'
             ? '/api/find-email/ai-ark'
-            : '/api/find-email/run';
+            : provider === 'betterenrich'
+              ? '/api/find-email/betterenrich'
+              : '/api/find-email/run';
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -168,6 +177,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
           firstNameColumnId: inputMode === 'first_last' ? firstNameColumnId : undefined,
           lastNameColumnId: inputMode === 'first_last' ? lastNameColumnId : undefined,
           domainColumnId,
+          linkedinColumnId: provider === 'betterenrich' ? (linkedinColumnId || undefined) : undefined,
           resultColumnId,
         }),
       });
@@ -262,44 +272,35 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
         {/* Provider Toggle */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-white/70">Provider</label>
-          <div className="flex border border-white/10 overflow-hidden">
-            <button
-              onClick={() => setProvider('ninjer')}
-              className={cn(
-                'flex-1 px-3 py-2 text-sm transition-colors border-r border-white/10',
-                provider === 'ninjer'
-                  ? 'bg-cyan-500/20 text-white'
-                  : 'bg-white/5 text-white/50 hover:text-white'
-              )}
-            >
-              Ninjer
-            </button>
-            <button
-              onClick={() => setProvider('trykitt')}
-              className={cn(
-                'flex-1 px-3 py-2 text-sm transition-colors border-r border-white/10',
-                provider === 'trykitt'
-                  ? 'bg-cyan-500/20 text-white'
-                  : 'bg-white/5 text-white/50 hover:text-white'
-              )}
-            >
-              TryKitt
-            </button>
-            <button
-              onClick={() => setProvider('ai_ark')}
-              className={cn(
-                'flex-1 px-3 py-2 text-sm transition-colors',
-                provider === 'ai_ark'
-                  ? 'bg-cyan-500/20 text-white'
-                  : 'bg-white/5 text-white/50 hover:text-white'
-              )}
-            >
-              AI Ark
-            </button>
+          <div className="grid grid-cols-2 gap-px bg-white/10 border border-white/10 overflow-hidden">
+            {([
+              { id: 'ninjer', label: 'Ninjer' },
+              { id: 'trykitt', label: 'TryKitt' },
+              { id: 'ai_ark', label: 'AI Ark' },
+              { id: 'betterenrich', label: 'BetterEnrich' },
+            ] as const).map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setProvider(p.id)}
+                className={cn(
+                  'px-3 py-2 text-sm transition-colors',
+                  provider === p.id
+                    ? 'bg-cyan-500/20 text-white'
+                    : 'bg-white/5 text-white/50 hover:text-white'
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
           {provider === 'ai_ark' && (
             <p className="text-xs text-amber-300/80">
               AI Ark is async. Each row is searched + submitted to AI Ark; emails arrive at our webhook over the next 1-2 minutes. Cells will sit on "submitted" until the webhook fires — refresh the table to see results land.
+            </p>
+          )}
+          {provider === 'betterenrich' && (
+            <p className="text-xs text-white/40">
+              BetterEnrich runs its own work-email waterfall and verifies each hit (status, verifier, ESP). Optionally map a LinkedIn URL column below to boost match rates.
             </p>
           )}
         </div>
@@ -397,6 +398,24 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
               ))}
             </select>
           </div>
+
+          {provider === 'betterenrich' && (
+            <div>
+              <label className="text-xs text-white/40 mb-1 block">
+                LinkedIn URL Column <span className="text-white/30">(optional)</span>
+              </label>
+              <select
+                value={linkedinColumnId}
+                onChange={(e) => setLinkedinColumnId(e.target.value)}
+                className={selectClasses}
+              >
+                <option value="">None</option>
+                {columns.filter(c => c.type !== 'enrichment').map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Info */}

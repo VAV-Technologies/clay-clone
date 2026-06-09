@@ -13,16 +13,20 @@ export const dynamic = 'force-dynamic';
 // This is a thin shim: it doesn't replicate provider logic, it just calls the
 // existing /api/find-email/{run|trykitt|ai-ark} for a single rowId.
 
-function providerFromActionKind(actionKind: string): 'ninjer' | 'trykitt' | 'ai_ark' | null {
+function providerFromActionKind(
+  actionKind: string
+): 'ninjer' | 'trykitt' | 'ai_ark' | 'betterenrich' | null {
   if (actionKind === 'find_email_ninjer') return 'ninjer';
   if (actionKind === 'find_email_trykitt') return 'trykitt';
   if (actionKind === 'find_email_aiark') return 'ai_ark';
+  if (actionKind === 'find_email_betterenrich') return 'betterenrich';
   return null;
 }
 
-function endpointFor(provider: 'ninjer' | 'trykitt' | 'ai_ark'): string {
+function endpointFor(provider: 'ninjer' | 'trykitt' | 'ai_ark' | 'betterenrich'): string {
   if (provider === 'trykitt') return '/api/find-email/trykitt';
   if (provider === 'ai_ark') return '/api/find-email/ai-ark';
+  if (provider === 'betterenrich') return '/api/find-email/betterenrich';
   return '/api/find-email/run';
 }
 

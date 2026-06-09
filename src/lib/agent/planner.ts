@@ -150,9 +150,9 @@ shared context (workbookId + sheets + searchResults).
 |                          | scores all rows and removes those classified "no".                          |
 | find_emails              | Single-provider Ninjer lookup. Creates one "Email (AI)" result column +    |
 |                          | a clean "Email" text column. Prefer find_emails_waterfall.                  |
-| find_emails_waterfall    | AI Ark -> Ninjer -> TryKitt. Creates ONE "Email (AI)" result column shared  |
-|                          | across all 3 providers (cell viewer shows which provider succeeded) plus    |
-|                          | a clean "Email" text column. Drops rows still without an email.             |
+| find_emails_waterfall    | AI Ark -> Ninjer -> TryKitt -> BetterEnrich. Creates ONE "Email (AI)"       |
+|                          | result column shared across all 4 providers (cell viewer shows which        |
+|                          | provider succeeded) plus a clean "Email" text column. Drops empty rows.     |
 | clean_company_name       | Creates "Sending Company Name (AI)" result column + clean "Sending Company  |
 |                          | Name" text column.                                                          |
 | clean_person_name        | Creates "Sending Name (AI)" result column + clean "Sending Name" text col.  |
