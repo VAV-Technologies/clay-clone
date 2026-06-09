@@ -177,6 +177,41 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     return col.id;
   };
 
+  // The waterfall's 5th/result column: the winning email (any provider) or the
+  // literal "not found". A plain text column (no actionKind) so it's a normal
+  // editable cell; created after the provider columns so it lands last.
+  const getOrCreateFinalColumn = async (): Promise<string> => {
+    const name = 'Email (Waterfall)';
+    const existing = columns.find(c => c.name === name && !c.actionKind);
+    if (existing) return existing.id;
+    const res = await fetch('/api/columns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tableId, name, type: 'text' }),
+    });
+    const col = await res.json();
+    addColumn(col);
+    return col.id;
+  };
+
+  // Persist one column's value across many rows via the bulk rows endpoint
+  // (updateCell alone is local-only and would be lost on the next fetch).
+  const bulkPatchRows = async (columnId: string, values: Map<string, string>) => {
+    const entries = Array.from(values.entries());
+    const CHUNK = 200;
+    for (let i = 0; i < entries.length; i += CHUNK) {
+      const updates = entries.slice(i, i + CHUNK).map(([id, value]) => ({
+        id,
+        data: { [columnId]: { value } },
+      }));
+      await fetch('/api/rows', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates }),
+      });
+    }
+  };
+
   // Shared request body for every find-email provider route. linkedinColumnId is
   // always sent now (LinkedIn is a default mapping field) — only BetterEnrich
   // reads it; the other routes ignore unknown fields.
@@ -297,9 +332,12 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     // waterfall structure is visible even before the later stages run.
     const colFor: Partial<Record<ProviderId, string>> = {};
     for (const p of waterfallProviders) colFor[p] = await getOrCreateProviderColumn(p);
+    // 5th column: the final answer. Created last so it lands after the providers.
+    const finalColId = await getOrCreateFinalColumn();
 
     setProgress({ completed: 0, total: rowIds.length });
     const remaining = new Set(rowIds);
+    const winners = new Map<string, string>();
     const failures: string[] = [];
     const POLL_MS = 8000;
     const POLL_CAP_MS = 150000;
@@ -323,7 +361,10 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
             error: result.error,
           });
           // Sync providers resolve inline; AI Ark stays 'submitted' until we poll.
-          if (p !== 'ai_ark' && looksLikeEmail(result.email)) remaining.delete(result.rowId);
+          if (p !== 'ai_ark' && looksLikeEmail(result.email)) {
+            remaining.delete(result.rowId);
+            winners.set(result.rowId, result.email.trim());
+          }
         });
 
         // AI Ark is async — wait for its webhooks to fill its column, refreshing
@@ -337,8 +378,11 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
             let stillProcessing = 0;
             for (const id of targets) {
               const cell = freshRows.find((r) => r.id === id)?.data?.[colId];
-              if (looksLikeEmail(cell?.value)) remaining.delete(id);
-              else if (cell?.status === 'processing') stillProcessing++;
+              const v = cell?.value;
+              if (looksLikeEmail(v)) {
+                remaining.delete(id);
+                winners.set(id, v.trim());
+              } else if (cell?.status === 'processing') stillProcessing++;
             }
             setStageLabel(`AI Ark — ${stillProcessing} still processing`);
             if (stillProcessing === 0) break;
@@ -364,6 +408,13 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     if (failures.length) {
       setError(`Some providers were skipped (the chain continued): ${failures.join('; ')}`);
     }
+
+    // 5th column: winning email per row, or "not found" once the chain is exhausted.
+    const finalValues = new Map<string, string>();
+    for (const id of rowIds) finalValues.set(id, winners.get(id) ?? 'not found');
+    for (const [id, value] of finalValues) updateCell(id, finalColId, { value });
+    await bulkPatchRows(finalColId, finalValues);
+
     await fetchTable(tableId, true);
   };
 
