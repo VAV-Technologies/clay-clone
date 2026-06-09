@@ -16,6 +16,19 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Rate-limit / transient resilience: wait it out and retry rather than burning
+// the row to an error. Exponential backoff capped, with a sane retry ceiling.
+const RATE_LIMIT_MAX_RETRIES = 5;
+function backoffMs(attempt: number): number {
+  return Math.min(2000 * 2 ** attempt, 16000);
+}
+function retryAfterMs(res: Response): number | null {
+  const ra = res.headers.get('retry-after');
+  if (!ra) return null;
+  const secs = Number(ra);
+  return Number.isNaN(secs) ? null : Math.min(secs * 1000, 60000);
+}
+
 async function callNinjerAPI(
   body: Record<string, string>,
   apiKey: string
@@ -28,19 +41,38 @@ async function callNinjerAPI(
   total_variations: number;
   time_ms: number;
 }> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let attempt = 0;
+  while (true) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(`${NINJER_BASE_URL}/find-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timeout);
+      // Timeout / network blip — wait and retry a few times before giving up.
+      if ((err as Error).name === 'AbortError' && attempt < RATE_LIMIT_MAX_RETRIES) {
+        await sleep(backoffMs(attempt++));
+        continue;
+      }
+      throw err;
+    }
+    clearTimeout(timeout);
 
-  try {
-    const response = await fetch(`${NINJER_BASE_URL}/find-email`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    // Rate-limited / transient (429, 503) — wait it out, then retry.
+    if ((response.status === 429 || response.status === 503) && attempt < RATE_LIMIT_MAX_RETRIES) {
+      await sleep(retryAfterMs(response) ?? backoffMs(attempt));
+      attempt++;
+      continue;
+    }
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
@@ -48,8 +80,6 @@ async function callNinjerAPI(
     }
 
     return await response.json();
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

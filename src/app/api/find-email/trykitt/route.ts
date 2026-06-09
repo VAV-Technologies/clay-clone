@@ -15,6 +15,19 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Rate-limit / transient resilience: wait it out and retry rather than burning
+// the row to an error. Exponential backoff capped, with a sane retry ceiling.
+const RATE_LIMIT_MAX_RETRIES = 5;
+function backoffMs(attempt: number): number {
+  return Math.min(2000 * 2 ** attempt, 16000);
+}
+function retryAfterMs(res: Response): number | null {
+  const ra = res.headers.get('retry-after');
+  if (!ra) return null;
+  const secs = Number(ra);
+  return Number.isNaN(secs) ? null : Math.min(secs * 1000, 60000);
+}
+
 async function callTryKittAPI(
   fullName: string,
   domain: string,
@@ -24,29 +37,58 @@ async function callTryKittAPI(
   email: string | null;
   confidence: number | null;
 }> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let attempt = 0; // 429 / 503 / timeout
+  let softAttempt = 0; // 402 is ambiguous (rate-limit OR credits) — retry sparingly
+  while (true) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(`${TRYKITT_BASE_URL}/job/find_email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'User-Agent': 'dataflow/1.0',
+        },
+        body: JSON.stringify({
+          fullName,
+          domain,
+          realtime: true,
+        }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timeout);
+      if ((err as Error).name === 'AbortError') {
+        // Timeout — wait and retry a few times, then give up as an error result.
+        if (attempt < RATE_LIMIT_MAX_RETRIES) {
+          await sleep(backoffMs(attempt++));
+          continue;
+        }
+        return { status: 'error', email: null, confidence: null };
+      }
+      throw err;
+    }
+    clearTimeout(timeout);
 
-  try {
-    const response = await fetch(`${TRYKITT_BASE_URL}/job/find_email`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'User-Agent': 'dataflow/1.0',
-      },
-      body: JSON.stringify({
-        fullName,
-        domain,
-        realtime: true,
-      }),
-      signal: controller.signal,
-    });
-
+    // Rate-limited / transient (429, 503) — wait it out, then retry.
+    if ((response.status === 429 || response.status === 503) && attempt < RATE_LIMIT_MAX_RETRIES) {
+      await sleep(retryAfterMs(response) ?? backoffMs(attempt));
+      attempt++;
+      continue;
+    }
     if (response.status === 401) {
       throw new Error('Invalid TryKitt API key');
     }
     if (response.status === 402) {
+      // 402 = rate limit OR insufficient credits. Retry a couple times in case
+      // it's a transient limit; if it persists it's almost certainly credits.
+      if (softAttempt < 2) {
+        await sleep(backoffMs(softAttempt + 1));
+        softAttempt++;
+        continue;
+      }
       throw new Error('TryKitt rate limit or insufficient credits');
     }
     if (!response.ok) {
@@ -71,13 +113,6 @@ async function callTryKittAPI(
     const status = email ? 'found' : 'not_found';
 
     return { status, email, confidence };
-  } catch (err) {
-    if ((err as Error).name === 'AbortError') {
-      return { status: 'error', email: null, confidence: null };
-    }
-    throw err;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

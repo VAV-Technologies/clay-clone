@@ -28,6 +28,13 @@ const ENDPOINT_FOR: Record<ProviderId, string> = {
   ai_ark: '/api/find-email/ai-ark',
   betterenrich: '/api/find-email/betterenrich',
 };
+// Per-provider result column (shared by Single mode and each Waterfall stage).
+const PROVIDER_COLUMN: Record<ProviderId, { name: string; actionKind: string }> = {
+  ninjer: { name: 'Email', actionKind: 'find_email_ninjer' },
+  trykitt: { name: 'Email (TryKitt)', actionKind: 'find_email_trykitt' },
+  ai_ark: { name: 'Email (AI Ark)', actionKind: 'find_email_aiark' },
+  betterenrich: { name: 'Email (BetterEnrich)', actionKind: 'find_email_betterenrich' },
+};
 const looksLikeEmail = (v: unknown): v is string =>
   typeof v === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -138,22 +145,13 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
   const toggleWaterfall = (id: ProviderId) =>
     setWaterfallProviders((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
 
-  const getOrCreateResultColumn = async (): Promise<string> => {
-    // Single mode: one result column per provider so multiple providers can run
-    // side-by-side without clobbering each other. Waterfall mode: ONE shared
-    // "Email (Waterfall)" column that every provider in the chain writes into.
-    const isWaterfall = mode === 'waterfall';
-    const columnName = isWaterfall
-      ? 'Email (Waterfall)'
-      : provider === 'trykitt' ? 'Email (TryKitt)'
-        : provider === 'ai_ark' ? 'Email (AI Ark)'
-        : provider === 'betterenrich' ? 'Email (BetterEnrich)'
-        : 'Email';
-    const actionKind = isWaterfall
-      ? 'find_email_waterfall'
-      : `find_email_${provider === 'ai_ark' ? 'aiark' : provider}`;
-
-    const existing = columns.find(c => c.name === columnName && c.actionKind === actionKind);
+  const getOrCreateProviderColumn = async (p: ProviderId): Promise<string> => {
+    // One result column per provider, shared by Single mode and Waterfall mode —
+    // a waterfall just writes each stage's results into that provider's column.
+    // Reusing the per-provider actionKind keeps per-cell retry working via the
+    // existing /api/find-email/retry-cell.
+    const { name, actionKind } = PROVIDER_COLUMN[p];
+    const existing = columns.find(c => c.name === name && c.actionKind === actionKind);
     if (existing) return existing.id;
 
     const res = await fetch('/api/columns', {
@@ -161,7 +159,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tableId,
-        name: columnName,
+        name,
         type: 'enrichment',
         actionKind,
         actionConfig: {
@@ -171,7 +169,6 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
           lastNameColumnId: inputMode === 'first_last' ? lastNameColumnId : undefined,
           domainColumnId,
           linkedinColumnId: linkedinColumnId || undefined,
-          providers: isWaterfall ? waterfallProviders : undefined,
         },
       }),
     });
@@ -201,7 +198,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     setError(null);
     setResultSummary(null);
 
-    const resultColumnId = await getOrCreateResultColumn();
+    const resultColumnId = await getOrCreateProviderColumn(provider);
 
     // Mark cells as processing
     for (const rowId of rowIds) {
@@ -287,59 +284,70 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     }
   };
 
-  // Waterfall: run the chosen providers IN ORDER, each pass only on rows that
-  // still lack a valid email, all writing into one shared result column. Mirrors
-  // the server-side find_emails_waterfall, but client-side so it isn't bound by
-  // the 240s ingress timeout (we wait for AI Ark's async webhooks via polling).
+  // Waterfall: run the chosen providers IN ORDER into ONE COLUMN PER PROVIDER.
+  // Each stage runs only on rows still missing a valid email, so later providers'
+  // columns are naturally sparse (true fall-through — NOT N× the cost). Client-side
+  // so it isn't bound by the 240s ingress timeout (AI Ark is awaited via polling).
   const runWaterfall = async (rowIds: string[]) => {
     if (!tableId || waterfallProviders.length === 0) return;
     setError(null);
     setResultSummary(null);
 
-    const resultColumnId = await getOrCreateResultColumn();
-    for (const rowId of rowIds) updateCell(rowId, resultColumnId, { value: null, status: 'processing' });
-    setProgress({ completed: 0, total: rowIds.length });
+    // Create/reuse one column per provider in the chain up front so the full
+    // waterfall structure is visible even before the later stages run.
+    const colFor: Partial<Record<ProviderId, string>> = {};
+    for (const p of waterfallProviders) colFor[p] = await getOrCreateProviderColumn(p);
 
+    setProgress({ completed: 0, total: rowIds.length });
     const remaining = new Set(rowIds);
+    const failures: string[] = [];
     const POLL_MS = 8000;
     const POLL_CAP_MS = 150000;
 
     for (const p of waterfallProviders) {
       if (remaining.size === 0) break;
+      const colId = colFor[p]!;
       const targets = Array.from(remaining);
-      setStageLabel(`${PROVIDER_LABEL[p]} — ${targets.length} remaining`);
+      setStageLabel(`${PROVIDER_LABEL[p]} — checking ${targets.length}`);
       setProgress({ completed: rowIds.length - targets.length, total: rowIds.length });
+      for (const id of targets) updateCell(id, colId, { value: null, status: 'processing' });
 
-      await runProviderBatch(p, targets, resultColumnId, (result) => {
-        const cellStatus: 'complete' | 'error' | 'processing' =
-          result.status === 'submitted' ? 'processing' : result.success ? 'complete' : 'error';
-        updateCell(result.rowId, resultColumnId, {
-          value: result.email || null,
-          status: cellStatus,
-          enrichmentData: result.enrichmentData,
-          error: result.error,
+      try {
+        await runProviderBatch(p, targets, colId, (result) => {
+          const cellStatus: 'complete' | 'error' | 'processing' =
+            result.status === 'submitted' ? 'processing' : result.success ? 'complete' : 'error';
+          updateCell(result.rowId, colId, {
+            value: result.email || null,
+            status: cellStatus,
+            enrichmentData: result.enrichmentData,
+            error: result.error,
+          });
+          // Sync providers resolve inline; AI Ark stays 'submitted' until we poll.
+          if (p !== 'ai_ark' && looksLikeEmail(result.email)) remaining.delete(result.rowId);
         });
-        // Sync providers resolve inline; AI Ark stays 'submitted' until we poll.
-        if (p !== 'ai_ark' && looksLikeEmail(result.email)) remaining.delete(result.rowId);
-      });
 
-      // AI Ark is async — wait for its webhooks to fill the cells, refreshing
-      // `remaining` from the freshly-fetched rows before the next provider runs.
-      if (p === 'ai_ark') {
-        const startedAt = Date.now();
-        while (Date.now() - startedAt < POLL_CAP_MS) {
-          await sleep(POLL_MS);
-          await fetchTable(tableId, true);
-          const freshRows = useTableStore.getState().rows;
-          let stillProcessing = 0;
-          for (const id of targets) {
-            const cell = freshRows.find((r) => r.id === id)?.data?.[resultColumnId];
-            if (looksLikeEmail(cell?.value)) remaining.delete(id);
-            else if (cell?.status === 'processing') stillProcessing++;
+        // AI Ark is async — wait for its webhooks to fill its column, refreshing
+        // `remaining` from the freshly-fetched rows before the next provider runs.
+        if (p === 'ai_ark') {
+          const startedAt = Date.now();
+          while (Date.now() - startedAt < POLL_CAP_MS) {
+            await sleep(POLL_MS);
+            await fetchTable(tableId, true);
+            const freshRows = useTableStore.getState().rows;
+            let stillProcessing = 0;
+            for (const id of targets) {
+              const cell = freshRows.find((r) => r.id === id)?.data?.[colId];
+              if (looksLikeEmail(cell?.value)) remaining.delete(id);
+              else if (cell?.status === 'processing') stillProcessing++;
+            }
+            setStageLabel(`AI Ark — ${stillProcessing} still processing`);
+            if (stillProcessing === 0) break;
           }
-          setStageLabel(`AI Ark — ${stillProcessing} still processing`);
-          if (stillProcessing === 0) break;
         }
+      } catch (err) {
+        // A provider-level failure (missing key, 500, …) must NOT kill the chain —
+        // record it and continue so the remaining providers still get a shot.
+        failures.push(`${PROVIDER_LABEL[p]}: ${(err as Error).message}`);
       }
     }
 
@@ -353,6 +361,9 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
       skipped: 0,
       submitted: 0,
     });
+    if (failures.length) {
+      setError(`Some providers were skipped (the chain continued): ${failures.join('; ')}`);
+    }
     await fetchTable(tableId, true);
   };
 
