@@ -13,10 +13,42 @@ interface FindEmailPanelProps {
   onClose: () => void;
 }
 
+type ProviderId = 'ninjer' | 'trykitt' | 'ai_ark' | 'betterenrich';
+
+const PROVIDERS: { id: ProviderId; label: string }[] = [
+  { id: 'ninjer', label: 'Ninjer' },
+  { id: 'trykitt', label: 'TryKitt' },
+  { id: 'ai_ark', label: 'AI Ark' },
+  { id: 'betterenrich', label: 'BetterEnrich' },
+];
+const PROVIDER_LABEL = Object.fromEntries(PROVIDERS.map((p) => [p.id, p.label])) as Record<ProviderId, string>;
+const ENDPOINT_FOR: Record<ProviderId, string> = {
+  ninjer: '/api/find-email/run',
+  trykitt: '/api/find-email/trykitt',
+  ai_ark: '/api/find-email/ai-ark',
+  betterenrich: '/api/find-email/betterenrich',
+};
+const looksLikeEmail = (v: unknown): v is string =>
+  typeof v === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+interface FindEmailResult {
+  rowId: string;
+  success: boolean;
+  email: string | null;
+  status: string;
+  enrichmentData?: Record<string, string | number | null>;
+  metadata?: { timeTakenMs: number };
+  error?: string;
+}
+
 export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
   const { currentTable, columns, rows, selectedRows, updateCell, addColumn, fetchTable } = useTableStore();
 
-  const [provider, setProvider] = useState<'ninjer' | 'trykitt' | 'ai_ark' | 'betterenrich'>('ninjer');
+  const [mode, setMode] = useState<'single' | 'waterfall'>('single');
+  const [provider, setProvider] = useState<ProviderId>('ninjer');
+  const [waterfallProviders, setWaterfallProviders] = useState<ProviderId[]>([]);
+  const [stageLabel, setStageLabel] = useState<string | null>(null);
   const [inputMode, setInputMode] = useState<'full_name' | 'first_last'>('full_name');
   const [fullNameColumnId, setFullNameColumnId] = useState('');
   const [firstNameColumnId, setFirstNameColumnId] = useState('');
@@ -45,6 +77,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     setError(null);
     setResultSummary(null);
     setProgress({ completed: 0, total: 0 });
+    setStageLabel(null);
 
     const nonEnrichmentCols = columns.filter(c => c.type !== 'enrichment');
 
@@ -97,21 +130,30 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
 
   const canRun = (() => {
     if (!domainColumnId) return false;
+    if (mode === 'waterfall' && waterfallProviders.length === 0) return false;
     if (inputMode === 'full_name') return !!fullNameColumnId;
     return !!(firstNameColumnId && lastNameColumnId);
   })();
 
+  const toggleWaterfall = (id: ProviderId) =>
+    setWaterfallProviders((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
+
   const getOrCreateResultColumn = async (): Promise<string> => {
-    // Result column is named per-provider so users can run multiple providers
-    // side-by-side without clobbering each other.
-    const providerLabel =
-      provider === 'trykitt' ? 'Email (TryKitt)'
+    // Single mode: one result column per provider so multiple providers can run
+    // side-by-side without clobbering each other. Waterfall mode: ONE shared
+    // "Email (Waterfall)" column that every provider in the chain writes into.
+    const isWaterfall = mode === 'waterfall';
+    const columnName = isWaterfall
+      ? 'Email (Waterfall)'
+      : provider === 'trykitt' ? 'Email (TryKitt)'
         : provider === 'ai_ark' ? 'Email (AI Ark)'
         : provider === 'betterenrich' ? 'Email (BetterEnrich)'
         : 'Email';
-    const actionKind = `find_email_${provider === 'ai_ark' ? 'aiark' : provider}`;
+    const actionKind = isWaterfall
+      ? 'find_email_waterfall'
+      : `find_email_${provider === 'ai_ark' ? 'aiark' : provider}`;
 
-    const existing = columns.find(c => c.name === providerLabel && c.actionKind === actionKind);
+    const existing = columns.find(c => c.name === columnName && c.actionKind === actionKind);
     if (existing) return existing.id;
 
     const res = await fetch('/api/columns', {
@@ -119,7 +161,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tableId,
-        name: providerLabel,
+        name: columnName,
         type: 'enrichment',
         actionKind,
         actionConfig: {
@@ -128,7 +170,8 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
           firstNameColumnId: inputMode === 'first_last' ? firstNameColumnId : undefined,
           lastNameColumnId: inputMode === 'first_last' ? lastNameColumnId : undefined,
           domainColumnId,
-          linkedinColumnId: provider === 'betterenrich' ? (linkedinColumnId || undefined) : undefined,
+          linkedinColumnId: linkedinColumnId || undefined,
+          providers: isWaterfall ? waterfallProviders : undefined,
         },
       }),
     });
@@ -136,6 +179,21 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     addColumn(col);
     return col.id;
   };
+
+  // Shared request body for every find-email provider route. linkedinColumnId is
+  // always sent now (LinkedIn is a default mapping field) — only BetterEnrich
+  // reads it; the other routes ignore unknown fields.
+  const bodyFor = (rowIds: string[], resultColumnId: string) => ({
+    tableId,
+    rowIds,
+    inputMode,
+    fullNameColumnId: inputMode === 'full_name' ? fullNameColumnId : undefined,
+    firstNameColumnId: inputMode === 'first_last' ? firstNameColumnId : undefined,
+    lastNameColumnId: inputMode === 'first_last' ? lastNameColumnId : undefined,
+    domainColumnId,
+    linkedinColumnId: linkedinColumnId || undefined,
+    resultColumnId,
+  });
 
   const processRows = async (rowIds: string[]) => {
     if (!tableId) return;
@@ -158,28 +216,10 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     for (let i = 0; i < rowIds.length; i += BATCH_SIZE) {
       const batch = rowIds.slice(i, i + BATCH_SIZE);
 
-      const endpoint =
-        provider === 'trykitt'
-          ? '/api/find-email/trykitt'
-          : provider === 'ai_ark'
-            ? '/api/find-email/ai-ark'
-            : provider === 'betterenrich'
-              ? '/api/find-email/betterenrich'
-              : '/api/find-email/run';
-      const response = await fetch(endpoint, {
+      const response = await fetch(ENDPOINT_FOR[provider], {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tableId,
-          rowIds: batch,
-          inputMode,
-          fullNameColumnId: inputMode === 'full_name' ? fullNameColumnId : undefined,
-          firstNameColumnId: inputMode === 'first_last' ? firstNameColumnId : undefined,
-          lastNameColumnId: inputMode === 'first_last' ? lastNameColumnId : undefined,
-          domainColumnId,
-          linkedinColumnId: provider === 'betterenrich' ? (linkedinColumnId || undefined) : undefined,
-          resultColumnId,
-        }),
+        body: JSON.stringify(bodyFor(batch, resultColumnId)),
       });
 
       if (!response.ok) {
@@ -223,13 +263,106 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     await fetchTable(tableId, true);
   };
 
+  // Run ONE provider over rowIds in batches, calling onResult for each row.
+  const runProviderBatch = async (
+    p: ProviderId,
+    rowIds: string[],
+    resultColumnId: string,
+    onResult: (r: FindEmailResult) => void,
+  ) => {
+    const BATCH_SIZE = 20;
+    for (let i = 0; i < rowIds.length; i += BATCH_SIZE) {
+      const batch = rowIds.slice(i, i + BATCH_SIZE);
+      const response = await fetch(ENDPOINT_FOR[p], {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyFor(batch, resultColumnId)),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error(err.error || `API error ${response.status}`);
+      }
+      const data = await response.json();
+      for (const result of (data.results as FindEmailResult[]) || []) onResult(result);
+    }
+  };
+
+  // Waterfall: run the chosen providers IN ORDER, each pass only on rows that
+  // still lack a valid email, all writing into one shared result column. Mirrors
+  // the server-side find_emails_waterfall, but client-side so it isn't bound by
+  // the 240s ingress timeout (we wait for AI Ark's async webhooks via polling).
+  const runWaterfall = async (rowIds: string[]) => {
+    if (!tableId || waterfallProviders.length === 0) return;
+    setError(null);
+    setResultSummary(null);
+
+    const resultColumnId = await getOrCreateResultColumn();
+    for (const rowId of rowIds) updateCell(rowId, resultColumnId, { value: null, status: 'processing' });
+    setProgress({ completed: 0, total: rowIds.length });
+
+    const remaining = new Set(rowIds);
+    const POLL_MS = 8000;
+    const POLL_CAP_MS = 150000;
+
+    for (const p of waterfallProviders) {
+      if (remaining.size === 0) break;
+      const targets = Array.from(remaining);
+      setStageLabel(`${PROVIDER_LABEL[p]} — ${targets.length} remaining`);
+      setProgress({ completed: rowIds.length - targets.length, total: rowIds.length });
+
+      await runProviderBatch(p, targets, resultColumnId, (result) => {
+        const cellStatus: 'complete' | 'error' | 'processing' =
+          result.status === 'submitted' ? 'processing' : result.success ? 'complete' : 'error';
+        updateCell(result.rowId, resultColumnId, {
+          value: result.email || null,
+          status: cellStatus,
+          enrichmentData: result.enrichmentData,
+          error: result.error,
+        });
+        // Sync providers resolve inline; AI Ark stays 'submitted' until we poll.
+        if (p !== 'ai_ark' && looksLikeEmail(result.email)) remaining.delete(result.rowId);
+      });
+
+      // AI Ark is async — wait for its webhooks to fill the cells, refreshing
+      // `remaining` from the freshly-fetched rows before the next provider runs.
+      if (p === 'ai_ark') {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < POLL_CAP_MS) {
+          await sleep(POLL_MS);
+          await fetchTable(tableId, true);
+          const freshRows = useTableStore.getState().rows;
+          let stillProcessing = 0;
+          for (const id of targets) {
+            const cell = freshRows.find((r) => r.id === id)?.data?.[resultColumnId];
+            if (looksLikeEmail(cell?.value)) remaining.delete(id);
+            else if (cell?.status === 'processing') stillProcessing++;
+          }
+          setStageLabel(`AI Ark — ${stillProcessing} still processing`);
+          if (stillProcessing === 0) break;
+        }
+      }
+    }
+
+    setProgress({ completed: rowIds.length, total: rowIds.length });
+    setStageLabel(null);
+    setResultSummary({
+      found: rowIds.length - remaining.size,
+      catchAll: 0,
+      notFound: remaining.size,
+      errors: 0,
+      skipped: 0,
+      submitted: 0,
+    });
+    await fetchTable(tableId, true);
+  };
+
   const handleRun = async () => {
     setIsRunning(true);
     try {
       const rowIds = condColumnId ? conditionFilteredIds : (
         selectedRows.size > 0 ? Array.from(selectedRows) : rows.map(r => r.id)
       );
-      await processRows(rowIds);
+      await (mode === 'waterfall' ? runWaterfall(rowIds) : processRows(rowIds));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -242,7 +375,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
     try {
       const firstRowId = rows[0]?.id;
       if (!firstRowId) throw new Error('No rows to test');
-      await processRows([firstRowId]);
+      await (mode === 'waterfall' ? runWaterfall([firstRowId]) : processRows([firstRowId]));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -269,38 +402,83 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Provider Toggle */}
+        {/* Provider: Single (dropdown) or Waterfall (ordered tap-list) */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-white/70">Provider</label>
-          <div className="grid grid-cols-2 gap-px bg-white/10 border border-white/10 overflow-hidden">
-            {([
-              { id: 'ninjer', label: 'Ninjer' },
-              { id: 'trykitt', label: 'TryKitt' },
-              { id: 'ai_ark', label: 'AI Ark' },
-              { id: 'betterenrich', label: 'BetterEnrich' },
-            ] as const).map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setProvider(p.id)}
-                className={cn(
-                  'px-3 py-2 text-sm transition-colors',
-                  provider === p.id
-                    ? 'bg-cyan-500/20 text-white'
-                    : 'bg-white/5 text-white/50 hover:text-white'
-                )}
-              >
-                {p.label}
-              </button>
-            ))}
+
+          {/* Single | Waterfall mode toggle */}
+          <div className="flex border border-white/10 overflow-hidden">
+            <button
+              onClick={() => setMode('single')}
+              className={cn(
+                'flex-1 px-3 py-2 text-sm transition-colors border-r border-white/10',
+                mode === 'single' ? 'bg-cyan-500/20 text-white' : 'bg-white/5 text-white/50 hover:text-white'
+              )}
+            >
+              Single
+            </button>
+            <button
+              onClick={() => setMode('waterfall')}
+              className={cn(
+                'flex-1 px-3 py-2 text-sm transition-colors',
+                mode === 'waterfall' ? 'bg-cyan-500/20 text-white' : 'bg-white/5 text-white/50 hover:text-white'
+              )}
+            >
+              Waterfall
+            </button>
           </div>
-          {provider === 'ai_ark' && (
+
+          {mode === 'single' ? (
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as ProviderId)}
+              className={selectClasses}
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </select>
+          ) : (
+            <div className="space-y-1.5">
+              <p className="text-xs text-white/40">
+                Tap providers in the order they should run. Each one only fills the rows the previous couldn't. Tap again to remove.
+              </p>
+              <div className="border border-white/10 divide-y divide-white/10 overflow-hidden">
+                {PROVIDERS.map((p) => {
+                  const order = waterfallProviders.indexOf(p.id);
+                  const selected = order !== -1;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => toggleWaterfall(p.id)}
+                      className={cn(
+                        'w-full flex items-center justify-between px-3 py-2 text-sm transition-colors',
+                        selected ? 'bg-cyan-500/20 text-white' : 'bg-white/5 text-white/50 hover:text-white'
+                      )}
+                    >
+                      <span>{p.label}</span>
+                      {selected ? (
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-cyan-400 text-midnight-100 text-xs font-semibold">
+                          {order + 1}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-white/30">Add</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {((mode === 'single' && provider === 'ai_ark') || (mode === 'waterfall' && waterfallProviders.includes('ai_ark'))) && (
             <p className="text-xs text-amber-300/80">
-              AI Ark is async. Each row is searched + submitted to AI Ark; emails arrive at our webhook over the next 1-2 minutes. Cells will sit on "submitted" until the webhook fires — refresh the table to see results land.
+              AI Ark is async — those rows are submitted and resolve over the next 1-2 minutes via webhook{mode === 'waterfall' ? '; the waterfall waits for them before moving to the next provider.' : '. Cells sit on "submitted" until the webhook fires — refresh to see results land.'}
             </p>
           )}
-          {provider === 'betterenrich' && (
+          {((mode === 'single' && provider === 'betterenrich') || (mode === 'waterfall' && waterfallProviders.includes('betterenrich'))) && (
             <p className="text-xs text-white/40">
-              BetterEnrich runs its own work-email waterfall and verifies each hit (status, verifier, ESP). Optionally map a LinkedIn URL column below to boost match rates.
+              BetterEnrich runs its own work-email waterfall and verifies each hit (status, verifier, ESP). Map a LinkedIn URL column below to boost match rates.
             </p>
           )}
         </div>
@@ -399,23 +577,21 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
             </select>
           </div>
 
-          {provider === 'betterenrich' && (
-            <div>
-              <label className="text-xs text-white/40 mb-1 block">
-                LinkedIn URL Column <span className="text-white/30">(optional)</span>
-              </label>
-              <select
-                value={linkedinColumnId}
-                onChange={(e) => setLinkedinColumnId(e.target.value)}
-                className={selectClasses}
-              >
-                <option value="">None</option>
-                {columns.filter(c => c.type !== 'enrichment').map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div>
+            <label className="text-xs text-white/40 mb-1 block">
+              LinkedIn URL Column <span className="text-white/30">(optional)</span>
+            </label>
+            <select
+              value={linkedinColumnId}
+              onChange={(e) => setLinkedinColumnId(e.target.value)}
+              className={selectClasses}
+            >
+              <option value="">None</option>
+              {columns.filter(c => c.type !== 'enrichment').map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Info */}
@@ -439,7 +615,7 @@ export function FindEmailPanel({ isOpen, onClose }: FindEmailPanelProps) {
             <div className="flex items-center justify-between text-xs text-white/50">
               <span className="flex items-center gap-1.5">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                Processing...
+                {stageLabel || 'Processing...'}
               </span>
               <span>{progress.completed} / {progress.total}</span>
             </div>
