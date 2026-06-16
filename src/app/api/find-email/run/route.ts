@@ -7,7 +7,11 @@ import { getSecret } from '@/lib/secrets';
 
 export const maxDuration = 300;
 
-const NINJER_BASE_URL = 'https://api-production-9cde.up.railway.app';
+// Email-finder (MailTester Ninja) service. Migrated off Railway → Azure Container Apps
+// (ACA app `email-finder` in dataflow-rg). Env-overridable for future moves.
+const NINJER_BASE_URL =
+  process.env.NINJER_BASE_URL ||
+  'https://email-finder.delightfulbeach-10f489d6.eastus2.azurecontainerapps.io';
 const CONCURRENT_REQUESTS = 2; // 2 API keys processed in parallel = ~20 req/s
 const DELAY_BETWEEN_BATCHES_MS = 100; // 100ms floor between concurrent batches
 const TIMEOUT_MS = 90000; // Worst case: 50 variations can take up to 90s
