@@ -24,7 +24,9 @@ for line in open(r"C:\Users\Vilca\Desktop\Clay-Clone\.env.local", encoding="utf-
 
 DATAFLOW = "https://dataflow-pi.vercel.app"
 DKEY = ENV["DATAFLOW_API_KEY"]
-TABLE = "7fbd828a-9934-481b-a832-8b3e17859e21"   # 5% Growth >6 Months | Malaysia / Sheet 1
+# Parameterized per country/sheet (default = Malaysia). Sibling workbooks reuse this.
+COUNTRY = os.environ.get("MYS_COUNTRY", "Malaysia")
+TABLE = os.environ.get("MYS_TABLE", "7fbd828a-9934-481b-a832-8b3e17859e21")
 AIARK_BASE = "https://api.ai-ark.com/api/developer-portal/v1"
 
 def log(*a): print(time.strftime("%H:%M:%S"), *a, flush=True)
@@ -48,12 +50,12 @@ def get_aiark_key():
     return _decrypt(rows[0][0]["value"]).strip()
 
 AIKEY = get_aiark_key()
-log("AI Ark key loaded (masked ••••%s)" % AIKEY[-4:])
+log("AI Ark key loaded (masked ••••%s) | COUNTRY=%s | TABLE=%s | MODE=%s" % (AIKEY[-4:], COUNTRY, TABLE, MODE))
 
 # ── AI Ark company search ──
 FILTERS = {
     "account": {
-        "location":     {"any": {"include": ["Malaysia"]}},
+        "location":     {"any": {"include": [COUNTRY]}},
         "employeeSize": {"type": "RANGE", "range": [{"start": 100, "end": 1000}]},
         "metric":       {"growth": [{"start": 5, "end": 100, "timeFrame": "TWELVE"}]},
     }

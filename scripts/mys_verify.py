@@ -1,11 +1,11 @@
-import sys, json, urllib.parse, urllib.request
+import os, sys, json, urllib.parse, urllib.request
 try: sys.stdout.reconfigure(encoding="utf-8")
 except Exception: pass
 KEY=None
 for line in open(r"C:\Users\Vilca\Desktop\Clay-Clone\.env.local", encoding="utf-8"):
     if line.strip().startswith("DATAFLOW_API_KEY"):
         KEY=line.split("=",1)[1].strip().strip('"').strip("'"); break
-BASE="https://dataflow-pi.vercel.app"; T="7fbd828a-9934-481b-a832-8b3e17859e21"
+BASE="https://dataflow-pi.vercel.app"; T=os.environ.get("MYS_TABLE","7fbd828a-9934-481b-a832-8b3e17859e21")
 def req(path):
     r=urllib.request.Request(BASE+path); r.add_header("Authorization","Bearer "+KEY)
     with urllib.request.urlopen(r,timeout=120) as resp: return resp.read().decode(), resp.headers
@@ -20,7 +20,10 @@ import json as _j
 cols=_j.loads(cols_txt)
 dom=[c["id"] for c in cols if c["name"]=="Domain"][0]
 emp=[c["id"] for c in cols if c["name"]=="Employees"][0]
-gov=sum(1 for r in rows if str((r["data"].get(dom) or {}).get("value") or "").endswith(".gov.my"))
+def is_gov(d):
+    d=str(d or "").lower()
+    return any(p in d for p in (".gov.", ".go.id", ".gov.ph", ".gov.my", ".edu", ".mil."))
+gov=sum(1 for r in rows if is_gov((r["data"].get(dom) or {}).get("value")))
 nodom=sum(1 for r in rows if not str((r["data"].get(dom) or {}).get("value") or "").strip())
 emps=[ (r["data"].get(emp) or {}).get("value") for r in rows ]
 emps=[e for e in emps if isinstance(e,(int,float))]
