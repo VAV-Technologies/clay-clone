@@ -26,5 +26,9 @@ Use `GET /api/rows` filters server-side (`is_empty`, `is_not_empty`, `contains`,
 
 Prefer a few `curl` calls over writing a migration script. Only drop to a script when you genuinely need a loop (pagination, bulk inserts >500 rows).
 
+## AI output never overwrites source columns
+
+AI enrichment results go in their **own dedicated column** (`Domain Finder (AI)`, `Official Domain (AI)`, `Email (AI)`, …). **Never copy or backfill AI output into a user's original/source column** (`Company Domain`, `Email`, `Company Name`) **unless the user explicitly asks.** If they do, backfill **empty/junk cells only** — never overwrite a cell that already holds real data — and tell them you're touching the source column. For a merged "best" value, make a NEW column; don't mutate the original. (The Indonesia CEO job, 2026-06, copied AI-found domains into the original `Company Domain` column, which read as "the enrichment re-ran on rows that already had a domain" — it hadn't; the column was mutated after the run. Don't repeat this.) Full guardrail: see "AI output stays in its own column" in `AGENT-X-RULES.md`.
+
 ## Auto-deploy
 **ALWAYS commit and push changes to origin/master immediately after making any code changes.** Do not wait for the user to ask. Every change should go live to Vercel automatically.

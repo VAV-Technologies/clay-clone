@@ -109,6 +109,15 @@ Domain is essential. Do not proceed past this stage with rows that have no domai
 
 Surface the "real company website or nothing" rule in the stage's `notes`.
 
+### AI output stays in its own column — NEVER clobber source data
+
+**An AI enrichment writes ONLY to its own dedicated enrichment column** (e.g. `Domain Finder (AI)`, `Official Domain (AI)`, `Email (AI)`). It must never write into a user's original/source column (`Company Domain`, `Email`, `Company Name`, etc.).
+
+- **Do NOT copy / backfill AI results into an original source column unless the user explicitly asked for it.** Keeping AI guesses isolated is the default. Once you merge AI output into the source column you can no longer tell original data from machine guesses, and you risk silently overwriting real values. (This is exactly what went wrong on the Indonesia CEO job, 2026-06: AI-found domains were copied into the original `Company Domain` column, which looked like the enrichment had re-run on already-populated rows. It had not — the column had been mutated after the fact.)
+- **The only sanctioned backfill is the `find_domains` step**, and even it only fills cells that are **empty or junk** — it NEVER overwrites a cell that already holds a real value. Any backfill you do must follow the same contract: empty/junk cells only, never clobber existing data, and **say so in the stage `notes`** so the user knows the source column is being touched.
+- **If the user wants a single merged / "best" value**, write it to a NEW column (e.g. `Domain (final)`), do not mutate the original. Materialized output sheets (`materialize_send_ready`) and the email waterfall already follow this: they read from clean text columns and the per-provider result columns, never by overwriting the user's inputs.
+- This applies to manual/one-off enrichment scripts too (not just campaign plans): if you run `setup-and-run` / `/api/enrichment/run` against a sheet, the target is the AI column. Do not follow it with a `PATCH /api/rows` that pastes the result into the source column unless the user asked.
+
 ### People search (AI Ark)
 
 - **ALWAYS include `seniority`.** Without it you get interns to CEOs. Values: `["c_level","vp","director","head","senior","manager","lead","owner","founder","entry"]`. Pick the band that matches the user's intent.
